@@ -1,0 +1,88 @@
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { sessionsList } from "../api/client";
+import type { SessionListItem } from "../types";
+
+const Ico = ({ d, size = 18 }: { d: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+);
+
+const secondaryNav = [
+  { to: "/memory", label: "记忆库", icon: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01" },
+  { to: "/review", label: "审核队列", icon: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4" },
+  { to: "/settings", label: "设置", icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" },
+];
+
+function relTime(iso: string) {
+  const d = new Date(iso); const h = (Date.now() - d.getTime()) / 36e5;
+  if (h < 1) return "刚刚";
+  if (h < 24) return Math.floor(h) + " 小时前";
+  if (h < 48) return "昨天";
+  if (h < 168) return Math.floor(h / 24) + " 天前";
+  return d.toLocaleDateString();
+}
+
+export default function AppLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [recent, setRecent] = useState<SessionListItem[]>([]);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar") === "collapsed");
+
+  function toggle() {
+    const c = !collapsed; setCollapsed(c); localStorage.setItem("sidebar", c ? "collapsed" : "expanded");
+  }
+
+  async function loadRecent() {
+    try { const r = await sessionsList(12, 0); setRecent(r.items || []); } catch { /* */ }
+  }
+  useEffect(() => { loadRecent(); }, [location.pathname]);
+
+  return (
+    <>
+      <aside className="sidebar" data-collapsed={collapsed}>
+        <div className="side-head">
+          {!collapsed && (
+            <div className="brand">
+              <div className="logo">长</div>
+              <div className="name">需求分析<span> · 长亭</span></div>
+            </div>
+          )}
+          <button className="side-toggle" onClick={toggle} title={collapsed ? "展开侧栏" : "收起侧栏"} aria-label="切换侧栏">
+            <Ico d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9 5v14" size={18} />
+          </button>
+        </div>
+
+        <button className="newchat" onClick={() => navigate("/analyze")} title="新建对话">
+          <Ico d="M12 5v14M5 12h14" />
+          {!collapsed && <span className="lbl">新建对话</span>}
+        </button>
+
+        {!collapsed && (
+          <div className="conv-list">
+            <div className="conv-head"><span>最近对话</span><NavLink to="/history" className="conv-all">全部</NavLink></div>
+            {recent.length === 0 && <div className="conv-empty">暂无对话</div>}
+            {recent.map((s) => (
+              <button key={s.session_id} className="conv-item" onClick={() => navigate(`/analyze/${s.session_id}`)} title={s.title || s.session_id}>
+                <span className="conv-title">{s.title || "未命名对话"}</span>
+                <span className="conv-time">{relTime(s.updated_at)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="side-bottom">
+          {secondaryNav.map((n) => (
+            <NavLink key={n.to} to={n.to} className="sec-nav" title={n.label}>
+              <Ico d={n.icon} size={collapsed ? 19 : 16} />
+              {!collapsed && <span className="lbl">{n.label}</span>}
+            </NavLink>
+          ))}
+        </div>
+      </aside>
+
+      <main className="main">
+        <Outlet />
+      </main>
+    </>
+  );
+}

@@ -1,0 +1,155 @@
+// Command agent 启动客户需求分析智能体的 HTTP 服务。
+//
+// 配置完全来自 config.json（不读环境变量）。--config 可指定路径，默认 ./config.json。
+// 文件不存在时自动写入模板。模型注册表与路由从配置文件加载；/api/config 的改动回写文件。
+package main
+
+import (
+	"context"
+	"flag"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"customer-demand-agent/internal/agent"
+	httpapi "customer-demand-agent/internal/channel/http"
+	"customer-demand-agent/internal/config"
+	"customer-demand-agent/internal/history"
+	"customer-demand-agent/internal/llm"
+	"customer-demand-agent/internal/memory/assembler"
+	"customer-demand-agent/internal/memory/longterm"
+	"customer-demand-agent/internal/memory/shortterm"
+	"customer-demand-agent/internal/memory/tools"
+	"customer-demand-agent/internal/model"
+	"customer-demand-agent/internal/review"
+)
+
+func main() {
+	configPath := flag.String("config", config.DefaultPath, "配置文件路径（config.json）")
+	flag.Parse()
+
+	store, err := config.Load(*configPath)
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
+	cfg := store.Get()
+
+	// ── 长期记忆：Wiki 适配器（启动时全量加载）──────────────
+	wikiStore := longterm.NewWikiStore(cfg.WikiDir)
+	if err := wikiStore.Load(); err != nil {
+		log.Printf("[warn] 加载 Wiki 知识库失败（继续启动，知识库为空）: %v", err)
+	} else {
+		log.Printf("[ok] Wiki 知识库已加载：%s", cfg.WikiDir)
+	}
+
+	// ── 历史记录：SQLite ────────────────────────────────────
+	hist, err := history.Open(cfg.HistoryDB)
+	if err != nil {
+		log.Fatalf("打开历史数据库失败: %v", err)
+	}
+	defer hist.Close()
+
+	// ── 短期记忆：Checkpoint 链 ──────────────────────────────
+	sessions := shortterm.NewSessionManager()
+
+	// ── 记忆工具：6 个 Function Calling ─────────────────────
+	toolRegistry := tools.NewRegistry(wikiStore)
+
+	// ── Prompt 拼装器 ──────────────────────────────────────
+	asm := assembler.New(wikiStore)
+
+	// ── 模型管理：从配置文件加载注册表 + 路由 ───────────────
+	registry := model.NewRegistry()
+	for _, m := range cfg.Models {
+		if err := registry.Register(m); err != nil {
+			log.Printf("[warn] 注册模型 %s 失败: %v", m.Name, err)
+		}
+	}
+	router := cfg.Router
+	client := llm.NewClient()
+	modelMgr := model.NewManager(client, registry, &router)
+
+	// ── Agent 核心：自主循环 ────────────────────────────────
+	ag := agent.New(modelMgr, toolRegistry, asm, sessions)
+
+	// ── 审核系统 ────────────────────────────────────────────
+	reviewSvc := review.New(wikiStore)
+
+	// ── HTTP Channel（配置回写由 store 持久化）─────────────
+	server := httpapi.New(store, ag, reviewSvc, wikiStore, hist, modelMgr, registry)
+
+	srv := &http.Server{
+		Addr:              cfg.Server.Addr,
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// 可选：托管前端静态文件
+	if cfg.Server.FrontendDist != "" {
+		srv.Handler = withFrontend(srv.Handler, cfg.Server.FrontendDist)
+	}
+
+	// 优雅关闭
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Println("收到退出信号，正在关闭…")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	log.Printf("客户需求分析智能体启动，监听 %s（配置：%s）", cfg.Server.Addr, *configPath)
+	if cfg.Server.FrontendDist != "" {
+		log.Printf("[ok] 托管前端静态文件：%s", cfg.Server.FrontendDist)
+	}
+	if !hasAPIKey(registry) {
+		log.Printf("[warn] 未配置 api_key，分析接口将返回 502（在 config.json 填 models[].api_key 后重启）")
+	}
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("服务退出: %v", err)
+	}
+	log.Println("已退出")
+}
+
+func hasAPIKey(reg *model.Registry) bool {
+	for _, name := range reg.Names() {
+		if c, err := reg.Get(name); err == nil && c.APIKey != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// withFrontend wraps the API handler to also serve the built frontend (SPA fallback).
+func withFrontend(apiHandler http.Handler, dist string) http.Handler {
+	absDist, err := filepath.Abs(dist)
+	if err != nil {
+		absDist = dist
+	}
+	indexBytes, _ := os.ReadFile(filepath.Join(absDist, "index.html"))
+	fs := http.FileServer(http.Dir(absDist))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api") {
+			apiHandler.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			fs.ServeHTTP(w, r)
+			return
+		}
+		full := filepath.Join(absDist, filepath.Clean(r.URL.Path))
+		if info, statErr := os.Stat(full); statErr == nil && !info.IsDir() {
+			http.ServeFile(w, r, full)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(indexBytes)
+	})
+}
