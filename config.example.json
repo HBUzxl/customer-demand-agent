@@ -3,6 +3,8 @@
     "addr": ":8080",
     "frontend_dist": ""
   },
+  "data_dir": "",
+  "_data_dir_note": "留空=环境变量 CDA_DATA_DIR 或 XDG 默认；显式路径则 wiki_dir/history_db 尊重原值",
   "wiki_dir": "./wiki",
   "history_db": "./data/history.db",
   "models": [

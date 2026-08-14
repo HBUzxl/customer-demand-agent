@@ -41,6 +41,9 @@ func main() {
 	cfg := store.Get()
 
 	// ── 长期记忆：Wiki 适配器（启动时全量加载）──────────────
+	// P9 数据根：首次启动播种（数据根 wiki 为空时从项目种子 ./wiki 复制——
+	// Docker 挂空卷即得种子知识；种子更新后由人工重放）+ 旧 ./data 迁移提示。
+	seedWiki(cfg.DataDir, cfg.WikiDir)
 	wikiStore := longterm.NewWikiStore(cfg.WikiDir)
 	if err := wikiStore.Load(); err != nil {
 		log.Printf("[warn] 加载 Wiki 知识库失败（继续启动，知识库为空）: %v", err)
@@ -166,5 +169,45 @@ func withFrontend(apiHandler http.Handler, dist string) http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(indexBytes)
+	})
+}
+
+// seedWiki 播种：数据根 wiki 目录为空且项目种子 ./wiki 存在时复制之。
+// 旧项目内 ./data（历史遗留位置）存在而数据根为空时打印迁移指引（不自动搬，
+// 避免误吞用户数据——人工 mv 一次即可）。
+func seedWiki(dataDir, wikiDir string) {
+	if entries, err := os.ReadDir(wikiDir); err == nil && len(entries) > 0 {
+		return // 已有运行副本
+	}
+	if _, err := os.Stat("./wiki"); err == nil {
+		if err := copyDir("./wiki", wikiDir); err != nil {
+			log.Printf("[warn] 播种知识库失败: %v", err)
+		} else {
+			log.Printf("[ok] 已播种知识库：./wiki → %s（首次启动）", wikiDir)
+		}
+	}
+	if dataDir != "./data" {
+		if _, err := os.Stat("./data/history.db"); err == nil {
+			log.Printf("[warn] 检测到项目内旧数据 ./data —— 迁移：cp -r ./data/* %s/（或设 CDA_DATA_DIR=./data 继续用旧位置）", dataDir)
+		}
+	}
+}
+
+// copyDir 递归复制目录。
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
 	})
 }

@@ -22,6 +22,7 @@ const DefaultPath = "./config.json"
 // Config 是整个服务的运行时配置（config.json 的结构）。
 type Config struct {
 	Server        ServerCfg           `json:"server"`
+	DataDir       string              `json:"data_dir"` // 数据根（P9：wiki/历史库的父目录；env CDA_DATA_DIR 优先）
 	WikiDir       string              `json:"wiki_dir"`
 	HistoryDB     string              `json:"history_db"`
 	DefaultUser   string              `json:"default_user"`    // 当前使用者（销售），影响分级输出
@@ -154,16 +155,29 @@ func write(path string, cfg *Config) error {
 }
 
 // applyDefaults 填充缺失的默认值。
+// 数据根三级优先（P9）：环境变量 CDA_DATA_DIR > config.data_dir >
+// XDG 默认（$XDG_DATA_HOME/customer-demand-agent，未设则
+// ~/.local/share/customer-demand-agent）。wiki_dir/history_db 的相对
+// 路径解析为数据根相对；开发零配置回退 ./data（项目内，行为与旧版一致）。
 func applyDefaults(cfg *Config) {
 	if cfg.Server.Addr == "" {
 		cfg.Server.Addr = ":8080"
 	}
-	if cfg.WikiDir == "" {
-		cfg.WikiDir = "./wiki"
+	if cfg.DataDir == "" {
+		if v := os.Getenv("CDA_DATA_DIR"); v != "" {
+			cfg.DataDir = v
+		} else {
+			cfg.DataDir = xdgDataDir()
+		}
 	}
-	if cfg.HistoryDB == "" {
-		cfg.HistoryDB = "./data/history.db"
+	if isDefaultLayout(cfg.WikiDir, cfg.HistoryDB) {
+		// 未显式配置：数据根下标准布局（开发零配置时 xdgDataDir 回退 ./data，
+		// 行为与旧版 ./data 一致）
+		cfg.WikiDir = filepath.Join(cfg.DataDir, "wiki")
+		cfg.HistoryDB = filepath.Join(cfg.DataDir, "history.db")
 	}
+	_ = os.MkdirAll(filepath.Dir(cfg.HistoryDB), 0o755)
+	_ = os.MkdirAll(cfg.WikiDir, 0o755)
 	if cfg.DefaultUser == "" {
 		cfg.DefaultUser = "张三"
 	}
@@ -176,4 +190,29 @@ func applyDefaults(cfg *Config) {
 	if cfg.Router.Fallback.BackoffMs <= 0 {
 		cfg.Router.Fallback.BackoffMs = 200
 	}
+}
+
+// xdgDataDir 数据根默认：XDG_DATA_HOME 或 ~/.local/share；两种回退——
+// ① 项目内存在旧 ./data/history.db（历史部署就地兼容，不搬家不打扰）；
+// ② 无 HOME 环境（测试/CI）。
+func xdgDataDir() string {
+	if _, err := os.Stat("./data/history.db"); err == nil {
+		return "./data" // 旧部署：继续用原位置
+	}
+	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
+		return filepath.Join(x, "customer-demand-agent")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "./data"
+	}
+	return filepath.Join(home, ".local", "share", "customer-demand-agent")
+}
+
+// isDefaultLayout 判断是否默认占位（空或历史默认值）——此时重定向到数据根；
+// 任何非默认值（绝对路径或自定义相对路径）都是用户显意，尊重原值。
+func isDefaultLayout(wiki, hist string) bool {
+	wikiDefault := wiki == "" || wiki == "./wiki" || wiki == "./data/wiki"
+	histDefault := hist == "" || hist == "./data/history.db"
+	return wikiDefault && histDefault
 }

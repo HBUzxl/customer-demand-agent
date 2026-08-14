@@ -9,6 +9,8 @@
 ## 架构
 
 ```
+
+数据位置（P9）：三级优先 `CDA_DATA_DIR` 环境变量 > `config.json data_dir` > XDG 默认（`~/.local/share/customer-demand-agent/`）；`wiki_dir`/`history_db` 未显式配置时自动落数据根。项目内旧 `./data` 自动就地兼容。Docker：`ENV CDA_DATA_DIR=/var/lib/cda` + `VOLUME /var/lib/cda`，镜像无状态。
 React+Vite 前端 ──HTTP──→ channel/http → agent（自主循环）
                               ↓
                     ┌─────────┼─────────┐
@@ -113,7 +115,7 @@ FRONTEND_DIST=./frontend/dist ../scripts/run.sh
 | GET/PUT | `/api/config` | 模型与路由配置 |
 | GET | `/api/sessions` `GET/DELETE /api/sessions/{id}` | 会话历史 |
 
-多租户：请求头 `X-Tenant-ID`（缺省用 `DEFAULT_TENANT_ID`）。
+
 
 ## 测试
 

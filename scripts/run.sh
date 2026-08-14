@@ -5,12 +5,7 @@ cd "$(dirname "$0")/.."
 
 CONFIG="${CONFIG:-./config.json}"
 
-# 首次运行：若 config.json 不存在，从模板复制一份
-if [ ! -f "$CONFIG" ]; then
-  if [ -f ./config.example.json ]; then
-    cp ./config.example.json "$CONFIG"
-    echo "  已从 config.example.json 创建 $CONFIG，请编辑后填入 api_key"
-  fi
+# 播种已内置服务端（P9：数据根 wiki 为空时自动从 ./wiki 复制）
 fi
 
 # 首次运行：将提交的种子知识库（wiki/）复制到运行时目录（data/wiki/）
