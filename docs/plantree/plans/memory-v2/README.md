@@ -75,7 +75,8 @@ renderKnowledge 全量段（已删）；客户身份行注入；systemConstraint
 强化「推荐前必须检索」；TestAssemblerProductCatalogOnly +
 TestAssemblerCustomerInjection（身份行注入/画像内容禁入双向断言）；
 TestMessageCustomerFieldPersisted（HTTP 端到端）；真实冒烟 prompt
-3387→1748 字符（寒暄轮），LLM 行为正常（知道客户身份并主动检索）。
+3387→约 1794 字符（需求轮，smoke-p0.sh 可复现），LLM 行为正常（知道
+客户身份并主动检索）。
 Trace.SystemPrompt 改为聚合全部 system 消息（模板+动态注入均落库
 回放可见）。
 

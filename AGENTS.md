@@ -97,8 +97,8 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 
 ## 测试
 
-- **`go test ./...`**：当前 agent / channel/http / memory×4 共 7 个包有测试，**含 mock LLM 全链路集成测试**（无需真实 key）。
-- **无测试的包**：config / domain / history / llm / model / review / api —— 新行为补测试时优先这些。
+- **`go test ./...`**：当前 agent / channel/http / history / memory×4 共 8 个包有测试，**含 mock LLM 全链路集成测试**（无需真实 key）。
+- **无测试的包**：config / domain / llm / model / review / api —— 新行为补测试时优先这些。
 - **`./scripts/e2e.sh`**：真实 HTTP 端到端冒烟（健康/配置/记忆 CRUD/审核流/会话），需后端先起。
 - 新逻辑**必须带验证行为的测试**（不是空断言）。
 
