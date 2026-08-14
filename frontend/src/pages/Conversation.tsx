@@ -127,16 +127,33 @@ export default function Conversation() {
         setMessages(reconstruct(d.messages || [], d.tool_calls || []));
         setCustomer(d.session.customer || "");
         setSessionId(routeSid);
-        // F0 切回恢复：会话还在跑 → 重建流式中的 assistant 消息并续订
+        // F0 切回恢复（竞态安全）：
+        // a) running=true 且二次确认仍在跑 → 续订（带 rid 过滤）；
+        // b) 查询窗口内 Run 完成（true→false）→ 重拉详情补最终答案；
+        // c) running=false 但快照缺 assistant（快照先于完成拉取）→ 重拉补全。
         const running = await sessionRunning(routeSid);
         if (cancelled) return;
         if (running) {
-          setActiveRun(null); // rid 由 running 接口给（stop 用兜底路径）
           const r2 = await fetch(`/api/sessions/${routeSid}/running`)
             .then((x) => x.json())
             .catch(() => null);
-          if (r2?.run_id) setActiveRun({ sid: routeSid, rid: r2.run_id });
-          attachStream(routeSid, r2?.run_id || "", { resume: true });
+          if (cancelled) return;
+          if (r2?.running && r2?.run_id) {
+            setActiveRun({ sid: routeSid, rid: r2.run_id });
+            attachStream(routeSid, r2.run_id, { resume: true });
+          } else {
+            const d2 = await sessionGet(routeSid);
+            if (cancelled) return;
+            setMessages(reconstruct(d2.messages || [], d2.tool_calls || []));
+          }
+        } else {
+          const sawUser = (d.messages || []).filter((m: { role: string }) => m.role === "user").length;
+          const sawAsst = (d.messages || []).filter((m: { role: string }) => m.role === "assistant").length;
+          if (sawUser > sawAsst) {
+            const d2 = await sessionGet(routeSid);
+            if (cancelled) return;
+            setMessages(reconstruct(d2.messages || [], d2.tool_calls || []));
+          }
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));

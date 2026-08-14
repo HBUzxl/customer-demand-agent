@@ -434,19 +434,26 @@ func (s *Store) TruncateAfter(tenantID, sessionID string, after int) (int, error
 	if err != nil || owner != tenantID {
 		return 0, fmt.Errorf("无权操作该会话")
 	}
-	// 该 seq 起的消息对应的 tool_calls（message_id 关联）
-	_, err = s.db.Exec(`DELETE FROM tool_calls WHERE session_id=? AND message_id IN
-		(SELECT id FROM messages WHERE session_id=? AND seq >= ?)`, sessionID, sessionID, after)
+	// 三表联删走单事务（中途失败整体回滚，不产生部分删除）
+	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.Exec(`DELETE FROM messages WHERE session_id=? AND seq >= ?`, sessionID, after)
+	defer func() { _ = tx.Rollback() }() // 已提交时为 no-op
+	if _, err := tx.Exec(`DELETE FROM tool_calls WHERE session_id=? AND message_id IN
+		(SELECT id FROM messages WHERE session_id=? AND seq >= ?)`, sessionID, sessionID, after); err != nil {
+		return 0, err
+	}
+	res, err := tx.Exec(`DELETE FROM messages WHERE session_id=? AND seq >= ?`, sessionID, after)
 	if err != nil {
 		return 0, err
 	}
 	deleted, _ := res.RowsAffected()
 	// checkpoints 是链式的，截断对话后短期记忆整体作废（保守但一致）
-	if _, err := s.db.Exec(`DELETE FROM checkpoints WHERE session_id=?`, sessionID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM checkpoints WHERE session_id=?`, sessionID); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return int(deleted), nil
