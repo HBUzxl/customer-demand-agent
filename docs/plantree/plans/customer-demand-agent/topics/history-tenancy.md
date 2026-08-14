@@ -16,7 +16,7 @@
 
 ### 记录什么
 
-```
+```text
 Session (tenant_id, session_id, created_at)
 ├── Message       每条消息：role / content / timestamp
 ├── ToolCall      每次工具调用：tool_name / params / result / timestamp
@@ -67,7 +67,7 @@ CREATE TABLE tool_calls (
 
 ### 隔离范围
 
-```
+```text
 隔离（每个 tenant 独立）           共享（组织级知识）
 ─────────────────────            ─────────────────
 ├── 会话 session                   ├── 产品记忆

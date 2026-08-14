@@ -2,7 +2,7 @@
 
 ## 核心链路：客户文本 → 分析结果
 
-```
+```text
 POST /api/analyze  { text: "客户原话..." }
          │
          ▼
@@ -44,7 +44,7 @@ POST /api/analyze  { text: "客户原话..." }
 
 ## 压缩流程
 
-```
+```text
 对话缓冲 token 数 > 预算阈值
          │
          ▼
@@ -59,7 +59,7 @@ POST /api/analyze  { text: "客户原话..." }
 
 ## 知识加载流程
 
-```
+```text
 服务启动
     │
     ▼

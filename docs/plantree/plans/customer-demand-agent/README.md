@@ -13,13 +13,13 @@
 | 文件 | 角色 |
 |------|------|
 | [[roadmap.md]] | 当前阶段、进度、TODO |
-| [[topics/memory-system.md|记忆系统设计]] | 长期记忆 + 短期记忆 + 拼装层 |
-| [[topics/memory-tools.md|Memory Function Calling]] | AI 常驻的 6 个记忆管理工具 |
-| [[topics/model-management.md|模型管理系统]] | 模型注册/路由/回退/调用 |
-| [[topics/agent-autonomy.md|自主 Agent 设计]] | 自主循环，非 workflow |
-| [[topics/history-tenancy.md|历史记录与多租户]] | 完整轨迹持久化 + 使用者隔离 |
-| [[topics/wiki-knowledge.md|Wiki 知识库]] | 产品页面结构 + 检索策略 |
-| [[topics/agent-core.md|Agent 核心]] | 自主循环 + 输出解析 |
+| [[topics/memory-system.md | 记忆系统设计]] |
+| [[topics/memory-tools.md | Memory Function Calling]] |
+| [[topics/model-management.md | 模型管理系统]] |
+| [[topics/agent-autonomy.md | 自主 Agent 设计]] |
+| [[topics/history-tenancy.md | 历史记录与多租户]] |
+| [[topics/wiki-knowledge.md | Wiki 知识库]] |
+| [[topics/agent-core.md | Agent 核心]] |
 | [[open-questions.md]] | 未决问题 |
 | [[decisions/]] | 架构决策记录 |
 
@@ -31,5 +31,5 @@
 4. [[topics/model-management.md]] 理解模型怎么调度
 5. [[topics/agent-autonomy.md]] 理解为什么是自主 Agent 而非 workflow
 6. [[topics/history-tenancy.md]] 理解历史记录和多租户
-5. [[topics/agent-core.md]] 理解编排逻辑
-5. [[open-questions.md]] 看看还没定的事
+7. [[topics/agent-core.md]] 理解编排逻辑
+8. [[open-questions.md]] 看看还没定的事

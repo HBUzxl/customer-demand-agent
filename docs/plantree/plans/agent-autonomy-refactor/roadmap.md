@@ -5,10 +5,10 @@
 ### Phase 1：后端 Agent 工具化（核心）— 2026-08-14
 
 - ✅ `analysis_submit` 工具（internal/agent/submit.go）：schema 对齐
-      domain.AnalysisResult + 可选 is_reanalysis；注册进 runStreaming 的工具表
-      （agent 层业务工具，executeTool 拦截挂轮次状态）
+  domain.AnalysisResult + 可选 is_reanalysis；注册进 runStreaming 的工具表
+  （agent 层业务工具，executeTool 拦截挂轮次状态）
 - ✅ `runStreaming` 移除 jsonOutput 强制；`parseAnalysis`/stripCodeFence/
-      extractJSON 文本兜底全删
+  extractJSON 文本兜底全删
 - ✅ system prompt 自主化重写（「你是自主的」四类意图指引 + 会话状态只述事实）
 - ✅ mock LLM 集成测试三分支全过（寒暄/需求/追问）
 
@@ -25,7 +25,7 @@
 - ✅ `messageStream` 单一入口（analyzeStream/chatStream 删除）
 - ✅ content 事件始终累积（分析模式文本流可见）
 - ✅ `MarkdownView` 公共组件（sanitize 在 raw 后；Conversation + MemoryDetail 共用，
-      ** `**` 渲染修复）
+  ** `**` 渲染修复）
 - ✅ ResultCard 在 analysis_submit tool_result 时即时渲染、done 定稿
 - ✅ reconstruct 从 tool_calls 还原 analysis（不做老数据兼容——用户裁决）
 
@@ -33,7 +33,7 @@
 
 - ✅ 纯聊天轮次建轻量 followup checkpoint（ADR-015/Q1，TestAgentGreetingChat）
 - ✅ analysis_submit → initial/reanalysis（is_reanalysis 优先、DetermineOp 兜底，
-      TestAgentReanalysisCheckpoint）
+  TestAgentReanalysisCheckpoint）
 - ✅ 断点续传含纯聊天 checkpoint（TestAgentCheckpointRestore 模拟重启 restore）
 
 ## In Progress

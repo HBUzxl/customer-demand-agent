@@ -48,7 +48,7 @@ schema 与 `domain.AnalysisResult` 对齐——工具参数直接 unmarshal 成�
 
 ## 事件流语义
 
-```
+```text
 content 流        → Agent 的自然语言说明/总结（用户先看到）
 tool_call         → {"tool":"analysis_submit","params":{...结构化结果...}}
 tool_result       → {"received": true}

@@ -4,7 +4,7 @@
 
 ## 整体架构
 
-```
+```text
 ┌──────────────┐    HTTP/JSON     ┌──────────────┐
 │   React+Vite  │ ───────────────→ │   Go 后端     │
 │   前端        │                  │  (HTTP API)   │
@@ -21,7 +21,7 @@
 
 ## 后端模块
 
-```
+```text
 cmd/
 └── agent/              # 入口：HTTP 服务启动
     └── main.go
@@ -69,7 +69,7 @@ internal/
 
 ## 前端模块
 
-```
+```text
 frontend/
 ├── src/
 │   ├── pages/
@@ -100,7 +100,7 @@ frontend/
 
 ## 依赖方向
 
-```
+```text
 前端（React）──HTTP──→ channel/http → agent → memory/assembler → memory/longterm
                                         → memory/shortterm
                                         → llm

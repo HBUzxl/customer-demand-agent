@@ -62,6 +62,7 @@ npm run format:check      # prettier（已配，见「已知基线」）
 
 - **业务能力工具化**：需求分析不是固定输出格式，是 `analysis_submit` 工具（agent 层业务工具，`internal/agent/submit.go`，schema=AnalysisResult+is_reanalysis）。done 事件 content 恒有（自然语言），analysis 仅 submit 过才有。
 - **统一对话入口**：`POST /api/message`（{text, session_id?, customer?}）走 `agent.Message()` 单一自主循环；`/api/analyze`、`/api/chat` 是 deprecated shim。
+- **服务端 Run 任务（F0，2026-08-14）**：POST /api/message 创建 Run（goroutine 执行）**立即返回 202 {session_id, run_id}**——刷新/切换/断连不影响执行；事件进 per-session 内存缓冲（带 seq），消费走**订阅式 SSE** `GET /api/sessions/{id}/stream?since=N`（replay+live）；`POST .../runs/{run_id}/cancel` 显式停止（唯一停止途径）；每会话单 Run 并发 409；落库在 Run 完成回调与连接解耦；`DELETE .../messages/after?seq=N` 截断（messages+tool_calls+checkpoints 三表联删，编辑重发用，运行中 409）。RunManager 在 `internal/channel/http/runs.go`。
 - **System Prompt 分层（ADR-016 v2）**：L0 静态模板 + L1 使用者画像（风格）+ L2 会话状态（checkpoint 链 + 客户身份一行）+ L3a 产品目录索引（名字+一句话+别名）注入；**其余知识全走工具检索**（renderKnowledge 全量注入已废）。约束强化「推荐前必须 memory_search 检索证实」。会话头客户名 UI → EnsureSession 落库 → 身份行注入。
 - **history_search 工具（P1）**：Agent 可检索历史对话原文（agent 层业务工具 + `history.Store.SearchMessages`，tenant 隔离、可选跨会话）。
 - **前后台域划分**：前台（与 Agent 的对话）= 记忆系统成套且**全程在线**——聊天轮次涉及事实也要 memory_search 查证、聊出线索要 memory_observe 记录（不是裸 chat）；后台（TaskBackground，一期未实现）= 无记忆依赖的一次性调用。

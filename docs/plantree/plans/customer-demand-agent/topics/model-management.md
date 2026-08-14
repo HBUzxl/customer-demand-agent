@@ -4,7 +4,7 @@
 
 ## 职责
 
-```
+```text
 模型管理系统
 ├── 模型注册     有哪些模型？endpoint / key / 参数
 ├── 模型路由     什么任务用哪个模型
@@ -30,6 +30,7 @@ type ModelConfig struct {
 ```
 
 **要点**：
+
 - 一个 API 网关可以注册多个模型名（同一 endpoint 不同 model）
 - 也可以只注册一个模型，所有任务都走它
 - 模型数量无所谓，前端想加几个加几个
@@ -68,7 +69,7 @@ type FallbackPolicy struct {
 
 **流程**：
 
-```
+```text
 调用 primary 模型
     │
     ├── 成功 → 返回
@@ -84,6 +85,7 @@ type FallbackPolicy struct {
 ```
 
 **重试判定**（不是所有错误都重试）：
+
 - 重试：网络超时、5xx、429 限流
 - 不重试：4xx 参数错误、鉴权失败、内容违规
 
@@ -108,6 +110,7 @@ type ChatRequest struct {
 ```
 
 **结构化输出**：主分析要求 JSON 输出。两种方式：
+
 1. `response_format: json_object`（OpenAI 兼容）
 2. 带 JSON Schema 的 function calling（更严格）
 
@@ -129,7 +132,7 @@ type ChatRequest struct {
 
 模型管理系统是**被调用的基础设施**，记忆系统是**被管理的数据**。
 
-```
+```text
 Agent 编排
     │
     ├── 记忆系统（数据层）——存什么、查什么

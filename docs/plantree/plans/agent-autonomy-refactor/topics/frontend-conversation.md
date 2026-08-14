@@ -24,7 +24,7 @@
 
 ### 3. 结果卡片条件渲染
 
-```
+```text
 <AssistantMsg>
   {m.analysis && <ResultCard r={m.analysis} />}   // 上方：结构化卡片
   <MarkdownView>{m.text}</MarkdownView>            // 下方：自然语言总结

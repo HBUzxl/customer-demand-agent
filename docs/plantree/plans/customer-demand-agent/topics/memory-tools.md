@@ -29,7 +29,7 @@
 
 **示例**：
 
-```
+```text
 memory_search(query="CC攻击", type="threat")
 → [{type: "threat", title: "CC攻击", summary: "应用层DDoS..."}]
 
@@ -57,7 +57,7 @@ memory_search(query="雷池")
 
 **示例**：
 
-```
+```text
 memory_ensure(
   type="customer",
   title="某某制造集团",
@@ -88,7 +88,7 @@ memory_ensure(
 
 **示例**：
 
-```
+```text
 memory_observe(
   type="threat",
   title="新型API滥用模式",
@@ -116,7 +116,7 @@ memory_observe(
 
 **示例**：
 
-```
+```text
 memory_delete(type="customer", title="某某制造集团", archive=true)
 → "已归档客户画像：某某制造集团"
 ```
@@ -139,7 +139,7 @@ memory_delete(type="customer", title="某某制造集团", archive=true)
 
 **示例**：
 
-```
+```text
 memory_recall(query="有没有类似客户网站被扫但说不出具体症状的", type="customer")
 → [{type: "customer", title: "某某电商平台", relevance: 0.87}, ...]
 ```
@@ -164,7 +164,7 @@ memory_recall(query="有没有类似客户网站被扫但说不出具体症状�
 
 **示例**：
 
-```
+```text
 memory_list(type="threat")
 → [{title: "CC攻击", tags: ["DDoS"]}, {title: "SQL注入", tags: ["Web安全"]}, ...]
 ```

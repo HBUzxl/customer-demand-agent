@@ -24,7 +24,7 @@
 
 ## 自主循环
 
-```
+```text
 用户输入 → 加入 messages
     │
     ▼
@@ -40,6 +40,7 @@
 ```
 
 **框架不预设"先查产品再匹配"的顺序**。Agent 自己决定：
+
 - 要不要查产品？→ `memory_search(type=product)`
 - 要不要查客户？→ `memory_search(type=customer)`
 - 要不要记录画像？→ `memory_ensure(type=customer)`
@@ -53,7 +54,7 @@
 
 **怎么处理**：包装成一个工具 `generate_proposal(...)`，对 AI 来说就是一次工具调用。工具内部可以跑固定流程，但 AI 看不到、也不需要关心内部步骤。
 
-```
+```text
 AI 视角：                   工具内部（workflow）：
 "生成方案建议书"      →      generate_proposal
   （一次调用）                 ├── 步骤1：读分析结果
@@ -66,7 +67,7 @@ AI 视角：                   工具内部（workflow）：
 
 自主 Agent 的"自主"来自 system prompt 里的目标 + 约束，不是代码：
 
-```
+```text
 你是长亭科技的客户需求分析助手。
 
 你的目标：

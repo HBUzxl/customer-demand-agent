@@ -22,7 +22,19 @@
 
 ## 方案草案
 
-### F0：服务端任务模型（地基，先做）
+### F0：服务端任务模型（地基，先做）✅ 已落地 2026-08-14
+
+**落地证据**：RunManager（channel/http/runs.go——Start/Cancel/Subscribe/
+DropSession，per-session 事件缓冲 500 条带 seq，每会话单 Run 并发 409）；
+POST /api/message→202{session_id,run_id}（executeTurn goroutine 执行+落库，
+与连接解耦，显式取消不写[失败]）；GET /api/sessions/{id}/stream?since=N
+订阅式 SSE（replay→live→结束补尾）；POST .../runs/{run_id}/cancel；
+GET /api/sessions/{id}/running（列表附 running）。前端：submitMessage/
+subscribeStream（AbortController 只退订）/cancelRun/truncateMessages；
+切回会话恢复（sessionGet 重建+running 查询+resume 续订）；侧栏运行绿点
+（自适应轮询 3s/15s）。测试：TestMessageEndpoint202/Busy409/
+RunSurvivesDisconnect/RunCancelExplicit/MessagesTruncate + e2e 25/0 +
+smoke-f0.sh 8/8（断连运行继续/replay/cancel/截断/重发全链路）。
 
 把「执行流」变「订阅流」——运行是服务端一等实体，连接只是视图：
 
@@ -43,7 +55,13 @@
 注意：ADR-015 的「前台全记忆」不变——Run 仍是完整 Agent 循环；变的
 只是执行宿主从请求变任务。
 
-### F1：停止 + 编辑重发（依赖 F0）
+### F1：停止 + 编辑重发（依赖 F0）✅ 已落地 2026-08-14（随 F0 同批）
+
+**落地证据**：发送按钮 loading 态变红色方块「停止」（cancelRun+订阅结束
++assistant 中断态"（已停止）"）；user 消息 hover「✎ 编辑重发」（DELETE
+/api/sessions/{id}/messages/after?seq=N 三表联删——messages+tool_calls
+(message_id 关联)+checkpoints（链式整体作废）；运行中 409 先停止）+
+原文填回输入框重发。
 
 - **前端**：messageStream 内部用 AbortController；发送按钮旁/流式中
   显示「停止」；停止后该轮 assistant 显示"已中断"，user 消息气泡上给

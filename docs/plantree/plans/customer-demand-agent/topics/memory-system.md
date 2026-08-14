@@ -4,7 +4,7 @@
 
 ## 架构概览
 
-```
+```text
 ┌──────────────────────────────────────────────────┐
 │                  Memory System                     │
 ├──────────────────────────────────────────────────┤
@@ -31,7 +31,7 @@
 
 ### 三层记忆
 
-```
+```text
 Wiki 层
 ├── 产品记忆（Product Memory）
 │   └── 每款产品：能力清单 / 适用场景 / 能力边界 / 竞品对比
@@ -147,12 +147,13 @@ type UserProfile struct {
 ```
 
 **分级输出**：
+
 - 初级销售 → 给直接结论（"推荐雷池，因为..."），少用术语
 - 高级销售 → 给分析过程 + 竞品话术（"客户可能说华为WAF更便宜，你可以这样回..."）
 
 ### 检索流程
 
-```
+```text
 用户输入: "我们做跨境电商，最近过等保二级"
     │
     ├── 行业记忆/行业场景 "电商" → 匹配 → 注入电商痛点
@@ -205,7 +206,7 @@ func (w *WikiStore) Load(ctx context.Context) error {
 
 参考 MiMo Code：主 Agent 只负责分析，记忆维护通过**独立的结构化快照**完成。不同于 MiMo 有独立 writer subagent，我们同步完成（场景简单，不需要异步）。
 
-```
+```text
 Session
 ├── checkpoints/
 │   ├── 001_initial.json        ← 首次分析后的状态
@@ -261,7 +262,7 @@ Session
 
 **首次分析**（无历史 checkpoint）：
 
-```
+```text
 [
   { role: "system", content: system_instruction + product_knowledge },
   { role: "user",   content: raw_document }
@@ -270,7 +271,7 @@ Session
 
 **追问**（有 current checkpoint）：
 
-```
+```text
 [
   { role: "system", content: system_instruction + product_knowledge },
   { role: "system", content: "上一次分析结果：\n" + checkpoint_json },
@@ -281,7 +282,7 @@ Session
 
 **重新分析**（已有 checkpoint，但换文档了）：
 
-```
+```text
 [
   { role: "system", content: system_instruction + product_knowledge },
   { role: "system", content: "之前的分析上下文：\n" + prev_checkpoint_json },

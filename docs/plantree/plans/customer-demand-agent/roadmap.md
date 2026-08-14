@@ -20,7 +20,6 @@
 - ✅ ADR-001 ~ ADR-012 全部落定（见 decisions/README.md）
 - ✅ Plan tree 设计文档完整
 
-
 ## In Progress
 
 ### 记忆系统接口设计 + 项目骨架
