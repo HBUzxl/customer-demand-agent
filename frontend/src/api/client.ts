@@ -78,14 +78,24 @@ export function subscribeStream(
   return () => ac.abort();
 }
 
-// cancelRun 显式停止会话的活跃 Run（唯一停止途径）。
+// ApiError 携带 HTTP 状态码（调用方按 status 分支，如 cancel 的 404=已结束）。
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+// cancelRun 显式停止会话的活跃 Run（唯一停止途径）。404=Run 已结束。
 export async function cancelRun(sessionId: string, runId: string): Promise<void> {
   const res = await fetch(`${BASE}/sessions/${sessionId}/runs/${runId}/cancel`, {
     method: "POST",
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const body = await res.json().catch(() => ({ error: "" }));
+    throw new ApiError(body.error || `HTTP ${res.status}`, res.status);
   }
 }
 
@@ -95,8 +105,8 @@ export async function truncateMessages(sessionId: string, seq: number): Promise<
     method: "DELETE",
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const body = await res.json().catch(() => ({ error: "" }));
+    throw new ApiError(body.error || `HTTP ${res.status}`, res.status);
   }
 }
 

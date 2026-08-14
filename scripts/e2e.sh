@@ -102,6 +102,8 @@ echo "-- 6. 安全（C1 SSRF / C2 凭据外泄 / 跨租户隔离） --"
 # 注：以下均在 LLM 调用前被拒，无需 api_key（与 e2e 的无 LLM 前提一致）。
 # C1 SSRF：探测端点拒绝云元数据 / 回环
 [ "$(post /api/config/test '{"endpoint":"http://169.254.169.254/","api_key":"x","model":"m","protocol":"openai-chat"}')" = "400" ] && ok "C1 /api/config/test 拒绝云元数据" || fail "C1 SSRF config/test 未拒绝"
+# F0 失败语义：不存在的会话 cancel → 404（前端 ApiError.status 分支的契约）
+[ "$("$CURL" -s -o /dev/null -w "%{http_code}" -X POST "$BASE/api/sessions/none-e2e/runs/run-x/cancel")" = "404" ] && ok "F0 cancel 不存在会话 → 404" || fail "F0 cancel 404 语义"
 [ "$(post /api/models '{"endpoint":"http://127.0.0.1:80/","api_key":"x","protocol":"openai-chat"}')" = "400" ] && ok "C1 /api/models 拒绝回环" || fail "C1 SSRF models 未拒绝"
 # C2 凭据外泄：name 命中已存模型但 endpoint 不同源、未传 key → 拒绝代填
 [ "$(post /api/config/test '{"name":"default","endpoint":"http://e2e-credexfil.invalid/v1","protocol":"openai-chat","model":"m"}')" = "400" ] && ok "C2 不同源 endpoint 拒绝代填 key" || fail "C2 凭据外泄未堵"

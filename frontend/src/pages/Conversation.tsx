@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  ApiError,
   submitMessage,
   subscribeStream,
   cancelRun,
@@ -294,9 +295,11 @@ export default function Conversation() {
     try {
       await cancelRun(activeRun.sid, activeRun.rid);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!/HTTP 404/.test(msg)) {
-        setError("停止请求失败（任务可能仍在运行）：" + msg);
+      const status = err instanceof ApiError ? err.status : 0;
+      if (status !== 404) {
+        setError(
+          "停止请求失败（任务可能仍在运行）：" + (err instanceof Error ? err.message : String(err)),
+        );
         return; // 不退订、不标已停止——与真实运行态一致
       }
       // 404：Run 已自然结束，按完成收尾
