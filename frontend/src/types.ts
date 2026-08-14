@@ -105,4 +105,5 @@ export interface AgentEvent {
   analysis?: AnalysisResult; // done（分析）
   content?: string; // done（追问）/ session id
   error?: string; // error
+  run_id?: string; // F0：产生该事件的 Run（多轮过滤）
 }

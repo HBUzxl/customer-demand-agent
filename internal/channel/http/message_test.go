@@ -385,3 +385,55 @@ func sseIDs(raw string) []int {
 	}
 	return out
 }
+
+// TestSecondRunEventsFilteredByRunID 同会话第二轮：事件带各自 run_id，
+// 增量订阅（since=第一轮最大 seq）不回放第一轮事件——多轮不串台的
+// 服务端保证。
+func TestSecondRunEventsFilteredByRunID(t *testing.T) {
+	ts, _ := setupServer(t)
+	// 第一轮（LLM 不可达 → 等超时失败后 Run 结束）
+	code1, sid, rid1 := postMessage(t, ts.URL, "", `{"text":"第一轮","session_id":"multi-s"}`)
+	if code1 != http.StatusAccepted {
+		t.Fatalf("第一轮应 202，got %d", code1)
+	}
+	// 等第一轮 Run 结束（LLM timeout 5s）
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		r, _ := http.Get(ts.URL + "/api/sessions/" + sid + "/running")
+		var out struct {
+			Running bool `json:"running"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&out)
+		r.Body.Close()
+		if !out.Running {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	// 第二轮
+	code2, _, rid2 := postMessage(t, ts.URL, "", `{"text":"第二轮","session_id":"multi-s"}`)
+	if code2 != http.StatusAccepted {
+		t.Fatalf("第二轮应 202，got %d（第一轮未结束？）", code2)
+	}
+	if rid2 == rid1 {
+		t.Fatal("两轮 run_id 应不同")
+	}
+	// 全量 replay（since=0）：第一轮事件带 rid1，第二轮带 rid2
+	raw := sseRead(t, ts.URL, sid, 0, 2*time.Second)
+	if !strings.Contains(raw, `"run_id":"`+rid1+`"`) {
+		t.Fatalf("第一轮事件应带 run_id %s", rid1)
+	}
+	// 取第一轮最大 seq，增量订阅：不应再见到 rid1 的 done 事件
+	seqs := sseIDs(raw)
+	if len(seqs) == 0 {
+		t.Fatal("应有序号")
+	}
+	maxSeq := seqs[len(seqs)-1]
+	time.Sleep(300 * time.Millisecond)
+	inc := sseRead(t, ts.URL, sid, maxSeq, 2*time.Second)
+	for _, line := range strings.Split(inc, "\n") {
+		if strings.Contains(line, `"type":"done"`) && strings.Contains(line, `"run_id":"`+rid1+`"`) {
+			t.Fatal("增量续传收到第一轮 done（多轮串台）")
+		}
+	}
+}

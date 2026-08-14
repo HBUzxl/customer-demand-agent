@@ -96,11 +96,20 @@ export default function Conversation() {
   const [activeRun, setActiveRun] = useState<{ sid: string; rid: string } | null>(null); // F0：本视图发起/恢复订阅的 Run
   const scrollRef = useRef<HTMLDivElement>(null);
   const unsubRef = useRef<(() => void) | null>(null);
-  const lastSeqRef = useRef(0); // SSE 事件游标（增量续传）
+  const lastSeqRef = useRef<Map<string, number>>(new Map()); // SSE 游标（按会话隔离）
+  const subSessionRef = useRef<string>(""); // 当前订阅的会话（防串台）
+  const activeRunRef = useRef<string>(""); // 当前关注的 Run（事件过滤）
   const msgsRef = useRef<ChatMsg[]>([]);
   msgsRef.current = messages;
 
   useEffect(() => {
+    // 路由变化第一件事：退旧订阅（防切换窗口旧会话事件写入新视图）
+    if (subSessionRef.current !== routeSid) {
+      unsubRef.current?.();
+      unsubRef.current = null;
+      activeRunRef.current = "";
+      setLoading(false);
+    }
     if (!routeSid) {
       stopSubscription();
       setMessages([]);
@@ -127,7 +136,7 @@ export default function Conversation() {
             .then((x) => x.json())
             .catch(() => null);
           if (r2?.run_id) setActiveRun({ sid: routeSid, rid: r2.run_id });
-          attachStream(routeSid, { resume: true });
+          attachStream(routeSid, r2?.run_id || "", { resume: true });
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -157,6 +166,8 @@ export default function Conversation() {
   }
 
   function handleEvent(e: AgentEvent) {
+    // 多轮/切回防串台：只处理当前订阅 Run 的事件（历史 Run 的事件忽略）
+    if (activeRunRef.current && e.run_id && e.run_id !== activeRunRef.current) return;
     switch (e.type) {
       case "session":
         setSessionId(e.content || "");
@@ -204,6 +215,7 @@ export default function Conversation() {
         });
         stopSubscription();
         setActiveRun(null);
+        activeRunRef.current = "";
         break;
       case "error":
         setError(e.error || "未知错误");
@@ -212,24 +224,28 @@ export default function Conversation() {
         });
         stopSubscription();
         setActiveRun(null);
+        activeRunRef.current = "";
         break;
     }
   }
 
   // ── F0 订阅模式：attach 到会话的 Run（事件 → 消息流）──
   // resume=true 时消息流里已有历史重建，事件只 patch 流式中的最后一条。
-  function attachStream(sid: string, opts?: { resume?: boolean }) {
+  function attachStream(sid: string, runID: string, opts?: { resume?: boolean }) {
     unsubRef.current?.();
     setLoading(true);
+    subSessionRef.current = sid;
+    activeRunRef.current = runID;
     if (!opts?.resume) {
-      lastSeqRef.current = 0; // 新 Run 从头收
       setMessages((m) => [...m, { id: uid(), role: "assistant", text: "", streaming: true }]);
     } else if (!msgsRef.current.length || !msgsRef.current[msgsRef.current.length - 1].streaming) {
       setMessages((m) => [...m, { id: uid(), role: "assistant", text: "", streaming: true }]);
     }
-    // resume 时沿用已收游标增量续传；服务端 done 补尾保证不丢不重
-    unsubRef.current = subscribeStream(sid, lastSeqRef.current, handleEvent, (seq) => {
-      lastSeqRef.current = seq;
+    // 游标按会话隔离；新 Run 用该会话已见最大 seq（上一轮 done 已记）——
+    // 增量订阅天然跳过历史 Run 事件（run_id 过滤双保险见 handleEvent）
+    const since = lastSeqRef.current.get(sid) || 0;
+    unsubRef.current = subscribeStream(sid, since, handleEvent, (seq) => {
+      lastSeqRef.current.set(sid, seq);
     });
   }
 
@@ -270,7 +286,7 @@ export default function Conversation() {
       setActiveRun({ sid: handle.session_id, rid: handle.run_id });
       if (!routeSid && handle.session_id)
         navigate(`/analyze/${handle.session_id}`, { replace: true });
-      attachStream(handle.session_id);
+      attachStream(handle.session_id, handle.run_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setLoading(false);

@@ -62,7 +62,11 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 		if _, aerr := s.history.AppendMessage(sessionID, "user", text, ""); aerr != nil {
 			log.Printf("[warn] user 消息落库失败 会话 %s: %v", sessionID, aerr)
 		}
-		s.executeTurn(ctx, tenant, sessionID, text, emit)
+		// 事件统一带 run_id：前端按 Run 过滤（同会话多轮/切回恢复不串台）
+		s.executeTurn(ctx, tenant, sessionID, text, func(e agent.Event) {
+			e.RunID = fullRunID
+			emit(e)
+		})
 	})
 	if err != nil {
 		writeError(w, http.StatusConflict, "%v", err)

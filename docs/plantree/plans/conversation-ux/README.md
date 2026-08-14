@@ -35,7 +35,7 @@ subscribeStream（AbortController 只退订）/cancelRun/truncateMessages；
 切回会话恢复（sessionGet 重建+running 查询+resume 续订）；侧栏运行绿点
 （自适应轮询 3s/15s）。测试：TestMessageEndpoint202/Busy409/
 RunSurvivesDisconnect/RunCancelExplicit/MessagesTruncate + e2e 25/0 +
-smoke-f0.sh 8/8（断连运行继续/replay/cancel/截断/重发全链路）。
+smoke-f0.sh 11/11（断连运行继续/replay/cancel/截断/重发全链路）。
 
 把「执行流」变「订阅流」——运行是服务端一等实体，连接只是视图：
 
@@ -165,7 +165,7 @@ F4 不依赖 F0（现状连接模型下也能先做，刷新丢卡片属可接�
 
 **已完成（2026-08-14）**：F0 服务端 Run 任务模型 + F1 停止/编辑重发
 （goal mssz523g，commit 78264ea+92e73ca；并发策略裁决=单 Run 拒绝
-并发 409；e2e 25/0、smoke-f0 9/9）。
+并发 409；e2e 25/0、smoke-f0 11/11）。
 
 **候选批次**：F3 ask_user + F4 内联审核（共用对话内卡片组件，可同批）
 → F2 轻量截断重发已在 F1 落地（验证够用否再决定消息树/分叉）。
