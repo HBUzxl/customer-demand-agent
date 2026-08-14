@@ -24,6 +24,10 @@ interface ChatMsg {
   tools?: ToolTrace[];
   analysis?: AnalysisResult;
   streaming?: boolean;
+  askUser?: {
+    question: string;
+    options: { label: string; value?: string; description?: string }[];
+  }; // F3 待答选项
 }
 
 const uid = () => Math.random().toString(36).slice(2);
@@ -228,8 +232,14 @@ export default function Conversation() {
           m.text = (m.text || "") + (e.text || "");
         });
         break;
+      case "ask_user":
+        patchLast((m) => {
+          m.askUser = { question: e.question || "", options: e.options || [] };
+        });
+        break;
       case "done":
         patchLast((m) => {
+          if (m.askUser) m.streaming = false; // 有待答问题时保持卡片展示
           // done.content 是最终答案（服务端已累积全程 content）。
           if (e.content) m.text = e.content;
           // analysis 以提交过的为准（tool_result 已即时渲染，此处最终定稿）。
@@ -480,7 +490,7 @@ export default function Conversation() {
                 )}
               </div>
             ) : (
-              <AssistantMsg key={m.id} m={m} />
+              <AssistantMsg key={m.id} m={m} onSend={send} />
             ),
           )}
           {error && <div className="error">! {error}</div>}
@@ -499,7 +509,7 @@ export default function Conversation() {
   );
 }
 
-function AssistantMsg({ m }: { m: ChatMsg }) {
+function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }) {
   const [open, setOpen] = useState(false);
   const hasTrace = !!(m.reasoning || (m.tools && m.tools.length));
   const toolCount = m.tools?.length || 0;
@@ -530,6 +540,23 @@ function AssistantMsg({ m }: { m: ChatMsg }) {
               </div>
             )}
           </>
+        )}
+        {m.askUser && (
+          <div className="ask-card">
+            <div className="ask-q">❓ {m.askUser.question}</div>
+            <div className="ask-opts">
+              {m.askUser.options.map((o, i) => (
+                <button
+                  key={i}
+                  className="ask-opt"
+                  onClick={() => onSend(o.value || o.label)}
+                  title={o.description}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {m.analysis && <ResultCard r={m.analysis} />}
         {m.text ? (

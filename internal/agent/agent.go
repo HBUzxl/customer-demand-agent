@@ -50,11 +50,21 @@ type Event struct {
 	Analysis *domain.AnalysisResult `json:"analysis,omitempty"` // done 事件：本轮提交过 analysis_submit 才有
 	Content  string                 `json:"content,omitempty"`  // done 事件：最终自然语言答案（恒有）
 	Error    string                 `json:"error,omitempty"`    // error 事件
+	Question string                 `json:"question,omitempty"` // ask_user 事件：问题
+	Options  []AskOption            `json:"options,omitempty"`  // ask_user 事件：选项
+}
+
+// AskOption 是 ask_user 的一个选项。
+type AskOption struct {
+	Label       string `json:"label"`                 // 按钮文案
+	Value       string `json:"value,omitempty"`       // 发回的值（空=label）
+	Description string `json:"description,omitempty"` // 补充说明
 }
 
 // 事件类型常量。
 const (
 	EventRound      = "round"
+	EventAskUser    = "ask_user" // 向用户提问并给选项（轮次终止式）
 	EventReasoning  = "reasoning"
 	EventContent    = "content"
 	EventToolCall   = "tool_call"
@@ -124,9 +134,10 @@ func (a *Agent) restoreIfNeeded(sessionID string) *shortterm.Manager {
 
 // turnState 收集本轮自主循环的产物。
 type turnState struct {
-	session  string                // 本轮会话（history_search 默认范围）
-	analysis *AnalysisSubmission   // 最后一次 analysis_submit 的结果（nil = 本轮未提交分析）
-	answered []domain.AnsweredInfo // 本轮记录的"追问已回答"（missing_answer）
+	session         string                // 本轮会话（history_search 默认范围）
+	pendingQuestion *Event                // ask_user 待答问题（轮次终止时随 done 发出）
+	analysis        *AnalysisSubmission   // 最后一次 analysis_submit 的结果（nil = 本轮未提交分析）
+	answered        []domain.AnsweredInfo // 本轮记录的"追问已回答"（missing_answer）
 }
 
 // Message 是前台对话的统一入口（ADR-014）：处理任意输入（寒暄/需求/追问），
@@ -191,6 +202,10 @@ func (a *Agent) Message(ctx context.Context, sessionID, text string, emit func(E
 	if st.analysis != nil {
 		analysis = &st.analysis.AnalysisResult
 	}
+	// F3 ask_user：待答问题在 done 前发出（前端渲染按钮组，done 收尾）
+	if st.pendingQuestion != nil {
+		emitEvent(emit, *st.pendingQuestion)
+	}
 	emitEvent(emit, Event{Type: EventDone, Content: content, Analysis: analysis})
 	return content, analysis, trace, nil
 }
@@ -199,7 +214,7 @@ func (a *Agent) Message(ctx context.Context, sessionID, text string, emit func(E
 // 工具调用/结果作为事件推送，直到无工具调用得到最终答案。
 // 不再强制 JSON 输出——输出形态由 Agent 自主决定（ADR-013）。
 func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trace *Trace, emit func(Event), st *turnState) (string, error) {
-	toolDefs := append(a.tools.Definitions(), analysisSubmitDef(), missingAnswerDef(), historySearchDef())
+	toolDefs := append(a.tools.Definitions(), analysisSubmitDef(), missingAnswerDef(), historySearchDef(), askUserDef())
 
 	for iter := 0; iter < MaxIterations; iter++ {
 		emitEvent(emit, Event{Type: EventRound, Round: iter + 1})
@@ -264,6 +279,8 @@ func (a *Agent) executeTool(tc domain.ToolCall, trace *Trace, st *turnState) str
 		}
 	case ToolHistorySearch:
 		result = a.execHistorySearch(tc.Function.Arguments, st)
+	case ToolAskUser:
+		result = a.execAskUser(tc.Function.Arguments, st)
 	default:
 		args := json.RawMessage(tc.Function.Arguments)
 		r, err := a.tools.Execute(tc.Function.Name, args)

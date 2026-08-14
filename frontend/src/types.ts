@@ -96,7 +96,15 @@ export interface SessionDetail {
 // Agent 流式事件（SSE）
 export interface AgentEvent {
   type:
-    "session" | "round" | "reasoning" | "content" | "tool_call" | "tool_result" | "done" | "error";
+    | "session"
+    | "round"
+    | "reasoning"
+    | "content"
+    | "tool_call"
+    | "tool_result"
+    | "done"
+    | "error"
+    | "ask_user";
   text?: string; // reasoning/content 增量
   round?: number; // round 事件
   tool?: string; // tool_call/tool_result
@@ -105,4 +113,7 @@ export interface AgentEvent {
   analysis?: AnalysisResult; // done（分析）
   content?: string; // done（追问）/ session id
   error?: string; // error
+  question?: string; // ask_user 事件：问题
+  options?: { label: string; value?: string; description?: string }[]; // ask_user 选项
+  run?: string;
 }

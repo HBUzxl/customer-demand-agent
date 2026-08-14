@@ -619,3 +619,50 @@ func TestAgentHistorySearch(t *testing.T) {
 		t.Errorf("expected >=2 LLM calls, got %d", *calls)
 	}
 }
+
+// TestAgentAskUser（F3）：Agent 调 ask_user → 轮次结束前 SSE 收到
+// ask_user 事件（question+options），done 正常收尾。
+func TestAgentAskUser(t *testing.T) {
+	ag, _, _ := newTestAgent(t, []step{
+		{toolCallJSON: `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_0","type":"function","function":{"name":"ask_user","arguments":"{\"question\":\"部署环境是？\",\"options\":[{\"label\":\"公有云\"},{\"label\":\"私有云\"}]}"}}]}}]}`},
+		{content: "好的，请选择部署环境。"},
+	})
+	var events []agent.Event
+	_, _, _, err := ag.Message(context.Background(), "sess-ask", "客户想部署，不知道环境", func(e agent.Event) {
+		events = append(events, e)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var askEv, doneEv *agent.Event
+	for i := range events {
+		if events[i].Type == agent.EventAskUser && askEv == nil {
+			askEv = &events[i]
+		}
+		if events[i].Type == agent.EventDone {
+			doneEv = &events[i]
+		}
+	}
+	if askEv == nil {
+		t.Fatal("应发出 ask_user 事件")
+	}
+	if askEv.Question != "部署环境是？" || len(askEv.Options) != 2 || askEv.Options[0].Label != "公有云" {
+		t.Fatalf("ask_user 事件内容不对: %+v", askEv)
+	}
+	if doneEv == nil {
+		t.Fatal("done 应正常收尾")
+	}
+	// 事件顺序：ask_user 在 done 之前
+	askIdx, doneIdx := -1, -1
+	for i, e := range events {
+		if e.Type == agent.EventAskUser && askIdx < 0 {
+			askIdx = i
+		}
+		if e.Type == agent.EventDone {
+			doneIdx = i
+		}
+	}
+	if askIdx > doneIdx {
+		t.Fatal("ask_user 应在 done 之前")
+	}
+}

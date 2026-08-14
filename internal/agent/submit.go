@@ -195,3 +195,61 @@ func (a *Agent) execHistorySearch(argsRaw string, st *turnState) string {
 	data, _ := json.Marshal(map[string]any{"count": len(hits), "items": hits})
 	return string(data)
 }
+
+// ToolAskUser 是业务工具：向用户提问并给出选项（F3，轮次终止式）。
+// Agent 调用后本轮自然结束，SSE 推 ask_user 事件（question+options），
+// 前端渲染按钮组；用户点选 = value 作为普通消息发回，missing_answer 闭环。
+const ToolAskUser = "ask_user"
+
+// askUserDef 返回 ask_user 的 function-calling 定义。
+func askUserDef() domain.Tool {
+	return domain.Tool{
+		Type: "function",
+		Function: domain.ToolFunction{
+			Name: ToolAskUser,
+			Description: "向用户（销售）提问并给出候选项。当关键信息缺失且能枚举选项时用（如部署环境/预算区间/行业），" +
+				"用户点选即回传——比开放追问省事。一次调用结束本轮，等用户选择。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"question": map[string]any{"type": "string", "description": "要问的问题（简洁，一句）"},
+					"options": map[string]any{
+						"type":        "array",
+						"description": "选项（2-5 个）",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"label":       map[string]any{"type": "string", "description": "按钮文案"},
+								"value":       map[string]any{"type": "string", "description": "回传值（空则用 label）"},
+								"description": map[string]any{"type": "string", "description": "补充说明（可选）"},
+							},
+							"required": []string{"label"},
+						},
+					},
+				},
+				"required": []string{"question", "options"},
+			},
+		},
+	}
+}
+
+// execAskUser 拦截处理：记录待答问题（随轮次结束经 done 发出），本轮即收尾。
+func (a *Agent) execAskUser(argsRaw string, st *turnState) string {
+	var args struct {
+		Question string      `json:"question"`
+		Options  []AskOption `json:"options"`
+	}
+	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
+		return fmt.Sprintf(`{"error":"参数解析: %s"}`, jsonEscape(err.Error()))
+	}
+	if strings.TrimSpace(args.Question) == "" || len(args.Options) < 2 {
+		return `{"error":"question 不能为空且 options 至少 2 个"}`
+	}
+	for i := range args.Options {
+		if args.Options[i].Value == "" {
+			args.Options[i].Value = args.Options[i].Label
+		}
+	}
+	st.pendingQuestion = &Event{Type: EventAskUser, Question: args.Question, Options: args.Options}
+	return `{"received":true,"note":"本轮结束，等待用户选择"}`
+}
