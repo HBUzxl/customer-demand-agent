@@ -61,6 +61,7 @@ export function subscribeStream(
   since: number,
   onEvent: (e: AgentEvent, run: string) => void,
   onSeq?: (seq: number) => void,
+  onError?: (err: Error) => void,
 ): () => void {
   const ac = new AbortController();
   (async () => {
@@ -69,8 +70,10 @@ export function subscribeStream(
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     await readSSE(res, onEvent, onSeq);
-  })().catch(() => {
-    /* 订阅中止（组件卸载/切换会话）——正常 */
+  })().catch((err) => {
+    // AbortError=主动退订（卸载/切换），静默；其余为真实订阅故障，上报
+    if (err instanceof Error && err.name === "AbortError") return;
+    onError?.(err instanceof Error ? err : new Error(String(err)));
   });
   return () => ac.abort();
 }

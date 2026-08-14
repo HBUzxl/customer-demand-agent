@@ -266,8 +266,17 @@ export default function Conversation() {
     // 游标按会话隔离；新 Run 用该会话已见最大 seq（上一轮 done 已记）——
     // 增量订阅天然跳过历史 Run 事件（run_id 过滤双保险见 handleEvent）
     const since = lastSeqRef.current.get(sid) || 0;
-    unsubRef.current = subscribeStream(sid, since, handleEvent, (seq) =>
-      lastSeqRef.current.set(sid, seq),
+    unsubRef.current = subscribeStream(
+      sid,
+      since,
+      handleEvent,
+      (seq) => lastSeqRef.current.set(sid, seq),
+      // 订阅故障（非主动退订）：结束 loading 并提示——Run 在服务端继续，
+      // 切回会话可经恢复链路（running 查询+replay）重新接上。
+      (err) => {
+        setLoading(false);
+        setError("事件流中断：" + err.message + "（任务在服务端继续，切回本会话可恢复）");
+      },
     );
   }
 
@@ -277,13 +286,20 @@ export default function Conversation() {
     setLoading(false);
   }
 
-  // F1：显式停止（cancel Run + 结束本视图订阅；assistant 留中断态）
+  // F1：显式停止（cancel Run + 结束本视图订阅；assistant 留中断态）。
+  // 失败语义：404=Run 已结束（按停止收尾）；网络/5xx=停止失败，Run 可能
+  // 仍在跑——保留订阅与运行态，仅提示，不谎报"已停止"。
   async function stopRun() {
     if (!activeRun) return;
     try {
       await cancelRun(activeRun.sid, activeRun.rid);
-    } catch {
-      /* Run 可能刚自然结束 */
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/HTTP 404/.test(msg)) {
+        setError("停止请求失败（任务可能仍在运行）：" + msg);
+        return; // 不退订、不标已停止——与真实运行态一致
+      }
+      // 404：Run 已自然结束，按完成收尾
     }
     stopSubscription();
     patchLast((m) => {

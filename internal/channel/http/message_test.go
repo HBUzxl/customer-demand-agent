@@ -487,3 +487,47 @@ func sseBlocks(raw string) []sseBlock {
 	}
 	return out
 }
+
+// TestCancel404VsServerError 停止失败语义的服务端契约：不存在/已结束的
+// Run → 404（前端按"已结束"收尾）；会话不存在 → 404（租户/存在性校验）。
+// 网络层失败由前端处理（onError 上报），此处锁定 HTTP 语义。
+func TestCancel404VsServerError(t *testing.T) {
+	ts, _ := setupServer(t)
+	// 会话不存在 → 404
+	req, _ := http.NewRequest("POST", ts.URL+"/api/sessions/none-s/runs/run-x/cancel", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("不存在的会话应 404，got %d", resp.StatusCode)
+	}
+	// 会话存在但 Run 已结束（从未启动）→ 404
+	code, sid, _ := postMessage(t, ts.URL, "", `{"text":"x","session_id":"ended-s"}`)
+	if code != http.StatusAccepted {
+		t.Fatalf("202 expected, got %d", code)
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		r, _ := http.Get(ts.URL + "/api/sessions/" + sid + "/running")
+		var out struct {
+			Running bool `json:"running"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&out)
+		r.Body.Close()
+		if !out.Running {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	req2, _ := http.NewRequest("POST", ts.URL+"/api/sessions/"+sid+"/runs/run-bogus/cancel", nil)
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("已结束 Run 的 cancel 应 404，got %d", resp2.StatusCode)
+	}
+}
