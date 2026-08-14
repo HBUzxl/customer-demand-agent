@@ -147,8 +147,12 @@ export default function Conversation() {
             setMessages(reconstruct(d2.messages || [], d2.tool_calls || []));
           }
         } else {
-          const sawUser = (d.messages || []).filter((m: { role: string }) => m.role === "user").length;
-          const sawAsst = (d.messages || []).filter((m: { role: string }) => m.role === "assistant").length;
+          const sawUser = (d.messages || []).filter(
+            (m: { role: string }) => m.role === "user",
+          ).length;
+          const sawAsst = (d.messages || []).filter(
+            (m: { role: string }) => m.role === "assistant",
+          ).length;
           if (sawUser > sawAsst) {
             const d2 = await sessionGet(routeSid);
             if (cancelled) return;
