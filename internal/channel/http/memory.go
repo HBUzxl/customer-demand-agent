@@ -39,13 +39,13 @@ func (s *Server) handleMemoryGet(w http.ResponseWriter, r *http.Request) {
 
 // memoryUpsertReq is the body for POST /api/memory (human-facing, bypasses AI permission).
 type memoryUpsertReq struct {
-	Type     string   `json:"type"`
-	Title    string   `json:"title"`
-	Content  string   `json:"content"`
-	Tags     []string `json:"tags"`
-	Aliases  []string `json:"aliases"`
-	Summary  string   `json:"summary"`
-	Status   string   `json:"status"`
+	Type    string   `json:"type"`
+	Title   string   `json:"title"`
+	Content string   `json:"content"`
+	Tags    []string `json:"tags"`
+	Aliases []string `json:"aliases"`
+	Summary string   `json:"summary"`
+	Status  string   `json:"status"`
 }
 
 // handleMemoryUpsert: POST /api/memory

@@ -4,10 +4,8 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +20,7 @@ type Config struct {
 	Name        string
 	Endpoint    string
 	APIKey      string
+	Protocol    string // openai-chat / openai-response / anthropic
 	Model       string
 	Temperature float64
 	MaxTokens   int
@@ -38,14 +37,23 @@ func NewClient() *Client {
 	return &Client{http: &http.Client{Timeout: 120 * time.Second}}
 }
 
+// NewClientWithHTTP 用指定的 *http.Client 创建客户端。
+// 用于探测端点注入 SSRF 硬化 transport（连接时 IP 校验 + 重定向再校验）。
+func NewClientWithHTTP(h *http.Client) *Client {
+	if h == nil {
+		h = &http.Client{Timeout: 120 * time.Second}
+	}
+	return &Client{http: h}
+}
+
 // ChatRequest 是单次对话请求。
 type ChatRequest struct {
 	Model       string
 	Messages    []domain.Message
-	Tools       []domain.Tool         // 可选：function calling
-	JSONOutput  bool                  // 是否要求 json_object 输出
-	Temperature *float64              // 覆盖配置默认温度
-	MaxTokens   int                   // 覆盖配置默认上限
+	Tools       []domain.Tool // 可选：function calling
+	JSONOutput  bool          // 是否要求 json_object 输出
+	Temperature *float64      // 覆盖配置默认温度
+	MaxTokens   int           // 覆盖配置默认上限
 }
 
 // ChatResponse 是单次对话响应（解析后的核心字段）。
@@ -71,22 +79,18 @@ func (c *Client) Chat(ctx context.Context, cfg Config, req *ChatRequest) (*ChatR
 		return nil, fmt.Errorf("LLM api_key 未配置（分析接口不可用）")
 	}
 
-	body, err := c.buildBody(cfg, req, false)
+	url, headers, body, err := buildRequest(cfg, req, false)
 	if err != nil {
 		return nil, err
-	}
-
-	url := cfg.Endpoint
-	if !endsWith(url, "/chat/completions") {
-		url = trimRightSlash(url) + "/chat/completions"
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("构造请求: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	for k, v := range headers {
+		httpReq.Header.Set(k, v)
+	}
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
@@ -107,65 +111,16 @@ func (c *Client) Chat(ctx context.Context, cfg Config, req *ChatRequest) (*ChatR
 		}
 	}
 
-	return parseResponse(raw)
+	return parseChatResponse(raw, cfg.Protocol)
 }
 
-// buildBody 构造 OpenAI 兼容的请求体。stream=true 时加上流式标记。
-func (c *Client) buildBody(cfg Config, req *ChatRequest, stream bool) ([]byte, error) {
-	m := map[string]any{
-		"model":    firstNonEmpty(req.Model, cfg.Model),
-		"messages": req.Messages,
-	}
-	if stream {
-		m["stream"] = true
-	}
-	temp := cfg.Temperature
-	if req.Temperature != nil {
-		temp = *req.Temperature
-	}
-	if temp > 0 {
-		m["temperature"] = temp
-	}
-	maxTok := req.MaxTokens
-	if maxTok <= 0 {
-		maxTok = cfg.MaxTokens
-	}
-	if maxTok > 0 {
-		m["max_tokens"] = maxTok
-	}
-	if len(req.Tools) > 0 {
-		m["tools"] = req.Tools
-		m["tool_choice"] = "auto"
-	}
-	if req.JSONOutput {
-		m["response_format"] = map[string]string{"type": "json_object"}
-	}
-	return json.Marshal(m)
-}
-
-// ── OpenAI 响应结构 ───────────────────────────────────────────
-
-type openaiResponse struct {
-	Choices []struct {
-		Message      openaiMessage `json:"message"`
-		FinishReason string        `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
-	Error *struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-		Code    any    `json:"code"`
-	} `json:"error,omitempty"`
-}
+// buildBody 已移除：请求构造按协议分派到 protocol.go。
+// openaiMessage / openaiToolCall 保留（protocol.go 引用）。
 
 type openaiMessage struct {
-	Role      string             `json:"role"`
-	Content   string             `json:"content"`
-	ToolCalls []openaiToolCall   `json:"tool_calls,omitempty"`
+	Role      string           `json:"role"`
+	Content   string           `json:"content"`
+	ToolCalls []openaiToolCall `json:"tool_calls,omitempty"`
 }
 
 type openaiToolCall struct {
@@ -175,47 +130,6 @@ type openaiToolCall struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
-}
-
-func parseResponse(raw []byte) (*ChatResponse, error) {
-	var r openaiResponse
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, fmt.Errorf("解析响应 JSON: %w; body: %s", err, truncateStr(string(raw), 300))
-	}
-	if r.Error != nil {
-		return nil, &APIError{
-			StatusCode: 0,
-			Body:       r.Error.Message,
-			Retryable:  false, // 内容/参数类错误默认不重试
-		}
-	}
-	if len(r.Choices) == 0 {
-		return nil, fmt.Errorf("响应无 choices; body: %s", truncateStr(string(raw), 300))
-	}
-	ch := r.Choices[0]
-	msg := domain.Message{
-		Role:    domain.RoleAssistant,
-		Content: ch.Message.Content,
-	}
-	for _, tc := range ch.Message.ToolCalls {
-		msg.ToolCalls = append(msg.ToolCalls, domain.ToolCall{
-			ID:   tc.ID,
-			Type: tc.Type,
-			Function: domain.ToolCallFunction{
-				Name:      tc.Function.Name,
-				Arguments: tc.Function.Arguments,
-			},
-		})
-	}
-	return &ChatResponse{
-		Message:      msg,
-		FinishReason: ch.FinishReason,
-		Usage: Usage{
-			PromptTokens:     r.Usage.PromptTokens,
-			CompletionTokens: r.Usage.CompletionTokens,
-			TotalTokens:      r.Usage.TotalTokens,
-		},
-	}, nil
 }
 
 // ── 错误类型 ──────────────────────────────────────────────────
@@ -313,8 +227,7 @@ type streamChunk struct {
 	} `json:"choices"`
 }
 
-// ChatStream 流式调用 chat completions。逐 chunk 调 cb 推送思考/回答增量，
-// 返回累积后的完整响应（含 tool_calls）。
+// ChatStream 流式调用。逐 chunk 调 cb 推送思考/回答增量，返回累积的完整响应。
 func (c *Client) ChatStream(ctx context.Context, cfg Config, req *ChatRequest, cb DeltaCallbacks) (*ChatResponse, error) {
 	if cfg.Endpoint == "" {
 		return nil, fmt.Errorf("LLM endpoint 未配置")
@@ -323,20 +236,18 @@ func (c *Client) ChatStream(ctx context.Context, cfg Config, req *ChatRequest, c
 		return nil, fmt.Errorf("LLM api_key 未配置（分析接口不可用）")
 	}
 	req.JSONOutput = false // 流式 + json_object 部分网关不兼容，靠 prompt 约束输出
-	body, err := c.buildBody(cfg, req, true)
+
+	url, headers, body, err := buildRequest(cfg, req, true)
 	if err != nil {
 		return nil, err
-	}
-	url := cfg.Endpoint
-	if !endsWith(url, "/chat/completions") {
-		url = trimRightSlash(url) + "/chat/completions"
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("构造请求: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	for k, v := range headers {
+		httpReq.Header.Set(k, v)
+	}
 	httpReq.Header.Set("Accept", "text/event-stream")
 
 	resp, err := c.http.Do(httpReq)
@@ -349,86 +260,12 @@ func (c *Client) ChatStream(ctx context.Context, cfg Config, req *ChatRequest, c
 		return nil, &APIError{StatusCode: resp.StatusCode, Body: string(raw), Retryable: isRetryableStatus(resp.StatusCode)}
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	var contentB strings.Builder
-	tcAcc := map[int]*accToolCall{}
-	var order []int // 保持 tool_calls 顺序
-	var finishReason string
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if payload == "" || payload == "[DONE]" {
-			if payload == "[DONE]" {
-				break
-			}
-			continue
-		}
-		var ch streamChunk
-		if json.Unmarshal([]byte(payload), &ch) != nil {
-			continue
-		}
-		if len(ch.Choices) == 0 {
-			continue
-		}
-		d := ch.Choices[0].Delta
-		if d.ReasoningContent != "" && cb.OnReasoning != nil {
-			cb.OnReasoning(d.ReasoningContent)
-		}
-		if d.Content != "" {
-			contentB.WriteString(d.Content)
-			if cb.OnContent != nil {
-				cb.OnContent(d.Content)
-			}
-		}
-		for _, tc := range d.ToolCalls {
-			acc, ok := tcAcc[tc.Index]
-			if !ok {
-				acc = &accToolCall{}
-				tcAcc[tc.Index] = acc
-				order = append(order, tc.Index)
-			}
-			if tc.ID != "" {
-				acc.id = tc.ID
-			}
-			if tc.Type != "" {
-				acc.typ = tc.Type
-			}
-			if tc.Function.Name != "" {
-				acc.name = tc.Function.Name
-			}
-			if tc.Function.Arguments != "" {
-				acc.args.WriteString(tc.Function.Arguments)
-			}
-		}
-		if ch.Choices[0].FinishReason != "" {
-			finishReason = ch.Choices[0].FinishReason
-		}
+	switch proto(cfg.Protocol) {
+	case ProtocolOpenAIResponse:
+		return c.parseStreamOpenAIResponse(resp.Body, cb)
+	case ProtocolAnthropic:
+		return c.parseStreamAnthropic(resp.Body, cb)
+	default:
+		return c.parseStreamOpenAIChat(resp.Body, cb)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("读取流: %w", err)
-	}
-
-	// 组装最终响应
-	msg := domain.Message{Role: domain.RoleAssistant, Content: contentB.String()}
-	if len(order) > 0 {
-		for _, idx := range order {
-			acc := tcAcc[idx]
-			msg.ToolCalls = append(msg.ToolCalls, domain.ToolCall{
-				ID:   acc.id,
-				Type: acc.typ,
-				Function: domain.ToolCallFunction{Name: acc.name, Arguments: acc.args.String()},
-			})
-		}
-	}
-	if finishReason == "" {
-		if len(msg.ToolCalls) > 0 {
-			finishReason = "tool_calls"
-		} else {
-			finishReason = "stop"
-		}
-	}
-	return &ChatResponse{Message: msg, FinishReason: finishReason}, nil
 }

@@ -1,8 +1,6 @@
 package longterm
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -32,8 +30,8 @@ type WikiStore struct {
 	customers   map[string]*CustomerProfile
 	users       map[string]*UserProfile
 
-	// 关键词倒排索引：keyword(小写) → 命中的 (type, title) 列表
-	index map[string][]indexHit
+	// 关键词倒排索引：token(小写) → 命中的 (type, title) → 字段权重（取最大）
+	index map[string]map[indexHit]float64
 }
 
 type indexHit struct {
@@ -52,7 +50,7 @@ func NewWikiStore(dir string) *WikiStore {
 		industries:  make(map[string]*IndustryScenario),
 		customers:   make(map[string]*CustomerProfile),
 		users:       make(map[string]*UserProfile),
-		index:       make(map[string][]indexHit),
+		index:       make(map[string]map[indexHit]float64),
 	}
 }
 
@@ -74,7 +72,7 @@ func (w *WikiStore) Load() error {
 		return fmt.Errorf("wiki 路径 %s 不是目录", w.dir)
 	}
 
-	var loaded int
+	var loaded, skipped int
 	err = filepath.WalkDir(w.dir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -84,14 +82,15 @@ func (w *WikiStore) Load() error {
 		}
 		raw, rErr := os.ReadFile(path)
 		if rErr != nil {
-			return fmt.Errorf("读取 %s: %w", path, rErr)
+			fmt.Fprintf(os.Stderr, "[wiki] 跳过 %s: %v\n", path, rErr)
+			skipped++
+			return nil
 		}
 		entry, pErr := parsePage(string(raw))
-		if pErr != nil {
-			return fmt.Errorf("解析 %s: %w", path, pErr)
-		}
-		if entry.Title == "" {
-			return fmt.Errorf("解析 %s: 缺少 title", path)
+		if pErr != nil || entry.Title == "" {
+			fmt.Fprintf(os.Stderr, "[wiki] 跳过 %s: %v\n", path, pErr)
+			skipped++
+			return nil // 单篇损坏不中断整体加载
 		}
 		entry.FilePath = path
 		w.addEntry(entry)
@@ -102,7 +101,9 @@ func (w *WikiStore) Load() error {
 		return err
 	}
 	w.rebuildIndex()
-	_ = loaded
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr, "[wiki] 加载完成：%d 篇，跳过 %d 篇损坏文档\n", loaded, skipped)
+	}
 	return nil
 }
 
@@ -118,6 +119,7 @@ type frontmatter struct {
 	// product
 	FullName     string       `yaml:"full_name"`
 	Category     string       `yaml:"category"`
+	Product      string       `yaml:"product"` // 所属产品（子文档用）
 	Capabilities []Capability `yaml:"capabilities"`
 	Scenarios    []string     `yaml:"scenarios"`
 	Limitations  []string     `yaml:"limitations"`
@@ -179,6 +181,12 @@ func parsePage(raw string) (*Entry, error) {
 	}
 	// 把结构化字段挂到 entry 的扩展字段上（供 typedIndex 使用）。
 	e.typed = &f
+	if f.Category != "" {
+		e.Category = f.Category
+	}
+	if f.Product != "" {
+		e.Product = f.Product
+	}
 	return e, nil
 }
 
@@ -257,43 +265,64 @@ func (w *WikiStore) buildTyped(e *Entry) {
 }
 
 // rebuildIndex 重建关键词倒排索引。调用方需持写锁。
+// 关键词与查询走同一个 tokenize（中文 bigram）——否则"扫描防护"（索引）对
+// "被扫描"（查询）永远对不上。同 token 命中多字段取最大权重。
 func (w *WikiStore) rebuildIndex() {
-	w.index = make(map[string][]indexHit)
+	w.index = make(map[string]map[indexHit]float64)
 	for mt, bucket := range w.entries {
 		for title, e := range bucket {
 			if e.Status == StatusArchived {
 				continue
 			}
-			hits := w.keywordsFor(e)
-			for _, kw := range hits {
-				kw = strings.ToLower(kw)
-				w.index[kw] = append(w.index[kw], indexHit{Type: mt, Title: title})
+			for _, wk := range w.weightedKeywords(e) {
+				for _, tok := range tokenize(wk.kw) {
+					h := indexHit{Type: mt, Title: title}
+					if w.index[tok] == nil {
+						w.index[tok] = make(map[indexHit]float64)
+					}
+					if old, ok := w.index[tok][h]; !ok || wk.weight > old {
+						w.index[tok][h] = wk.weight
+					}
+				}
 			}
 		}
 	}
 }
 
-// keywordsFor 汇总一条 entry 的全部可检索关键词。
-func (w *WikiStore) keywordsFor(e *Entry) []string {
-	out := []string{e.Title}
-	out = append(out, e.Aliases...)
-	out = append(out, e.Tags...)
-	if e.typed != nil {
-		f := e.typed
-		out = append(out, f.Keywords...)
-		out = append(out, f.RelatedProducts...)
-		out = append(out, f.Scenarios...)
-		out = append(out, f.TypicalSigns...)
-		for _, c := range f.Capabilities {
-			out = append(out, c.Name)
-			out = append(out, c.Keywords...)
-		}
-	}
-	return out
+type weightedKW struct {
+	kw     string
+	weight float64
 }
 
-// newID 生成简短确定性 id。
-func newID(prefix string) string {
-	h := sha1.Sum([]byte(fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())))
-	return prefix + "_" + hex.EncodeToString(h[:4])
+// weightedKeywords 汇总一条 entry 的可检索关键词（带字段权重）。
+// 权重语义：标题 > 别名 > 标签/关键词 > 能力/场景 > 摘要（泛召回兜底）。
+func (w *WikiStore) weightedKeywords(e *Entry) []weightedKW {
+	add := func(out []weightedKW, kws []string, wt float64) []weightedKW {
+		for _, k := range kws {
+			if k == "" {
+				continue
+			}
+			out = append(out, weightedKW{kw: k, weight: wt})
+		}
+		return out
+	}
+	out := []weightedKW{{kw: e.Title, weight: 3}}
+	out = add(out, e.Aliases, 2.5)
+	out = add(out, e.Tags, 2)
+	if e.typed != nil {
+		f := e.typed
+		out = add(out, f.Keywords, 2)
+		out = add(out, f.RelatedProducts, 1.5)
+		out = add(out, f.Scenarios, 1.5)
+		out = add(out, f.TypicalSigns, 1.5)
+		for _, c := range f.Capabilities {
+			out = add(out, []string{c.Name}, 1.5)
+			out = add(out, c.Keywords, 1.5)
+		}
+	}
+	// 摘要 bigram 兜底召回（低权重，只在标题/关键词都对不上时贡献排序）
+	if e.Summary != "" {
+		out = add(out, []string{e.Summary}, 0.5)
+	}
+	return out
 }

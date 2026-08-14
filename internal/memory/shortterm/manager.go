@@ -19,10 +19,10 @@ import (
 // Manager 管理单个会话的 checkpoint 链 + notes 便签。
 // 一个会话对应一个 Manager 实例（由上层 SessionManager 创建）。
 type Manager struct {
-	mu           sync.Mutex
-	chain        []*domain.Checkpoint // 有序链：chain[len-1] 为 current
-	notes        []string            // 临时便签
-	rawDocument  string             // 当前原始文档
+	mu          sync.Mutex
+	chain       []*domain.Checkpoint // 有序链：chain[len-1] 为 current
+	notes       []string             // 临时便签
+	rawDocument string               // 当前原始文档
 }
 
 // NewManager 创建一个空的短期记忆管理器。
@@ -182,6 +182,21 @@ func (m *Manager) BuildContext(op domain.CheckpointOp) *domain.SessionContext {
 	if len(m.chain) >= 2 {
 		ctx.Previous = m.chain[len(m.chain)-2]
 	}
+	// 最近带 Analysis 的 checkpoint（回溯全链）：纯聊天 followup 不携带分析，
+	// 但分析上下文必须跨任意多轮聊天保持可注入（ADR-015：记忆系统成套）。
+	for i := len(m.chain) - 1; i >= 0; i-- {
+		if m.chain[i].Analysis != nil {
+			ctx.LastAnalysis = m.chain[i]
+			break
+		}
+	}
+	// 已回答的追问（倒序聚合全链，封顶 20 条）：让 Agent 知道哪些 missing_info
+	// 已有答案，避免重复追问（追问闭环）。
+	for i := len(m.chain) - 1; i >= 0 && len(ctx.Answered) < 20; i-- {
+		if len(m.chain[i].Answered) > 0 {
+			ctx.Answered = append(ctx.Answered, m.chain[i].Answered...)
+		}
+	}
 	// 文档摘要：优先用最新文档的开头
 	if m.rawDocument != "" {
 		ctx.DocumentSummary = summarizeDoc(m.rawDocument)
@@ -260,6 +275,31 @@ func (sm *SessionManager) Get(sessionID string) *Manager {
 		sm.sessions[sessionID] = m
 	}
 	return m
+}
+
+// Restore 从持久化的 checkpoint 链重建某会话的短期记忆（断点续传）。
+func (sm *SessionManager) Restore(sessionID string, chain []*domain.Checkpoint) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	m := sm.sessions[sessionID]
+	if m == nil {
+		m = NewManager()
+		sm.sessions[sessionID] = m
+	}
+	m.Restore(chain)
+}
+
+// Restore 重建 checkpoint 链（用于断点续传）。
+func (m *Manager) Restore(chain []*domain.Checkpoint) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.chain = append([]*domain.Checkpoint(nil), chain...)
+	if len(chain) > 0 {
+		last := chain[len(chain)-1]
+		if last.Document != "" {
+			m.rawDocument = last.Document
+		}
+	}
 }
 
 // Delete 丢弃某会话的短期记忆。

@@ -10,18 +10,25 @@ export default function MemoryEditor() {
   const [error, setError] = useState("");
 
   async function onSubmit(v: MemoryValues) {
-    setSubmitting(true); setError("");
+    setSubmitting(true);
+    setError("");
     try {
       const entry = fromValues(v);
       await memoryUpsert(entry);
       navigate(`/memory/${entry.type}/${encodeURIComponent(entry.title)}`, { replace: true });
-    } catch (e: any) { setError(e.message); }
-    finally { setSubmitting(false); }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
     <div className="page">
-      <div className="page-head"><h2>新建记忆</h2><span className="crumb">NEW ENTRY</span></div>
+      <div className="page-head">
+        <h2>新建记忆</h2>
+        <span className="crumb">NEW ENTRY</span>
+      </div>
       {error && <div className="error">! {error}</div>}
       <MemoryForm
         initial={{ type: "customer", title: "", summary: "", content: "", tags: "", aliases: "" }}

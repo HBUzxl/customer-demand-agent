@@ -1,0 +1,39 @@
+# golangci-lint v2 配置
+# 文档：https://golangci-lint.run/usage/configuration/
+#
+# 基线已清零（2026-08-13）：作为 CI 阻塞门禁。
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.26"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+
+  exclusions:
+    presets:
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - "vendor"
+      - "_test\\.go"
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    paths:
+      - "vendor"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

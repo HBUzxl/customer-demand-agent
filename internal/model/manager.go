@@ -51,9 +51,6 @@ func (m *Manager) Chat(ctx context.Context, task TaskType, req *llm.ChatRequest)
 		}
 		resp, err := m.callWithRetry(ctx, cfg, req)
 		if err == nil {
-			if i > 0 {
-				// 降级成功，附加标记（不改变响应结构，日志可见）
-			}
 			return resp, nil
 		}
 		lastErr = err
@@ -113,7 +110,7 @@ func (m *Manager) backoff(attempt int) time.Duration {
 func (m *Manager) ToolsForExport(tools []domain.Tool) []domain.Tool { return tools }
 
 // ChatStream 流式调用：按任务路由，失败时仅在「尚未推送任何 byte」时才换模型重试
-//（一旦开始推送内容就无法撤销，不能回退）。
+// （一旦开始推送内容就无法撤销，不能回退）。
 func (m *Manager) ChatStream(ctx context.Context, task TaskType, req *llm.ChatRequest, cb llm.DeltaCallbacks) (*llm.ChatResponse, error) {
 	primary := m.router.Route(task)
 	chain := m.router.Fallback.Chain
@@ -130,8 +127,18 @@ func (m *Manager) ChatStream(ctx context.Context, task TaskType, req *llm.ChatRe
 		}
 		emitted := false
 		wrapped := llm.DeltaCallbacks{
-			OnReasoning: func(s string) { emitted = true; if cb.OnReasoning != nil { cb.OnReasoning(s) } },
-			OnContent:   func(s string) { emitted = true; if cb.OnContent != nil { cb.OnContent(s) } },
+			OnReasoning: func(s string) {
+				emitted = true
+				if cb.OnReasoning != nil {
+					cb.OnReasoning(s)
+				}
+			},
+			OnContent: func(s string) {
+				emitted = true
+				if cb.OnContent != nil {
+					cb.OnContent(s)
+				}
+			},
 		}
 		cctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 		resp, err := m.client.ChatStream(cctx, cfg, req, wrapped)

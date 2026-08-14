@@ -19,6 +19,7 @@ import (
 	"customer-demand-agent/internal/agent"
 	httpapi "customer-demand-agent/internal/channel/http"
 	"customer-demand-agent/internal/config"
+	"customer-demand-agent/internal/domain"
 	"customer-demand-agent/internal/history"
 	"customer-demand-agent/internal/llm"
 	"customer-demand-agent/internal/memory/assembler"
@@ -61,10 +62,10 @@ func main() {
 	toolRegistry := tools.NewRegistry(wikiStore)
 
 	// ── Prompt 拼装器 ──────────────────────────────────────
-	asm := assembler.New(wikiStore)
+	asm := assembler.New(wikiStore, cfg.DefaultUser)
 
 	// ── 模型管理：从配置文件加载注册表 + 路由 ───────────────
-	registry := model.NewRegistry()
+	registry := model.NewRegistry(time.Duration(cfg.LLMTimeoutSec) * time.Second)
 	for _, m := range cfg.Models {
 		if err := registry.Register(m); err != nil {
 			log.Printf("[warn] 注册模型 %s 失败: %v", m.Name, err)
@@ -76,6 +77,18 @@ func main() {
 
 	// ── Agent 核心：自主循环 ────────────────────────────────
 	ag := agent.New(modelMgr, toolRegistry, asm, sessions)
+	// 断点续传：checkpoint 持久化到 SQLite，重启后恢复
+	ag.SetCheckpointSink(func(tenantID, sessionID string, cp *domain.Checkpoint) {
+		_ = hist.AppendCheckpoint(tenantID, sessionID, cp)
+	})
+	ag.SetCheckpointSource(hist.ListCheckpoints)
+	// 跨会话客户上下文：从会话记录解析关联客户（非空时注入客户画像）
+	ag.SetCustomerResolver(func(tenantID, sessionID string) string {
+		if det, err := hist.GetSession(tenantID, sessionID); err == nil {
+			return det.Session.Customer
+		}
+		return ""
+	})
 
 	// ── 审核系统 ────────────────────────────────────────────
 	reviewSvc := review.New(wikiStore)

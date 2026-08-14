@@ -10,9 +10,11 @@ package history
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, seq);
 CREATE TABLE IF NOT EXISTS tool_calls (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id   TEXT NOT NULL,
+    message_id   INTEGER,           -- 归属的 assistant 消息 id（回放归属边界）
     tool_name    TEXT NOT NULL,
     params_json  TEXT,
     result_json  TEXT,
@@ -95,6 +98,14 @@ func Open(dbPath string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("建表: %w", err)
 	}
+	// 轻量迁移：老库的 tool_calls 没有 message_id 列（回放归属边界，2026-08-14）。
+	if _, err := db.Exec(`ALTER TABLE tool_calls ADD COLUMN message_id INTEGER`); err != nil {
+		// column already exists → 忽略；其它错误才致命
+		if !strings.Contains(err.Error(), "duplicate column") {
+			_ = db.Close()
+			return nil, fmt.Errorf("迁移 tool_calls.message_id: %w", err)
+		}
+	}
 	return &Store{db: db}, nil
 }
 
@@ -103,18 +114,33 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// EnsureSession 创建会话记录（已存在则更新 updated_at / title）。
+// EnsureSession 创建会话记录；若已存在则校验 tenant 归属后更新 updated_at/title。
+// 跨租户：若 session 已存在但属于别的 tenant，拒绝（防跨租户占用/续传/读 checkpoint）。
 func (s *Store) EnsureSession(tenantID, sessionID, title, customer string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
-	_, err := s.db.Exec(`INSERT INTO sessions(session_id, tenant_id, title, customer, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?)
-		ON CONFLICT(session_id) DO UPDATE SET updated_at=excluded.updated_at,
-			title=CASE WHEN excluded.title != '' THEN excluded.title ELSE title END,
-			customer=CASE WHEN excluded.customer != '' THEN excluded.customer ELSE customer END`,
-		sessionID, tenantID, title, customer, now, now)
-	return err
+	var owner string
+	err := s.db.QueryRow(`SELECT tenant_id FROM sessions WHERE session_id=?`, sessionID).Scan(&owner)
+	switch {
+	case err == nil:
+		// 已存在：校验归属
+		if owner != tenantID {
+			return fmt.Errorf("会话 %s 不属于租户 %s", sessionID, tenantID)
+		}
+		_, err = s.db.Exec(`UPDATE sessions SET updated_at=?,
+			title=CASE WHEN ?!='' THEN ? ELSE title END,
+			customer=CASE WHEN ?!='' THEN ? ELSE customer END WHERE session_id=?`,
+			now, title, title, customer, customer, sessionID)
+		return err
+	case errors.Is(err, sql.ErrNoRows):
+		// 不存在：插入
+		_, err = s.db.Exec(`INSERT INTO sessions(session_id, tenant_id, title, customer, created_at, updated_at)
+			VALUES(?,?,?,?,?,?)`, sessionID, tenantID, title, customer, now, now)
+		return err
+	default:
+		return err
+	}
 }
 
 // AppendMessage 追加一条消息，返回自增 id。
@@ -134,30 +160,34 @@ func (s *Store) AppendMessage(sessionID, role, content, toolCallID string) (int6
 	return res.LastInsertId()
 }
 
-// AppendToolCall 追加一次工具调用记录。
-func (s *Store) AppendToolCall(sessionID, toolName, params, result string) (int64, error) {
+// AppendToolCall 追加一次工具调用记录。messageID 是归属的 assistant 消息 id
+// （回放归属边界；0 表示未关联——向后兼容）。
+func (s *Store) AppendToolCall(sessionID string, messageID int64, toolName, params, result string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seq, err := s.nextSeq("tool_calls", sessionID)
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.Exec(`INSERT INTO tool_calls(session_id, tool_name, params_json, result_json, seq, created_at)
-		VALUES(?, ?, ?, ?, ?, ?)`,
-		sessionID, toolName, params, result, seq, time.Now().UTC())
+	res, err := s.db.Exec(`INSERT INTO tool_calls(session_id, message_id, tool_name, params_json, result_json, seq, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, messageID, toolName, params, result, seq, time.Now().UTC())
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-// AppendCheckpoint 追加一个 checkpoint 快照。
-func (s *Store) AppendCheckpoint(sessionID string, cp *domain.Checkpoint) error {
+// AppendCheckpoint 追加一个 checkpoint 快照（校验 tenant 归属）。
+func (s *Store) AppendCheckpoint(tenantID, sessionID string, cp *domain.Checkpoint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	seq, err := s.nextSeq("checkpoints", sessionID)
-	if err != nil {
+	var cnt int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE session_id=? AND tenant_id=?`, sessionID, tenantID).Scan(&cnt); err != nil {
 		return err
+	}
+	if cnt == 0 {
+		return fmt.Errorf("会话 %s 不属于租户 %s，拒绝写入 checkpoint", sessionID, tenantID)
 	}
 	payload, err := encodeJSON(cp)
 	if err != nil {
@@ -166,8 +196,34 @@ func (s *Store) AppendCheckpoint(sessionID string, cp *domain.Checkpoint) error 
 	_, err = s.db.Exec(`INSERT INTO checkpoints(session_id, cp_id, cp_type, payload_json, created_at)
 		VALUES(?, ?, ?, ?, ?)`,
 		sessionID, cp.ID, cp.Type, payload, time.Now().UTC())
-	_ = seq
 	return err
+}
+
+// ListCheckpoints 读回某会话的 checkpoint 链（按创建顺序，用于断点续传）。
+// 跨租户：JOIN sessions 校验归属，非本租户会话返回空（读不到对方 checkpoint）。
+func (s *Store) ListCheckpoints(tenantID, sessionID string) ([]*domain.Checkpoint, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT c.payload_json FROM checkpoints c
+		JOIN sessions s ON s.session_id = c.session_id
+		WHERE c.session_id=? AND s.tenant_id=? ORDER BY c.id ASC`, sessionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*domain.Checkpoint
+	for rows.Next() {
+		var payload string
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		var cp domain.Checkpoint
+		if err := json.Unmarshal([]byte(payload), &cp); err != nil {
+			continue // 跳过损坏的 checkpoint
+		}
+		out = append(out, &cp)
+	}
+	return out, rows.Err()
 }
 
 // SessionListItem 是会话列表的一项。
@@ -218,6 +274,7 @@ type MessageRecord struct {
 // ToolCallRecord 是一条工具调用历史。
 type ToolCallRecord struct {
 	ID        int64     `json:"id"`
+	MessageID int64     `json:"message_id"` // 归属的 assistant 消息 id（回放归属边界）
 	ToolName  string    `json:"tool_name"`
 	Params    string    `json:"params"`
 	Result    string    `json:"result"`
@@ -227,9 +284,9 @@ type ToolCallRecord struct {
 
 // SessionDetail 是会话详情（含完整轨迹，供回放）。
 type SessionDetail struct {
-	Session    SessionListItem   `json:"session"`
-	Messages   []MessageRecord   `json:"messages"`
-	ToolCalls  []ToolCallRecord  `json:"tool_calls"`
+	Session   SessionListItem  `json:"session"`
+	Messages  []MessageRecord  `json:"messages"`
+	ToolCalls []ToolCallRecord `json:"tool_calls"`
 }
 
 // GetSession 返回会话详情（校验 tenant 归属）。
@@ -261,7 +318,7 @@ func (s *Store) GetSession(tenantID, sessionID string) (*SessionDetail, error) {
 		det.Messages = append(det.Messages, m)
 	}
 
-	rows2, err := s.db.Query(`SELECT id, tool_name, params_json, result_json, seq, created_at FROM tool_calls
+	rows2, err := s.db.Query(`SELECT id, COALESCE(message_id, 0), tool_name, params_json, result_json, seq, created_at FROM tool_calls
 		WHERE session_id=? ORDER BY seq`, sessionID)
 	if err != nil {
 		return nil, err
@@ -269,7 +326,7 @@ func (s *Store) GetSession(tenantID, sessionID string) (*SessionDetail, error) {
 	defer rows2.Close()
 	for rows2.Next() {
 		var t ToolCallRecord
-		if err := rows2.Scan(&t.ID, &t.ToolName, &t.Params, &t.Result, &t.Seq, &t.CreatedAt); err != nil {
+		if err := rows2.Scan(&t.ID, &t.MessageID, &t.ToolName, &t.Params, &t.Result, &t.Seq, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		det.ToolCalls = append(det.ToolCalls, t)

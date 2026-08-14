@@ -14,12 +14,18 @@ const Settings = lazy(() => import("./pages/Settings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const Fallback = () => (
-  <div className="page"><div className="loading">载入中…</div></div>
+  <div className="page">
+    <div className="loading">载入中…</div>
+  </div>
 );
 
 // 用 Suspense 包裹懒加载页面
-const withSuspense = (Comp: React.LazyExoticComponent<React.ComponentType<any>>) => (
-  <Suspense fallback={<Fallback />}><Comp /></Suspense>
+const withSuspense = (
+  Comp: React.LazyExoticComponent<React.ComponentType<Record<string, never>>>,
+) => (
+  <Suspense fallback={<Fallback />}>
+    <Comp />
+  </Suspense>
 );
 
 /**

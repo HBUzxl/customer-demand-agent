@@ -228,6 +228,29 @@ func (w *WikiStore) UpsertEntry(e *Entry) error {
 	if e.FilePath == "" {
 		e.FilePath = w.pathFor(mt, e.Title)
 	}
+	// 程序化写入（memory_ensure 等）不带 typed——从 Content frontmatter 补解析，
+	// 否则类型化索引（客户画像/关键词/能力）全部漏建（修复：UpsertEntry 路径
+	// typed 恒为 nil，AI 写的记忆检索质量系统性劣化）。
+	if e.typed == nil && e.Content != "" {
+		if fm, _, ok := splitFrontmatter(e.Content); ok {
+			var f frontmatter
+			if err := yaml.Unmarshal([]byte(fm), &f); err == nil {
+				if f.Title == "" {
+					f.Title = e.Title
+				}
+				e.typed = &f
+			}
+		}
+	}
+	// Content 无 frontmatter（memory_ensure 的常规形态）：从 Entry 字段构造
+	// 最小 typed——至少让客户画像/标题别名进类型化索引。
+	if e.typed == nil {
+		e.typed = &frontmatter{
+			Type: string(mt), Title: e.Title, Status: string(e.Status),
+			Summary: e.Summary, Aliases: e.Aliases, Tags: e.Tags,
+			Category: e.Category, Product: e.Product,
+		}
+	}
 	if err := w.writePage(e); err != nil {
 		return fmt.Errorf("写回磁盘: %w", err)
 	}
@@ -351,17 +374,18 @@ type scoredHit struct {
 }
 
 // genericSearch 关键词命中检索。mt 为零值时跨全部类型。
+// 得分 = Σ 每个查询 token 命中的字段权重（标题 3 > 别名 2.5 > 标签 2 > 能力 1.5 > 摘要 0.5）。
 func (w *WikiStore) genericSearch(query string, mt domain.MemoryType, limit int) []scoredHit {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	terms := tokenize(query)
 	scores := map[indexHit]float64{}
 	for _, term := range terms {
-		for _, hit := range w.index[term] {
+		for hit, weight := range w.index[term] {
 			if mt != "" && hit.Type != mt {
 				continue
 			}
-			scores[hit]++
+			scores[hit] += weight
 		}
 	}
 	// 无 query 或无命中：返回该类型全部（用于 AllKnowledge 类场景）
@@ -400,16 +424,66 @@ func (w *WikiStore) allHits(mt domain.MemoryType, limit int) []scoredHit {
 	return out
 }
 
-// tokenize 将 query 切成小写关键词（简易：按非字母数字汉字切分）。
+// tokenize 将 query 切成小写检索 token。
+// 中文按 bigram 滑窗切分（"网站被扫描"→网站/站被/被扫/扫描），否则整段
+// 中文永远只匹配到一模一样的关键词；ASCII 词保持整词。
 func tokenize(query string) []string {
 	if query == "" {
 		return nil
 	}
-	fields := strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
-		return r == ' ' || r == ',' || r == '，' || r == '/' || r == '|' || r == '\t'
-	})
-	// 进一步把长串按常见分隔再切，保留中文整段
-	return fields
+	var out []string
+	seen := map[string]bool{}
+	emit := func(t string) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	var cjkRun []rune
+	flushCJK := func() {
+		if len(cjkRun) == 0 {
+			return
+		}
+		if len(cjkRun) <= 2 {
+			emit(strings.ToLower(string(cjkRun)))
+		} else {
+			for i := 0; i+2 <= len(cjkRun); i++ {
+				emit(strings.ToLower(string(cjkRun[i : i+2])))
+			}
+		}
+		cjkRun = nil
+	}
+	var asciiRun []rune
+	flushASCII := func() {
+		if len(asciiRun) > 0 {
+			emit(strings.ToLower(string(asciiRun)))
+			asciiRun = nil
+		}
+	}
+	for _, r := range query {
+		switch {
+		case isCJK(r):
+			flushASCII()
+			cjkRun = append(cjkRun, r)
+		case isWordASCII(r):
+			asciiRun = append(asciiRun, r)
+		default:
+			flushCJK()
+			flushASCII()
+		}
+	}
+	flushCJK()
+	flushASCII()
+	return out
+}
+
+func isCJK(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3400 && r <= 0x4DBF) ||
+		(r >= 0xF900 && r <= 0xFAFF) || (r >= 0x3000 && r <= 0x303F)
+}
+
+func isWordASCII(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_'
 }
 
 // pathFor 计算某条目的磁盘路径。

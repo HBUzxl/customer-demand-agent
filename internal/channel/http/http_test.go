@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"customer-demand-agent/internal/agent"
 	httpapi "customer-demand-agent/internal/channel/http"
@@ -44,7 +45,7 @@ func setupServer(t *testing.T) (*httptest.Server, *longterm.WikiStore) {
 
 	sessions := shortterm.NewSessionManager()
 	toolReg := tools.NewRegistry(store)
-	asm := assembler.New(store)
+	asm := assembler.New(store, "")
 
 	// 用临时 config.json 加载（测试真实持久化路径）
 	configFile := filepath.Join(t.TempDir(), "config.json")
@@ -53,7 +54,7 @@ func setupServer(t *testing.T) (*httptest.Server, *longterm.WikiStore) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry := model.NewRegistry()
+	registry := model.NewRegistry(10 * time.Second)
 	for _, m := range cfgStore.Get().Models {
 		_ = registry.Register(m)
 	}

@@ -23,12 +23,12 @@ import (
 type ToolName string
 
 const (
-	Search ToolName = "memory_search"
-	Ensure ToolName = "memory_ensure"
+	Search  ToolName = "memory_search"
+	Ensure  ToolName = "memory_ensure"
 	Observe ToolName = "memory_observe"
-	Delete ToolName = "memory_delete"
-	Recall ToolName = "memory_recall"
-	List   ToolName = "memory_list"
+	Delete  ToolName = "memory_delete"
+	Recall  ToolName = "memory_recall"
+	List    ToolName = "memory_list"
 )
 
 // Registry 持有全部记忆工具，提供 LLM 工具定义与执行分发。

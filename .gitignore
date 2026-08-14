@@ -4,6 +4,7 @@
 # Binaries
 /bin/
 /agent
+/cda-agent
 *.exe
 
 # Local data
@@ -20,6 +21,7 @@ config.local.json
 # Frontend
 /frontend/node_modules/
 /frontend/dist/
+/frontend/tsconfig.tsbuildinfo
 
 # OS
 .DS_Store
@@ -27,3 +29,7 @@ config.local.json
 # Test artifacts
 /coverage.out
 /test-results/
+
+# Python
+__pycache__/
+*.pyc

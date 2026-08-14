@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { analyzeStream, chatStream, sessionGet } from "../api/client";
+import { messageStream, sessionGet } from "../api/client";
 import type { AnalysisResult, AgentEvent } from "../types";
+import MarkdownView from "../components/MarkdownView";
+import ResultCard from "../components/ResultCard";
+import ToolTimeline from "../components/ToolTrace";
+import type { ToolTrace } from "../components/ToolTrace";
 
-interface ToolTrace { tool: string; params: string; result?: string; }
 interface ChatMsg {
   id: string;
   role: "user" | "assistant";
-  kind?: "analyze" | "chat";
   text: string;
   reasoning?: string;
   tools?: ToolTrace[];
@@ -17,14 +19,50 @@ interface ChatMsg {
 
 const uid = () => Math.random().toString(36).slice(2);
 
-function reconstruct(messages: { role: string; content: string }[], toolCalls: { tool_name: string; params: string; result: string }[]): ChatMsg[] {
+// ANALYSIS_TOOL 与后端 agent.ToolAnalysisSubmit 对齐（ADR-013）。
+const ANALYSIS_TOOL = "analysis_submit";
+
+// parseSubmitParams 从 analysis_submit 的参数还原结构化分析（回放用）。
+function parseSubmitParams(params: string): AnalysisResult | undefined {
+  try {
+    const r = JSON.parse(params);
+    if (r && r.demand_analysis) return r as AnalysisResult;
+  } catch {
+    /* 非 JSON 参数 */
+  }
+  return undefined;
+}
+
+// reconstruct 从会话历史重建消息流（新系统：assistant content 为自然语言，
+// 工具调用按 message_id 精确归属到对应 assistant 消息（服务端持久化时写入），
+// analysis 从该轮的 analysis_submit params 还原；不做老数据兼容——用户裁决）。
+function reconstruct(
+  messages: { id: number; role: string; content: string }[],
+  toolCalls: { message_id: number; tool_name: string; params: string; result: string }[],
+): ChatMsg[] {
+  const byMessage = new Map<number, ToolTrace[]>();
+  for (const c of toolCalls) {
+    const list = byMessage.get(c.message_id) || [];
+    list.push({ tool: c.tool_name, params: c.params, result: c.result });
+    byMessage.set(c.message_id, list);
+  }
   const out: ChatMsg[] = [];
   for (const m of messages) {
-    if (m.role === "user") out.push({ id: uid(), role: "user", text: m.content });
-    else if (m.role === "assistant") {
-      let analysis: AnalysisResult | undefined;
-      try { const r = JSON.parse(m.content); if (r && r.demand_analysis) analysis = r; } catch { /* 散文 */ }
-      out.push({ id: uid(), role: "assistant", kind: analysis ? "analyze" : "chat", text: analysis ? "" : m.content, analysis, tools: analysis ? toolCalls.map((t) => ({ tool: t.tool_name, params: t.params, result: t.result })) : undefined });
+    if (m.role === "user") {
+      out.push({ id: `m${m.id}`, role: "user", text: m.content });
+    } else if (m.role === "assistant") {
+      const msg: ChatMsg = { id: `m${m.id}`, role: "assistant", text: m.content };
+      const mine = byMessage.get(m.id);
+      if (mine && mine.length > 0) {
+        msg.tools = mine;
+        for (let j = mine.length - 1; j >= 0; j--) {
+          if (mine[j].tool === ANALYSIS_TOOL) {
+            msg.analysis = parseSubmitParams(mine[j].params);
+            break;
+          }
+        }
+      }
+      out.push(msg);
     }
   }
   return out;
@@ -47,58 +85,169 @@ export default function Conversation() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!routeSid) { setMessages([]); setSessionId(""); return; }
+    if (!routeSid) {
+      setMessages([]);
+      setSessionId("");
+      return;
+    }
+    // 流式进行中不做历史重载（审计修复：新会话首个 session 事件触发导航，
+    // 此时历史只有 user 消息，重载会覆盖正在流式输出的 assistant 消息）。
+    if (loading) return;
     setSessionId(routeSid);
-    sessionGet(routeSid).then((d) => setMessages(reconstruct(d.messages || [], d.tool_calls || []))).catch((e) => setError(e.message));
+    sessionGet(routeSid)
+      .then((d) => setMessages(reconstruct(d.messages || [], d.tool_calls || [])))
+      .catch((e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSid]);
 
-  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
 
   function patchLast(patch: (m: ChatMsg) => void) {
-    setMessages((ms) => { if (!ms.length) return ms; const copy = [...ms]; copy[copy.length - 1] = { ...copy[copy.length - 1] }; patch(copy[copy.length - 1]); return copy; });
+    setMessages((ms) => {
+      if (!ms.length) return ms;
+      const copy = [...ms];
+      copy[copy.length - 1] = { ...copy[copy.length - 1] };
+      patch(copy[copy.length - 1]);
+      return copy;
+    });
   }
 
-  function handleEvent(e: AgentEvent, kind: "analyze" | "chat") {
+  function handleEvent(e: AgentEvent) {
     switch (e.type) {
       case "session":
         setSessionId(e.content || "");
         if (!routeSid && e.content) navigate(`/analyze/${e.content}`, { replace: true });
         break;
-      case "reasoning": patchLast((m) => { m.reasoning = (m.reasoning || "") + (e.text || ""); }); break;
-      case "tool_call": patchLast((m) => { m.tools = [...(m.tools || []), { tool: e.tool || "", params: e.params || "" }]; }); break;
-      case "tool_result": patchLast((m) => { if (m.tools && m.tools.length) { const t = [...m.tools]; t[t.length - 1] = { ...t[t.length - 1], result: e.result || "" }; m.tools = t; } }); break;
-      case "content": if (kind === "chat") patchLast((m) => { m.text = (m.text || "") + (e.text || ""); }); break;
-      case "done": patchLast((m) => { if (e.analysis) { m.analysis = e.analysis; m.text = ""; } else if (e.content) m.text = e.content; m.streaming = false; }); break;
-      case "error": setError(e.error || "未知错误"); patchLast((m) => { m.streaming = false; }); break;
+      case "reasoning":
+        patchLast((m) => {
+          m.reasoning = (m.reasoning || "") + (e.text || "");
+        });
+        break;
+      case "tool_call":
+        patchLast((m) => {
+          m.tools = [...(m.tools || []), { tool: e.tool || "", params: e.params || "" }];
+        });
+        break;
+      case "tool_result":
+        patchLast((m) => {
+          if (m.tools && m.tools.length) {
+            const t = [...m.tools];
+            t[t.length - 1] = { ...t[t.length - 1], result: e.result || "" };
+            m.tools = t;
+            // ResultCard 即时渲染（用户裁决：过程透明优先）：
+            // analysis_submit 的结果到达时立刻解析其 params 展示卡片。
+            if (e.tool === ANALYSIS_TOOL) {
+              const sub = t[t.length - 1];
+              const analysis = parseSubmitParams(sub.params);
+              if (analysis) m.analysis = analysis;
+            }
+          }
+        });
+        break;
+      case "content":
+        // content 始终累积（自主模式下 Agent 的自然语言说明全程可见）。
+        patchLast((m) => {
+          m.text = (m.text || "") + (e.text || "");
+        });
+        break;
+      case "done":
+        patchLast((m) => {
+          // done.content 是最终答案（服务端已累积全程 content）。
+          if (e.content) m.text = e.content;
+          // analysis 以提交过的为准（tool_result 已即时渲染，此处最终定稿）。
+          if (e.analysis) m.analysis = e.analysis;
+          m.streaming = false;
+        });
+        break;
+      case "error":
+        setError(e.error || "未知错误");
+        patchLast((m) => {
+          m.streaming = false;
+        });
+        break;
     }
   }
 
-  async function send(text: string, kind: "analyze" | "chat") {
+  async function send(text: string) {
     const content = text.trim();
     if (!content || loading) return;
     setError("");
-    setMessages((m) => [...m, { id: uid(), role: "user", text: content }, { id: uid(), role: "assistant", kind, text: "", streaming: true }]);
+    setMessages((m) => [
+      ...m,
+      { id: uid(), role: "user", text: content },
+      { id: uid(), role: "assistant", text: "", streaming: true },
+    ]);
     setInput("");
     setLoading(true);
     try {
-      if (kind === "analyze") await analyzeStream(content, sessionId || undefined, (e) => handleEvent(e, "analyze"));
-      else await chatStream(sessionId, content, (e) => handleEvent(e, "chat"));
-    } catch (err: any) { setError(err.message); patchLast((m) => { m.streaming = false; }); }
-    finally { setLoading(false); }
+      await messageStream(content, sessionId || undefined, handleEvent);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      patchLast((m) => {
+        m.streaming = false;
+      });
+    } finally {
+      setLoading(false);
+    }
   }
 
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input, messages.length ? "chat" : "analyze"); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send(input);
+    }
   };
-  const grow = (e: React.FormEvent<HTMLTextAreaElement>) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px"; };
+  const grow = (e: React.FormEvent<HTMLTextAreaElement>) => {
+    const t = e.currentTarget;
+    t.style.height = "auto";
+    t.style.height = Math.min(t.scrollHeight, 160) + "px";
+  };
 
   const composer = (
     <div className="composer">
-      <textarea rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKey} onInput={grow}
-        placeholder={messages.length ? "追问，回车发送（Shift+回车换行）…" : "粘贴客户沟通原文，回车发送…"} style={{ height: "auto" }} />
-      <button className="btn primary send" onClick={() => send(input, messages.length ? "chat" : "analyze")} disabled={loading || !input.trim()} aria-label="发送">
-        {loading ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" opacity=".25" /><path d="M12 3a9 9 0 0 1 9 9" strokeLinecap="round" /></svg>
-          : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>}
+      <textarea
+        rows={1}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={onKey}
+        onInput={grow}
+        placeholder="输入消息，回车发送（Shift+回车换行）…"
+        style={{ height: "auto" }}
+      />
+      <button
+        className="btn primary send"
+        onClick={() => send(input)}
+        disabled={loading || !input.trim()}
+        aria-label="发送"
+      >
+        {loading ? (
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <circle cx="12" cy="12" r="9" opacity=".25" />
+            <path d="M12 3a9 9 0 0 1 9 9" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        )}
       </button>
     </div>
   );
@@ -111,11 +260,13 @@ export default function Conversation() {
       <div className="empty-state">
         <div className="empty-inner">
           <h1>需求分析助手</h1>
-          <p className="empty-sub">粘贴客户沟通原文，或直接描述场景。我会理解需求、匹配长亭产品、判断可行性。</p>
+          <p className="empty-sub">
+            粘贴客户沟通原文，或直接描述场景。我会理解需求、匹配长亭产品、判断可行性——也可以直接跟我聊。
+          </p>
           <div className="composer-wrap">{composer}</div>
           <div className="examples-grid">
             {EXAMPLES.map((ex, i) => (
-              <button key={i} className="ex-card" onClick={() => send(ex.d, "analyze")}>
+              <button key={i} className="ex-card" onClick={() => send(ex.d)}>
                 <div className="ex-t">{ex.t}</div>
                 <div className="ex-d">{ex.d}</div>
               </button>
@@ -131,14 +282,25 @@ export default function Conversation() {
     <div className="chat">
       <div className="chat-scroll" ref={scrollRef}>
         <div className="chat-inner">
-          {messages.map((m) => m.role === "user" ? (
-            <div key={m.id} className="msg user"><div className="bubble">{m.text}</div></div>
-          ) : <AssistantMsg key={m.id} m={m} />)}
+          {messages.map((m) =>
+            m.role === "user" ? (
+              <div key={m.id} className="msg user">
+                <div className="bubble">{m.text}</div>
+              </div>
+            ) : (
+              <AssistantMsg key={m.id} m={m} />
+            ),
+          )}
           {error && <div className="error">! {error}</div>}
         </div>
       </div>
       <div className="chat-input">
-        <div className="inner">{composer}<div className="chat-hint">{sessionId ? `会话 ${sessionId.slice(5, 17)}` : "新会话"} · 回车发送</div></div>
+        <div className="inner">
+          {composer}
+          <div className="chat-hint">
+            {sessionId ? `会话 ${sessionId.slice(5, 17)}` : "新会话"} · 回车发送
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -154,54 +316,38 @@ function AssistantMsg({ m }: { m: ChatMsg }) {
       <div className="body">
         {hasTrace && (
           <>
-            <div className="trace-toggle" onClick={() => setOpen((x) => !x)}>
+            <div
+              className={`trace-toggle${m.streaming ? " thinking" : ""}`}
+              onClick={() => setOpen((x) => !x)}
+            >
               <span className="dot" />
-              {m.streaming ? "思考中…" : "思考过程"}{toolCount > 0 && ` · ${toolCount} 次工具调用`}
+              {m.streaming ? "思考中…" : "思考过程"}
+              {toolCount > 0 && ` · ${toolCount} 次工具调用`}
               <span style={{ marginLeft: 2 }}>{open ? "▾" : "▸"}</span>
             </div>
-            {open && (
+            {(open || m.streaming) && (
               <div className="trace-box">
-                {m.reasoning && <div className="t-think">{m.reasoning}</div>}
-                {m.tools?.map((tc, i) => (
-                  <div key={i}><span className="t-tool">$ {tc.tool}</span> <span className="t-params">{tc.params}</span>
-                    {tc.result && <div className="t-result" style={{ paddingLeft: 12 }}>← {tc.result.length > 200 ? tc.result.slice(0, 200) + "…" : tc.result}</div>}</div>
-                ))}
+                {m.reasoning && (
+                  <div className="t-think">
+                    {m.reasoning}
+                    {m.streaming && <span className="cursor" />}
+                  </div>
+                )}
+                {m.tools && m.tools.length > 0 && <ToolTimeline tools={m.tools} />}
               </div>
             )}
           </>
         )}
-        {m.analysis ? <ResultCard r={m.analysis} />
-          : m.kind === "analyze" && m.streaming ? <span className="muted">正在分析…<span className="cursor" /></span>
-          : <p style={{ whiteSpace: "pre-wrap" }}>{m.text}{m.streaming && <span className="cursor" />}</p>}
+        {m.analysis && <ResultCard r={m.analysis} />}
+        {m.text ? (
+          <MarkdownView>{m.text}</MarkdownView>
+        ) : m.streaming ? (
+          <span className="muted">
+            正在回应…
+            <span className="cursor" />
+          </span>
+        ) : null}
       </div>
-    </div>
-  );
-}
-
-const feasLabel = (f: string) => ({ direct: "直接覆盖", custom: "需定制", partner: "外部整合", reject: "不建议接" } as Record<string, string>)[f] || f;
-const confClass = (c: number) => (c >= 0.85 ? "g" : c >= 0.5 ? "b" : c >= 0.3 ? "y" : "r");
-
-function ResultCard({ r }: { r: AnalysisResult }) {
-  return (
-    <div className="result">
-      <div className="r-block"><h4>需求理解</h4><div style={{ whiteSpace: "pre-wrap" }}>{r.demand_analysis}</div></div>
-      <div className="r-block"><h4>可行性判定</h4>
-        <div className="feas"><span className={`badge ${r.feasibility}`}>{feasLabel(r.feasibility)}</span>{r.feasibility_detail && <span className="muted" style={{ fontSize: 13 }}>{r.feasibility_detail}</span>}</div>
-      </div>
-      {r.matched_products && r.matched_products.length > 0 && (
-        <div className="r-block"><h4>匹配产品（{r.matched_products.length}）</h4>
-          {r.matched_products.map((p, i) => (
-            <div key={i} className="prod">
-              <div className="row"><span className="pn">{p.name}</span><span className="pc right">{Math.round(p.confidence * 100)}%</span></div>
-              <div className="bar" style={{ width: 120, marginTop: 5 }}><i className={confClass(p.confidence)} style={{ width: `${Math.round(p.confidence * 100)}%` }} /></div>
-              <div className="pr">{p.reason}</div>{p.suggestion && <div className="ps">{p.suggestion}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-      {r.missing_info && r.missing_info.length > 0 && (
-        <div className="r-block"><h4>待追问</h4><ul className="missing">{r.missing_info.map((s, i) => <li key={i}>{s}</li>)}</ul></div>
-      )}
     </div>
   );
 }

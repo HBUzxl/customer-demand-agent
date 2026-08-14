@@ -13,10 +13,8 @@ import (
 	"net/http"
 	"time"
 
-	"customer-demand-agent/internal/api"
 	"customer-demand-agent/internal/agent"
 	"customer-demand-agent/internal/config"
-	"customer-demand-agent/internal/domain"
 	"customer-demand-agent/internal/history"
 	"customer-demand-agent/internal/memory/longterm"
 	"customer-demand-agent/internal/model"
@@ -47,7 +45,8 @@ func New(store *config.Store, ag *agent.Agent, rv *review.Service, wiki *longter
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// 分析对话
+	// 分析对话（统一入口 + deprecated shims，ADR-014）
+	mux.HandleFunc("POST /api/message", s.withTenant(s.handleMessage))
 	mux.HandleFunc("POST /api/analyze", s.withTenant(s.handleAnalyze))
 	mux.HandleFunc("POST /api/chat", s.withTenant(s.handleChat))
 
@@ -66,6 +65,8 @@ func (s *Server) Handler() http.Handler {
 	// 配置
 	mux.HandleFunc("GET /api/config", s.handleConfigGet)
 	mux.HandleFunc("PUT /api/config", s.handleConfigPut)
+	mux.HandleFunc("POST /api/config/test", s.handleConfigTest)
+	mux.HandleFunc("POST /api/models", s.handleListModels)
 
 	// 会话历史
 	mux.HandleFunc("GET /api/sessions", s.withTenant(s.handleSessionList))
@@ -136,26 +137,7 @@ func newSessionID() string {
 	return "sess_" + hex.EncodeToString(b)
 }
 
-// joinID joins type and title into "type/title" for review endpoints.
-func joinID(typ, title string) string { return typ + "/" + title }
-
-// toOutbound builds an OutboundMessage from an analysis result + trace.
-func toOutbound(sessionID string, result *domain.AnalysisResult, trace *agent.Trace) *api.OutboundMessage {
-	var traces []api.ToolCallTrace
-	if trace != nil {
-		for _, tc := range trace.ToolCalls {
-			traces = append(traces, api.ToolCallTrace{Tool: tc.Tool, Params: tc.Params, Result: tc.Result})
-		}
-	}
-	return api.NewOutbound(sessionID, result, traces, "")
-}
-
 func decodeBody(r *http.Request, v any) error {
 	dec := json.NewDecoder(r.Body)
 	return dec.Decode(v)
-}
-
-func jsonEncode(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
 }

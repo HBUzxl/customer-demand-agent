@@ -14,16 +14,16 @@ import "customer-demand-agent/internal/domain"
 
 // Product 是一款长亭产品的结构化知识。
 type Product struct {
-	Name         string       `json:"name"`          // 雷池
-	FullName     string       `json:"full_name"`     // 长亭雷池下一代 Web 应用防火墙
-	Aliases      []string     `json:"aliases"`       // ["WAF", "SafeLine"]
-	Category     string       `json:"category"`      // 边界安全 / 漏洞扫描 / ...
-	Capabilities []Capability `json:"capabilities"`  // 结构化能力
-	Scenarios    []string     `json:"scenarios"`     // 适用场景
-	Limitations  []string     `json:"limitations"`   // 能力边界
-	Competitors  []Competitor `json:"competitors"`   // 竞品对比
-	Tags         []string     `json:"tags"`          // 检索标签
-	Description  string       `json:"description"`   // 简介
+	Name         string       `json:"name"`         // 雷池
+	FullName     string       `json:"full_name"`    // 长亭雷池下一代 Web 应用防火墙
+	Aliases      []string     `json:"aliases"`      // ["WAF", "SafeLine"]
+	Category     string       `json:"category"`     // 边界安全 / 漏洞扫描 / ...
+	Capabilities []Capability `json:"capabilities"` // 结构化能力
+	Scenarios    []string     `json:"scenarios"`    // 适用场景
+	Limitations  []string     `json:"limitations"`  // 能力边界
+	Competitors  []Competitor `json:"competitors"`  // 竞品对比
+	Tags         []string     `json:"tags"`         // 检索标签
+	Description  string       `json:"description"`  // 简介
 }
 
 // Capability 是产品的一项能力。
@@ -52,9 +52,9 @@ type ThreatType struct {
 
 // ComplianceRequirement 是一条合规要求。
 type ComplianceRequirement struct {
-	Name            string   `json:"name"`             // 等保三级
+	Name            string   `json:"name"` // 等保三级
 	Aliases         []string `json:"aliases"`
-	Requirements    []string `json:"requirements"`     // 具体要求
+	Requirements    []string `json:"requirements"` // 具体要求
 	RelatedProducts []string `json:"related_products"`
 	Tags            []string `json:"tags"`
 }
@@ -94,16 +94,18 @@ type UserProfile struct {
 // Entry 是一条通用记忆条目（记忆工具的统一读写单位）。
 // 不同记忆类型共享这个扁平结构，便于 memory_search/memory_list 跨类型检索。
 type Entry struct {
-	Type        domain.MemoryType `json:"type"`
-	Title       string            `json:"title"`       // 唯一标识
-	Aliases     []string          `json:"aliases"`
-	Tags        []string          `json:"tags"`
-	Summary     string            `json:"summary"`     // 摘要
-	Content     string            `json:"content"`     // Markdown 正文
-	Status      EntryStatus       `json:"status"`      // verified / pending_review / archived
-	Relevance   float64           `json:"relevance,omitempty"` // 检索时填充
-	FilePath    string            `json:"-"`           // 对应的磁盘文件（写回用）
-	typed       *frontmatter      `json:"-"`           // frontmatter 结构化字段（类型化解析用）
+	Type      domain.MemoryType `json:"type"`
+	Title     string            `json:"title"` // 唯一标识
+	Aliases   []string          `json:"aliases"`
+	Tags      []string          `json:"tags"`
+	Summary   string            `json:"summary"`             // 摘要
+	Content   string            `json:"content"`             // Markdown 正文
+	Category  string            `json:"category,omitempty"`  // 分类（产品的安全域）
+	Product   string            `json:"product,omitempty"`   // 所属产品（子文档关联到产品）
+	Status    EntryStatus       `json:"status"`              // verified / pending_review / archived
+	Relevance float64           `json:"relevance,omitempty"` // 检索时填充
+	FilePath  string            `json:"-"`                   // 对应的磁盘文件（写回用）
+	typed     *frontmatter      `json:"-"`                   // frontmatter 结构化字段（类型化解析用）
 }
 
 // EntryStatus 是记忆条目的审核状态（待审核机制，ADR-005）。

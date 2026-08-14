@@ -25,6 +25,8 @@ type Config struct {
 	WikiDir       string              `json:"wiki_dir"`
 	HistoryDB     string              `json:"history_db"`
 	DefaultTenant string              `json:"default_tenant"`
+	DefaultUser   string              `json:"default_user"`    // 当前使用者（销售），影响分级输出
+	LLMTimeoutSec int                 `json:"llm_timeout_sec"` // 全局 LLM 调用超时（非模型属性）
 	Models        []model.ModelConfig `json:"models"`
 	Router        model.RouterConfig  `json:"router"`
 }
@@ -52,15 +54,17 @@ func template() *Config {
 		WikiDir:       "./wiki",
 		HistoryDB:     "./data/history.db",
 		DefaultTenant: "default",
+		DefaultUser:   "张三",
+		LLMTimeoutSec: 120,
 		Models: []model.ModelConfig{
 			{
 				Name:        "default",
 				Endpoint:    "https://api.deepseek.com/v1",
 				APIKey:      "", // ← 在这里填 API key
+				Protocol:    "openai-chat",
 				Model:       "deepseek-chat",
 				Temperature: 0.3,
 				MaxTokens:   4096,
-				TimeoutSec:  60,
 			},
 		},
 		Router: model.RouterConfig{
@@ -164,6 +168,12 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.DefaultTenant == "" {
 		cfg.DefaultTenant = "default"
+	}
+	if cfg.DefaultUser == "" {
+		cfg.DefaultUser = "张三"
+	}
+	if cfg.LLMTimeoutSec <= 0 {
+		cfg.LLMTimeoutSec = 120
 	}
 	if cfg.Router.Fallback.MaxRetries <= 0 {
 		cfg.Router.Fallback.MaxRetries = 2

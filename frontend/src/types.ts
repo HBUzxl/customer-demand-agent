@@ -24,6 +24,8 @@ export interface MemoryEntry {
   tags?: string[];
   summary?: string;
   content?: string;
+  category?: string;
+  product?: string;
   status?: string;
   relevance?: number;
 }
@@ -43,10 +45,10 @@ export interface ModelConfig {
   name: string;
   endpoint: string;
   api_key?: string;
+  protocol: string; // openai-chat / openai-response / anthropic
   model: string;
   temperature: number;
   max_tokens: number;
-  timeout_sec: number;
 }
 
 export interface RouterConfig {
@@ -81,18 +83,26 @@ export interface MessageRecord {
 export interface SessionDetail {
   session: SessionListItem;
   messages: MessageRecord[];
-  tool_calls: { id: number; tool_name: string; params: string; result: string; seq: number }[];
+  tool_calls: {
+    id: number;
+    message_id: number; // 归属的 assistant 消息 id（回放归属边界）
+    tool_name: string;
+    params: string;
+    result: string;
+    seq: number;
+  }[];
 }
 
 // Agent 流式事件（SSE）
 export interface AgentEvent {
-  type: "session" | "round" | "reasoning" | "content" | "tool_call" | "tool_result" | "done" | "error";
-  text?: string;       // reasoning/content 增量
-  round?: number;      // round 事件
-  tool?: string;       // tool_call/tool_result
-  params?: string;     // tool_call 参数
-  result?: string;     // tool_result 结果
+  type:
+    "session" | "round" | "reasoning" | "content" | "tool_call" | "tool_result" | "done" | "error";
+  text?: string; // reasoning/content 增量
+  round?: number; // round 事件
+  tool?: string; // tool_call/tool_result
+  params?: string; // tool_call 参数
+  result?: string; // tool_result 结果
   analysis?: AnalysisResult; // done（分析）
-  content?: string;    // done（追问）/ session id
-  error?: string;      // error
+  content?: string; // done（追问）/ session id
+  error?: string; // error
 }

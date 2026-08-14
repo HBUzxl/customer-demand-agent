@@ -1,12 +1,24 @@
 import { useEffect, useState } from "react";
-import { configGet, configPut } from "../api/client";
+import { configGet, configPut, configTest, listModels } from "../api/client";
 import type { ConfigResponse, ModelConfig } from "../types";
 
 type Cat = "models" | "routing" | "about";
-const CATS: { id: Cat; label: string; icon: string }[] = [
-  { id: "models", label: "模型", icon: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20" },
-  { id: "routing", label: "路由", icon: "M3 6h18M3 12h18M3 18h18M7 6v0M7 12v0M7 18v0" },
-  { id: "about", label: "关于", icon: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" },
+const CATS: { id: Cat; label: string }[] = [
+  { id: "models", label: "模型" },
+  { id: "routing", label: "路由" },
+  { id: "about", label: "关于" },
+];
+
+const PROTOCOLS = [
+  { id: "openai-chat", label: "OpenAI Chat" },
+  { id: "openai-response", label: "OpenAI Response" },
+  { id: "anthropic", label: "Anthropic" },
+];
+
+// 任务类型：路由表里每个任务可单独指定模型
+const TASK_TYPES = [
+  { id: "analysis", label: "主分析", desc: "需求理解 / 产品匹配 / 可行性判断（含工具调用）" },
+  { id: "background", label: "后台任务", desc: "预留：摘要、压缩等独立任务" },
 ];
 
 export default function Settings() {
@@ -14,26 +26,102 @@ export default function Settings() {
   const [cat, setCat] = useState<Cat>("models");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
 
-  useEffect(() => { configGet().then(setCfg).catch((e) => setError(e.message)).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    configGet()
+      .then(setCfg)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   async function save(next: ConfigResponse) {
-    setSaving(true); setError(""); setMsg("");
-    try { const r = await configPut(next); setCfg(r); setMsg("已保存，回写 config.json"); }
-    catch (e: any) { setError(e.message); }
-    finally { setSaving(false); }
+    setSaving(true);
+    setError("");
+    setMsg("");
+    try {
+      const r = await configPut(next);
+      setCfg(r);
+      setMsg("已保存，回写 config.json");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function updateModel(i: number, patch: Partial<ModelConfig>) {
     if (!cfg) return;
-    const models = [...cfg.models]; models[i] = { ...models[i], ...patch };
+    const models = [...cfg.models];
+    models[i] = { ...models[i], ...patch };
     setCfg({ ...cfg, models });
   }
 
-  if (loading) return <div className="page"><div className="loading">加载中…</div></div>;
-  if (!cfg) return <div className="page"><div className="error">! {error || "无配置"}</div></div>;
+  // 测试单个模型（发 hi）
+  async function testModel(m: ModelConfig) {
+    setMsg("");
+    setError("");
+    setTesting(true);
+    try {
+      const r = await configTest({
+        name: m.name,
+        endpoint: m.endpoint,
+        api_key: m.api_key && m.api_key !== "********" ? m.api_key : undefined,
+        protocol: m.protocol,
+        model: m.model,
+      });
+      if (r.ok) setMsg(`✓ 测试通过（${r.latency_ms}ms）：${(r.reply || "").slice(0, 80)}`);
+      else setError(`测试失败（${r.latency_ms}ms）：${r.error}`);
+    } catch (e) {
+      setError("测试失败：" + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  // 自动获取模型列表
+  async function fetchModels(m: ModelConfig, idx: number) {
+    setError("");
+    setFetching(true);
+    try {
+      const r = await listModels({
+        name: m.name,
+        endpoint: m.endpoint,
+        api_key: m.api_key && m.api_key !== "********" ? m.api_key : undefined,
+        protocol: m.protocol,
+      });
+      if (r.models.length === 0) {
+        setError("网关未返回模型列表");
+        return;
+      }
+      // 用 prompt 让用户选，或直接下拉；这里用原生 select 弹窗简化
+      const pick = window.prompt(
+        "可用模型：\n" + r.models.join("\n") + "\n\n输入要使用的模型名（可复制粘贴）：",
+        m.model,
+      );
+      if (pick) updateModel(idx, { model: pick.trim() });
+    } catch (e) {
+      setError("获取模型失败：" + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setFetching(false);
+    }
+  }
+
+  if (loading)
+    return (
+      <div className="page">
+        <div className="loading">加载中…</div>
+      </div>
+    );
+  if (!cfg)
+    return (
+      <div className="page">
+        <div className="error">! {error || "无配置"}</div>
+      </div>
+    );
 
   return (
     <div className="settings">
@@ -41,61 +129,194 @@ export default function Settings() {
       <div className="settings-cols">
         <aside className="settings-nav">
           {CATS.map((c) => (
-            <button key={c.id} className={cat === c.id ? "active" : ""} onClick={() => setCat(c.id)}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={c.icon} /></svg>
+            <button
+              key={c.id}
+              className={cat === c.id ? "active" : ""}
+              onClick={() => setCat(c.id)}
+            >
               {c.label}
             </button>
           ))}
         </aside>
 
         <div className="settings-content">
-          {msg && <div className="panel" style={{ borderColor: "var(--green)", color: "var(--green)", padding: "10px 14px", marginBottom: 14 }}>{msg}</div>}
+          {msg && (
+            <div
+              className="panel"
+              style={{
+                borderColor: "var(--green)",
+                color: "var(--green)",
+                padding: "10px 14px",
+                marginBottom: 14,
+              }}
+            >
+              {msg}
+            </div>
+          )}
           {error && <div className="error">! {error}</div>}
 
           {cat === "models" && (
             <>
               <h2>模型配置</h2>
-              <div className="s-group">
-                <div className="s-gtitle">已注册模型（OpenAI 兼容网关，默认支持 function call）</div>
+              <div className="s-group" style={{ marginTop: 12 }}>
                 {cfg.models.map((m, i) => (
-                  <div className="model-card" key={i}>
-                    <div className="mc-head">
-                      <input className="mc-title" style={{ width: "auto", fontWeight: 600 }} value={m.name} onChange={(e) => updateModel(i, { name: e.target.value })} />
-                      <button className="btn ghost sm" onClick={() => setCfg({ ...cfg, models: cfg.models.filter((_, j) => j !== i) })}>移除</button>
-                    </div>
-                    <div className="s-row"><div><div className="s-name">模型 ID</div><div className="s-desc">网关实际模型名</div></div>
-                      <div className="s-ctrl"><input value={m.model} onChange={(e) => updateModel(i, { model: e.target.value })} /></div></div>
-                    <div className="s-row"><div><div className="s-name">API 网关地址</div><div className="s-desc">OpenAI 兼容 endpoint</div></div>
-                      <div className="s-ctrl"><input value={m.endpoint} onChange={(e) => updateModel(i, { endpoint: e.target.value })} /></div></div>
-                    <div className="s-row"><div><div className="s-name">API Key</div><div className="s-desc">{m.api_key ? "已配置，留空不改" : "未配置"}</div></div>
-                      <div className="s-ctrl"><input type="password" value={m.api_key || ""} placeholder="留空 = 不修改" onChange={(e) => updateModel(i, { api_key: e.target.value })} /></div></div>
-                    <div className="s-row"><div className="s-name">Temperature</div>
-                      <div className="s-ctrl"><input type="number" step="0.1" style={{ minWidth: 100 }} value={m.temperature} onChange={(e) => updateModel(i, { temperature: parseFloat(e.target.value) })} /></div></div>
-                    <div className="s-row"><div className="s-name">Max Tokens / 超时(秒)</div>
-                      <div className="s-ctrl row"><input type="number" style={{ minWidth: 90 }} value={m.max_tokens} onChange={(e) => updateModel(i, { max_tokens: parseInt(e.target.value) })} /><input type="number" style={{ minWidth: 90 }} value={m.timeout_sec} onChange={(e) => updateModel(i, { timeout_sec: parseInt(e.target.value) })} /></div></div>
-                  </div>
+                  <ModelCard
+                    key={i}
+                    m={m}
+                    testing={testing}
+                    fetching={fetching}
+                    onPatch={(p) => updateModel(i, p)}
+                    onRemove={() =>
+                      setCfg({ ...cfg, models: cfg.models.filter((_, j) => j !== i) })
+                    }
+                    onTest={() => testModel(m)}
+                    onFetch={() => fetchModels(m, i)}
+                  />
                 ))}
-                <button className="btn ghost sm" onClick={() => { const name = prompt("新模型名称："); if (name) setCfg({ ...cfg, models: [...cfg.models, { name, endpoint: "", api_key: "", model: "", temperature: 0.3, max_tokens: 4096, timeout_sec: 60 }] }); }}>+ 添加模型</button>
+                <button
+                  className="btn ghost sm"
+                  onClick={() => {
+                    const name = prompt("新模型名称：");
+                    if (name)
+                      setCfg({
+                        ...cfg,
+                        models: [
+                          ...cfg.models,
+                          {
+                            name,
+                            endpoint: "",
+                            api_key: "",
+                            protocol: "openai-chat",
+                            model: "",
+                            temperature: 0.3,
+                            max_tokens: 4096,
+                          },
+                        ],
+                      });
+                  }}
+                >
+                  + 添加模型
+                </button>
               </div>
-              <div style={{ marginTop: 18 }}><button className="btn primary" disabled={saving} onClick={() => save(cfg)}>{saving ? "保存中…" : "保存"}</button></div>
+              <div style={{ marginTop: 18 }}>
+                <button className="btn primary" disabled={saving} onClick={() => save(cfg)}>
+                  {saving ? "保存中…" : "保存"}
+                </button>
+              </div>
             </>
           )}
 
           {cat === "routing" && (
             <>
-              <h2>路由与回退</h2>
+              <h2>路由</h2>
+              <p className="faint" style={{ fontSize: 13, marginBottom: 16 }}>
+                给不同任务类型指定模型。未指定的任务走默认模型。
+              </p>
               <div className="s-group">
-                <div className="s-gtitle">默认模型</div>
-                <div className="s-row"><div><div className="s-name">所有任务默认走</div><div className="s-desc">未单独配置的任务类型自动回退到此模型</div></div>
-                  <div className="s-ctrl"><select value={cfg.router.default} onChange={(e) => setCfg({ ...cfg, router: { ...cfg.router, default: e.target.value } })}>
-                    {cfg.models.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
-                  </select></div></div>
-                <div className="s-row"><div><div className="s-name">最大重试次数</div><div className="s-desc">单模型失败后的重试（指数退避）</div></div>
-                  <div className="s-ctrl"><input type="number" style={{ minWidth: 100 }} value={cfg.router.fallback.max_retries} onChange={(e) => setCfg({ ...cfg, router: { ...cfg.router, fallback: { ...cfg.router.fallback, max_retries: parseInt(e.target.value) } } })} /></div></div>
-                <div className="s-row"><div><div className="s-name">退避基数（毫秒）</div><div className="s-desc">指数退避起始间隔</div></div>
-                  <div className="s-ctrl"><input type="number" style={{ minWidth: 100 }} value={cfg.router.fallback.backoff_base_ms} onChange={(e) => setCfg({ ...cfg, router: { ...cfg.router, fallback: { ...cfg.router.fallback, backoff_base_ms: parseInt(e.target.value) } } })} /></div></div>
+                <div className="s-row">
+                  <div>
+                    <div className="s-name">默认模型</div>
+                    <div className="s-desc">兜底：未单独指定的任务走这个</div>
+                  </div>
+                  <div className="s-ctrl">
+                    <select
+                      value={cfg.router.default}
+                      onChange={(e) =>
+                        setCfg({ ...cfg, router: { ...cfg.router, default: e.target.value } })
+                      }
+                    >
+                      {cfg.models.map((m) => (
+                        <option key={m.name} value={m.name}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {TASK_TYPES.map((t) => (
+                  <div className="s-row" key={t.id}>
+                    <div>
+                      <div className="s-name">{t.label}</div>
+                      <div className="s-desc">{t.desc}</div>
+                    </div>
+                    <div className="s-ctrl">
+                      <select
+                        value={cfg.router.routes[t.id] || ""}
+                        onChange={(e) =>
+                          setCfg({
+                            ...cfg,
+                            router: {
+                              ...cfg.router,
+                              routes: { ...cfg.router.routes, [t.id]: e.target.value },
+                            },
+                          })
+                        }
+                      >
+                        <option value="">跟随默认</option>
+                        {cfg.models.map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div style={{ marginTop: 18 }}><button className="btn primary" disabled={saving} onClick={() => save(cfg)}>{saving ? "保存中…" : "保存"}</button></div>
+
+              <div className="s-group">
+                <div className="s-gtitle">回退</div>
+                <div className="s-row">
+                  <div className="s-name">最大重试次数</div>
+                  <div className="s-ctrl">
+                    <input
+                      type="number"
+                      style={{ minWidth: 100 }}
+                      value={cfg.router.fallback.max_retries}
+                      onChange={(e) =>
+                        setCfg({
+                          ...cfg,
+                          router: {
+                            ...cfg.router,
+                            fallback: {
+                              ...cfg.router.fallback,
+                              max_retries: parseInt(e.target.value),
+                            },
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="s-row">
+                  <div className="s-name">退避基数（毫秒）</div>
+                  <div className="s-ctrl">
+                    <input
+                      type="number"
+                      style={{ minWidth: 100 }}
+                      value={cfg.router.fallback.backoff_base_ms}
+                      onChange={(e) =>
+                        setCfg({
+                          ...cfg,
+                          router: {
+                            ...cfg.router,
+                            fallback: {
+                              ...cfg.router.fallback,
+                              backoff_base_ms: parseInt(e.target.value),
+                            },
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginTop: 18 }}>
+                <button className="btn primary" disabled={saving} onClick={() => save(cfg)}>
+                  {saving ? "保存中…" : "保存"}
+                </button>
+              </div>
             </>
           )}
 
@@ -103,13 +324,126 @@ export default function Settings() {
             <>
               <h2>关于</h2>
               <div className="s-group">
-                <div className="s-row"><div className="s-name">应用</div><div className="s-ctrl muted">客户需求分析智能体 · 长亭</div></div>
-                <div className="s-row"><div className="s-name">版本</div><div className="s-ctrl mono">v1.0.0</div></div>
-                <div className="s-row"><div className="s-name">技术栈</div><div className="s-ctrl muted">Go 后端 · React 前端</div></div>
-                <div className="s-row"><div className="s-name">架构</div><div className="s-ctrl muted">自主 Agent · Wiki 记忆 · SSE 流式</div></div>
+                <div className="s-row">
+                  <div className="s-name">应用</div>
+                  <div className="s-ctrl muted">客户需求分析智能体 · 长亭</div>
+                </div>
+                <div className="s-row">
+                  <div className="s-name">版本</div>
+                  <div className="s-ctrl mono">v1.0.0</div>
+                </div>
+                <div className="s-row">
+                  <div className="s-name">技术栈</div>
+                  <div className="s-ctrl muted">Go 后端 · React 前端</div>
+                </div>
               </div>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 单个模型的紧凑卡片（label 在上 input 在下的网格）
+function ModelCard({
+  m,
+  onPatch,
+  onRemove,
+  onTest,
+  onFetch,
+  testing,
+  fetching,
+}: {
+  m: ModelConfig;
+  onPatch: (p: Partial<ModelConfig>) => void;
+  onRemove: () => void;
+  onTest: () => void;
+  onFetch: () => void;
+  testing: boolean;
+  fetching: boolean;
+}) {
+  return (
+    <div className="model-card">
+      <div className="mc-head">
+        <input
+          className="mc-name"
+          value={m.name}
+          placeholder="模型名称"
+          onChange={(e) => onPatch({ name: e.target.value })}
+        />
+        <div className="row" style={{ gap: 6 }}>
+          <button className="btn ghost sm" onClick={onTest} disabled={testing || fetching}>
+            {testing ? "测试中…" : "测试"}
+          </button>
+          <button className="btn ghost sm" onClick={onRemove} disabled={testing || fetching}>
+            移除
+          </button>
+        </div>
+      </div>
+      <div className="model-form">
+        <div>
+          <label>协议</label>
+          <select value={m.protocol} onChange={(e) => onPatch({ protocol: e.target.value })}>
+            {PROTOCOLS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>模型 ID</label>
+          <div className="mfield-row">
+            <input
+              value={m.model}
+              placeholder="模型名"
+              onChange={(e) => onPatch({ model: e.target.value })}
+            />
+            <button
+              className="btn ghost sm"
+              onClick={onFetch}
+              disabled={testing || fetching}
+              title="从网关自动获取模型列表"
+            >
+              {fetching ? "获取中…" : "获取"}
+            </button>
+          </div>
+        </div>
+        <div className="full">
+          <label>网关地址</label>
+          <input
+            value={m.endpoint}
+            placeholder="https://…"
+            onChange={(e) => onPatch({ endpoint: e.target.value })}
+          />
+        </div>
+        <div className="full">
+          <label>API Key</label>
+          <input
+            type="password"
+            value={m.api_key || ""}
+            placeholder="留空 = 不改（已设置显示 ********，点进去可改）"
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => onPatch({ api_key: e.target.value })}
+          />
+        </div>
+        <div>
+          <label>温度</label>
+          <input
+            type="number"
+            step="0.1"
+            value={m.temperature}
+            onChange={(e) => onPatch({ temperature: parseFloat(e.target.value) })}
+          />
+        </div>
+        <div>
+          <label>Max Tokens</label>
+          <input
+            type="number"
+            value={m.max_tokens}
+            onChange={(e) => onPatch({ max_tokens: parseInt(e.target.value) })}
+          />
         </div>
       </div>
     </div>

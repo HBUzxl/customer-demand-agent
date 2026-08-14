@@ -4,19 +4,24 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"customer-demand-agent/internal/llm"
 )
 
 // Registry 是模型配置的注册表（内存，可被前端 config API 增删改）。
 type Registry struct {
-	mu     sync.RWMutex
-	models map[string]ModelConfig
+	mu      sync.RWMutex
+	models  map[string]ModelConfig
+	timeout time.Duration // 全局 LLM 超时（调用层属性，非模型属性）
 }
 
-// NewRegistry 创建空注册表。
-func NewRegistry() *Registry {
-	return &Registry{models: make(map[string]ModelConfig)}
+// NewRegistry 创建空注册表。timeout 是全局 LLM 超时。
+func NewRegistry(timeout time.Duration) *Registry {
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	return &Registry{models: make(map[string]ModelConfig), timeout: timeout}
 }
 
 // Register 注册或更新一个模型配置。
@@ -30,15 +35,24 @@ func (r *Registry) Register(m ModelConfig) error {
 	return nil
 }
 
-// Get 获取一个模型配置。
+// Get 获取一个模型配置（转为 llm.Config，含全局超时）。
 func (r *Registry) Get(name string) (llm.Config, error) {
+	m, err := r.GetModel(name)
+	if err != nil {
+		return llm.Config{}, err
+	}
+	return m.ToLLMConfig(r.timeout), nil
+}
+
+// GetModel 返回原始 ModelConfig（含 APIKey，供测试连接等使用）。
+func (r *Registry) GetModel(name string) (ModelConfig, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	m, ok := r.models[name]
 	if !ok {
-		return llm.Config{}, fmt.Errorf("模型 %q 未注册", name)
+		return ModelConfig{}, fmt.Errorf("模型 %q 未注册", name)
 	}
-	return m.ToLLMConfig(), nil
+	return m, nil
 }
 
 // All 返回全部模型配置（按名排序，密钥脱敏）。

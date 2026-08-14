@@ -21,19 +21,19 @@ const (
 
 // AnalysisResult 是 Agent 分析后的结构化输出（写在 system prompt 里让 LLM 产出）。
 type AnalysisResult struct {
-	DemandAnalysis   string           `json:"demand_analysis"`    // 需求理解：客户业务语言翻译成的安全需求
-	MatchedProducts  []MatchedProduct `json:"matched_products"`   // 匹配的长亭产品 + 置信度
-	Feasibility      Feasibility      `json:"feasibility"`       // 可行性判断
-	FeasibilityDetail string          `json:"feasibility_detail"` // 可行性详细说明
-	MissingInfo      []string         `json:"missing_info"`       // 待追问信息：客户没说清的
+	DemandAnalysis    string           `json:"demand_analysis"`    // 需求理解：客户业务语言翻译成的安全需求
+	MatchedProducts   []MatchedProduct `json:"matched_products"`   // 匹配的长亭产品 + 置信度
+	Feasibility       Feasibility      `json:"feasibility"`        // 可行性判断
+	FeasibilityDetail string           `json:"feasibility_detail"` // 可行性详细说明
+	MissingInfo       []string         `json:"missing_info"`       // 待追问信息：客户没说清的
 }
 
 // MatchedProduct 是一条产品匹配结果。
 type MatchedProduct struct {
-	Name       string  `json:"name"`        // 产品名（如"雷池"）
-	Confidence float64 `json:"confidence"`  // 置信度 0-1
-	Reason     string  `json:"reason"`      // 匹配理由
-	Suggestion string  `json:"suggestion"`  // 推荐话术
+	Name       string  `json:"name"`       // 产品名（如"雷池"）
+	Confidence float64 `json:"confidence"` // 置信度 0-1
+	Reason     string  `json:"reason"`     // 匹配理由
+	Suggestion string  `json:"suggestion"` // 推荐话术
 }
 
 // MemoryType 是长期记忆的类型枚举。

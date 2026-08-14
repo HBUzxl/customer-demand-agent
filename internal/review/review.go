@@ -13,12 +13,12 @@ import (
 
 // ReviewItem is one entry awaiting human approval.
 type ReviewItem struct {
-	Type    string `json:"type"`
-	Title   string `json:"title"`
-	Summary string `json:"summary"`
+	Type    string   `json:"type"`
+	Title   string   `json:"title"`
+	Summary string   `json:"summary"`
 	Tags    []string `json:"tags"`
-	Content string `json:"content"`
-	Status  string `json:"status"`
+	Content string   `json:"content"`
+	Status  string   `json:"status"`
 }
 
 // Service wraps the Wiki store's review operations.
