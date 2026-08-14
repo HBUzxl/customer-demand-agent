@@ -3,7 +3,7 @@
 // memory: short-term is working memory for the LLM (in-process checkpoints),
 // history is the durable record for humans / audit / replay (ADR-010).
 //
-// 多租户：tenant_id 隔离 sessions 与 messages，产品/行业/客户记忆为
+// 单租户（de-tenancy）：sessions.tenant_id 列保留但代码不读写（老数据兼容）。
 // 组织级共享知识（不在此隔离，见 ADR-011）。
 package history
 
@@ -114,29 +114,25 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// EnsureSession 创建会话记录；若已存在则校验 tenant 归属后更新 updated_at/title。
-// 跨租户：若 session 已存在但属于别的 tenant，拒绝（防跨租户占用/续传/读 checkpoint）。
-func (s *Store) EnsureSession(tenantID, sessionID, title, customer string) error {
+// EnsureSession 创建会话记录；若已存在则更新 updated_at/title/customer。
+func (s *Store) EnsureSession(sessionID, title, customer string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
-	var owner string
-	err := s.db.QueryRow(`SELECT tenant_id FROM sessions WHERE session_id=?`, sessionID).Scan(&owner)
+	var exists int
+	err := s.db.QueryRow(`SELECT 1 FROM sessions WHERE session_id=?`, sessionID).Scan(&exists)
 	switch {
 	case err == nil:
-		// 已存在：校验归属
-		if owner != tenantID {
-			return fmt.Errorf("会话 %s 不属于租户 %s", sessionID, tenantID)
-		}
+		// 已存在：更新
 		_, err = s.db.Exec(`UPDATE sessions SET updated_at=?,
 			title=CASE WHEN ?!='' THEN ? ELSE title END,
 			customer=CASE WHEN ?!='' THEN ? ELSE customer END WHERE session_id=?`,
 			now, title, title, customer, customer, sessionID)
 		return err
 	case errors.Is(err, sql.ErrNoRows):
-		// 不存在：插入
+		// 不存在：插入（tenant_id 列保留写默认值——单租户，de-tenancy）
 		_, err = s.db.Exec(`INSERT INTO sessions(session_id, tenant_id, title, customer, created_at, updated_at)
-			VALUES(?,?,?,?,?,?)`, sessionID, tenantID, title, customer, now, now)
+			VALUES(?,?,?,?,?,?)`, sessionID, "default", title, customer, now, now)
 		return err
 	default:
 		return err
@@ -178,17 +174,10 @@ func (s *Store) AppendToolCall(sessionID string, messageID int64, toolName, para
 	return res.LastInsertId()
 }
 
-// AppendCheckpoint 追加一个 checkpoint 快照（校验 tenant 归属）。
-func (s *Store) AppendCheckpoint(tenantID, sessionID string, cp *domain.Checkpoint) error {
+// AppendCheckpoint 追加一个 checkpoint 快照。
+func (s *Store) AppendCheckpoint(sessionID string, cp *domain.Checkpoint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var cnt int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE session_id=? AND tenant_id=?`, sessionID, tenantID).Scan(&cnt); err != nil {
-		return err
-	}
-	if cnt == 0 {
-		return fmt.Errorf("会话 %s 不属于租户 %s，拒绝写入 checkpoint", sessionID, tenantID)
-	}
 	payload, err := encodeJSON(cp)
 	if err != nil {
 		return err
@@ -201,12 +190,12 @@ func (s *Store) AppendCheckpoint(tenantID, sessionID string, cp *domain.Checkpoi
 
 // ListCheckpoints 读回某会话的 checkpoint 链（按创建顺序，用于断点续传）。
 // 跨租户：JOIN sessions 校验归属，非本租户会话返回空（读不到对方 checkpoint）。
-func (s *Store) ListCheckpoints(tenantID, sessionID string) ([]*domain.Checkpoint, error) {
+func (s *Store) ListCheckpoints(sessionID string) ([]*domain.Checkpoint, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rows, err := s.db.Query(`SELECT c.payload_json FROM checkpoints c
 		JOIN sessions s ON s.session_id = c.session_id
-		WHERE c.session_id=? AND s.tenant_id=? ORDER BY c.id ASC`, sessionID, tenantID)
+		WHERE c.session_id=? ORDER BY c.id ASC`, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -229,23 +218,23 @@ func (s *Store) ListCheckpoints(tenantID, sessionID string) ([]*domain.Checkpoin
 // SessionListItem 是会话列表的一项。
 type SessionListItem struct {
 	SessionID string    `json:"session_id"`
-	TenantID  string    `json:"tenant_id"`
+	TenantID  string    `json:"tenant_id"` // 恒 "default"（列保留，de-tenancy）
 	Title     string    `json:"title"`
 	Customer  string    `json:"customer"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ListSessions 列出某 tenant 的会话（分页，按更新时间倒序）。
-func (s *Store) ListSessions(tenantID string, limit, offset int) ([]SessionListItem, error) {
+// ListSessions 列出会话（分页，按更新时间倒序）。
+func (s *Store) ListSessions(limit, offset int) ([]SessionListItem, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rows, err := s.db.Query(`SELECT session_id, tenant_id, title, customer, created_at, updated_at
-		FROM sessions WHERE tenant_id=? ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
-		tenantID, limit, offset)
+		FROM sessions ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+		limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -297,21 +286,21 @@ type MessageHit struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// SearchMessages 按关键词检索历史消息（tenant 隔离）。
+// SearchMessages 按关键词检索历史消息。
 // sessionID 为空时跨该租户全部会话；大小写不敏感的子串匹配（P1 起步——
 // 历史量级小，LIKE 足够；后续可升级 bigram 权重检索对齐 longterm）。
-func (s *Store) SearchMessages(tenantID, sessionID, query string, limit int) ([]MessageHit, error) {
+func (s *Store) SearchMessages(sessionID, query string, limit int) ([]MessageHit, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rows, err := s.db.Query(`SELECT m.session_id, m.role, m.content, m.created_at
-		FROM messages m JOIN sessions se ON se.session_id = m.session_id
-		WHERE se.tenant_id = ? AND (? = '' OR m.session_id = ?)
+		FROM messages m
+		WHERE (? = '' OR m.session_id = ?)
 			AND m.content LIKE '%' || ? || '%'
 		ORDER BY m.created_at DESC LIMIT ?`,
-		tenantID, sessionID, sessionID, query, limit)
+		sessionID, sessionID, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -327,15 +316,15 @@ func (s *Store) SearchMessages(tenantID, sessionID, query string, limit int) ([]
 	return out, nil
 }
 
-// GetSession 返回会话详情（校验 tenant 归属）。
-func (s *Store) GetSession(tenantID, sessionID string) (*SessionDetail, error) {
+// GetSession 返回会话详情。
+func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var det SessionDetail
 	var sess SessionListItem
 	err := s.db.QueryRow(`SELECT session_id, tenant_id, title, customer, created_at, updated_at
-		FROM sessions WHERE session_id=? AND tenant_id=?`, sessionID, tenantID).
+		FROM sessions WHERE session_id=?`, sessionID).
 		Scan(&sess.SessionID, &sess.TenantID, &sess.Title, &sess.Customer, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("会话不存在或无权访问: %w", err)
@@ -373,7 +362,7 @@ func (s *Store) GetSession(tenantID, sessionID string) (*SessionDetail, error) {
 }
 
 // DeleteSession 删除某会话及其全部轨迹（校验 tenant）。
-func (s *Store) DeleteSession(tenantID, sessionID string) error {
+func (s *Store) DeleteSession(sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tx, err := s.db.Begin()
@@ -382,7 +371,7 @@ func (s *Store) DeleteSession(tenantID, sessionID string) error {
 	}
 	// 先校验 tenant 归属
 	var cnt int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE session_id=? AND tenant_id=?`, sessionID, tenantID).Scan(&cnt); err != nil {
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE session_id=?`, sessionID).Scan(&cnt); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -425,15 +414,9 @@ func encodeJSON(v any) (string, error) {
 // TruncateAfter 删除会话中 seq >= after 的消息及其关联 tool_calls，
 // 并清空该会话全部 checkpoints（F1 编辑重发：截断后重发）。
 // 返回删除的消息条数。校验 tenant 归属。
-func (s *Store) TruncateAfter(tenantID, sessionID string, after int) (int, error) {
+func (s *Store) TruncateAfter(sessionID string, after int) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// tenant 归属校验（与 ListCheckpoints 同款 JOIN 检查）
-	var owner string
-	err := s.db.QueryRow(`SELECT tenant_id FROM sessions WHERE session_id=?`, sessionID).Scan(&owner)
-	if err != nil || owner != tenantID {
-		return 0, fmt.Errorf("无权操作该会话")
-	}
 	// 三表联删走单事务（中途失败整体回滚，不产生部分删除）
 	tx, err := s.db.Begin()
 	if err != nil {

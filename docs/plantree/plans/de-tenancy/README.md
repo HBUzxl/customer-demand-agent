@@ -1,7 +1,7 @@
 # 移除多租户（de-tenancy）
 
 > 用户裁决 2026-08-14（深夜）：**砍掉多租户**——单租户部署，代码里的
-> tenant 概念整体移除。状态：**Ready**（裁决已定，待开工）。
+> tenant 概念整体移除。状态：**Done**（同日落地，收尾 goal task 1）。
 
 ## 裁决与动机
 
@@ -53,3 +53,15 @@ tenant 渗透 9 个文件 124 行（非测试）+ 44 行测试：
 ## 下一步
 
 排期后开工（预计半天：签名链 9 文件 + 测试 + 文档）。
+
+## 落地记录（2026-08-14）
+
+- 协议层：InboundMessage 删 TenantID 字段
+- Agent 层：Message/四大回调（Sink/Source/CustomerResolver/HistorySearcher）签名去 tenantID；turnState 去 tenant
+- 存储层：EnsureSession/AppendCheckpoint/ListCheckpoints/ListSessions/GetSession/DeleteSession/SearchMessages/TruncateAfter 八方法去参；归属校验与 JOIN 删除；新行 tenant_id 写死 "default"（列保留）
+- HTTP 层：tenantKey/withTenant/tenantFrom 全删；路由直挂；请求日志去租户列；X-Tenant-ID 头自然忽略（无任何代码读它）
+- 配置：default_tenant 字段删除（example 与运行 config 同步）
+- 测试：cross_tenant_test.go 删除；TestTenantIsolation/TestRunEndpointsTenantIsolation 删除或改写为「无租户头可访问+任意头忽略」正向测试；TestSearchMessages/TestCheckpoint* 适配单租户
+- e2e：第 6 节改 de-tenancy 断言（任意头建会话 202 + 跨头访问不再 403 + 清理），26/0
+- grep 复核：非测试代码无功能性 tenant 残留（仅列定义/兼容注释/JSON 字段恒 default）
+- AGENTS.md 单租户段 + README 租户行 + 本记录同步；ADR-011 废止入档

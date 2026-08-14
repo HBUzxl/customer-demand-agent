@@ -12,7 +12,7 @@
 | [[plans/conversation-ux/README.md\|对话交互增强]] | Active | **F0+F1 已落地 2026-08-14**（Run 任务模型：202+订阅流+cancel+编辑重发+断连运行继续+多轮隔离+结构化失败语义，smoke-f0 11/11）；F2-F4/G/H2 待做 | 2026-08-14 F0+F1 goal（commit 78264ea 主体 + 九轮审计修复至 cdd558f，e2e 26/0） | F3 ask_user + F4 内联审核（共用卡片组件）；F2 截断重发验证够用否 |
 | [[plans/console/README.md\|控制台化]] | Shaping | C1 配置中心（prompt/路由/参数/数据位置）+ C2 可观测（后台任务/LLM 审计）+ C3 prompt 配置化 | 2026-08-14 独立立项（源起 H1/H3 升级：后端配置与运行全面前端可见） | C1 只读可直接开工；裁决 C3 外置形态 |
 | [[plans/frontend/README.md\|前端工作台]] | Shaping | **IA 总蓝图**：三层可见性（对话内/会话飞行记录仪/系统观测台），六页收敛五区，G5 否决（对话与回放不合并） | 2026-08-14 立项，汇总三 plan 前端形态 + 后端依赖 API 缺口清单 | 跟随 F0/G1 先行；观测台新页 |
-| [[plans/de-tenancy/README.md\|移除多租户]] | Ready | 用户裁决砍掉多租户（ADR-011 废止）——单租户内部工具；影响面 9 文件 124 行已盘点 | 2026-08-14 深夜裁决立项 | 开工（预计半天：协议/Agent/存储/HTTP 四层去 tenant + 测试文档） |
+| [[plans/de-tenancy/README.md\|移除多租户]] | Done | 四层去 tenant 落地（X-Tenant-ID 忽略、列保留、e2e 26/0、grep 无功能残留） | 2026-08-14 收尾 goal task 1 | — |
 
 ## 基线
 

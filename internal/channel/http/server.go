@@ -1,10 +1,9 @@
 // Package http implements the HTTP channel: a REST API over the agent,
-// memory, review, history, and config subsystems. Multi-tenant via the
-// X-Tenant-ID header (default tenant when absent). See ADR-011 / ADR-012.
+// memory, review, history, and config subsystems. Single-tenant (de-tenancy:
+// X-Tenant-ID header accepted but ignored, ADR-011 已废止). See ADR-012.
 package http
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -48,25 +47,25 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// 分析对话（统一入口 + deprecated shims，ADR-014；F0：202 + Run 任务）
-	mux.HandleFunc("POST /api/message", s.withTenant(s.handleMessage))
-	mux.HandleFunc("POST /api/analyze", s.withTenant(s.handleAnalyze))
-	mux.HandleFunc("POST /api/chat", s.withTenant(s.handleChat))
-	mux.HandleFunc("GET /api/sessions/{id}/stream", s.withTenant(s.handleSessionStream))
-	mux.HandleFunc("GET /api/sessions/{id}/running", s.withTenant(s.handleSessionRunning))
-	mux.HandleFunc("POST /api/sessions/{id}/runs/{run_id}/cancel", s.withTenant(s.handleRunCancel))
-	mux.HandleFunc("DELETE /api/sessions/{id}/messages/after", s.withTenant(s.handleMessagesTruncate))
+	mux.HandleFunc("POST /api/message", s.handleMessage)
+	mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
+	mux.HandleFunc("POST /api/chat", s.handleChat)
+	mux.HandleFunc("GET /api/sessions/{id}/stream", s.handleSessionStream)
+	mux.HandleFunc("GET /api/sessions/{id}/running", s.handleSessionRunning)
+	mux.HandleFunc("POST /api/sessions/{id}/runs/{run_id}/cancel", s.handleRunCancel)
+	mux.HandleFunc("DELETE /api/sessions/{id}/messages/after", s.handleMessagesTruncate)
 
 	// 记忆管理
-	mux.HandleFunc("GET /api/memory/search", s.withTenant(s.handleMemorySearch))
-	mux.HandleFunc("GET /api/memory/list", s.withTenant(s.handleMemoryList))
-	mux.HandleFunc("GET /api/memory/{type}/{title}", s.withTenant(s.handleMemoryGet))
-	mux.HandleFunc("POST /api/memory", s.withTenant(s.handleMemoryUpsert))
-	mux.HandleFunc("DELETE /api/memory/{type}/{title}", s.withTenant(s.handleMemoryDelete))
+	mux.HandleFunc("GET /api/memory/search", s.handleMemorySearch)
+	mux.HandleFunc("GET /api/memory/list", s.handleMemoryList)
+	mux.HandleFunc("GET /api/memory/{type}/{title}", s.handleMemoryGet)
+	mux.HandleFunc("POST /api/memory", s.handleMemoryUpsert)
+	mux.HandleFunc("DELETE /api/memory/{type}/{title}", s.handleMemoryDelete)
 
 	// 审核
-	mux.HandleFunc("GET /api/review/pending", s.withTenant(s.handleReviewPending))
-	mux.HandleFunc("POST /api/review/{type}/{title}/approve", s.withTenant(s.handleReviewApprove))
-	mux.HandleFunc("POST /api/review/{type}/{title}/reject", s.withTenant(s.handleReviewReject))
+	mux.HandleFunc("GET /api/review/pending", s.handleReviewPending)
+	mux.HandleFunc("POST /api/review/{type}/{title}/approve", s.handleReviewApprove)
+	mux.HandleFunc("POST /api/review/{type}/{title}/reject", s.handleReviewReject)
 
 	// 配置
 	mux.HandleFunc("GET /api/config", s.handleConfigGet)
@@ -75,9 +74,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/models", s.handleListModels)
 
 	// 会话历史
-	mux.HandleFunc("GET /api/sessions", s.withTenant(s.handleSessionList))
-	mux.HandleFunc("GET /api/sessions/{id}", s.withTenant(s.handleSessionGet))
-	mux.HandleFunc("DELETE /api/sessions/{id}", s.withTenant(s.handleSessionDelete))
+	mux.HandleFunc("GET /api/sessions", s.handleSessionList)
+	mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionGet)
+	mux.HandleFunc("DELETE /api/sessions/{id}", s.handleSessionDelete)
 
 	// 健康检查
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -89,38 +88,12 @@ func (s *Server) Handler() http.Handler {
 
 // ── 中间件 ────────────────────────────────────────────────────
 
-// tenantKey is the context key for the resolved tenant id.
-type tenantKey struct{}
-
-// withTenant resolves the tenant id and injects it into the request context.
-func (s *Server) withTenant(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		t := r.Header.Get("X-Tenant-ID")
-		if t == "" {
-			t = r.URL.Query().Get("tenant_id")
-		}
-		if t == "" {
-			t = s.store.Get().DefaultTenant
-		}
-		ctx := context.WithValue(r.Context(), tenantKey{}, t)
-		h(w, r.WithContext(ctx))
-	}
-}
-
-// tenantFrom returns the tenant id from the request context.
-func tenantFrom(r *http.Request) string {
-	if t, ok := r.Context().Value(tenantKey{}).(string); ok {
-		return t
-	}
-	return "default"
-}
-
 // logging wraps a handler with request logging.
 func logging(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		h.ServeHTTP(w, r)
-		log.Printf("%s %s %s %v", r.Method, r.URL.Path, tenantFrom(r), time.Since(start))
+		log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
 	})
 }
 

@@ -50,8 +50,7 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 // 真正的 Agent 循环跑在 RunManager 的 goroutine 里；事件进缓冲，
 // 客户端通过 GET /api/sessions/{id}/stream 订阅（replay+live）。
 func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, text, customer string) {
-	tenant := tenantFrom(r)
-	if err := s.history.EnsureSession(tenant, sessionID, firstLine(text), customer); err != nil {
+	if err := s.history.EnsureSession(sessionID, firstLine(text), customer); err != nil {
 		writeError(w, http.StatusForbidden, "无权访问该会话: %v", err)
 		return
 	}
@@ -63,7 +62,7 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 		if _, aerr := s.history.AppendMessage(sessionID, "user", text, ""); aerr != nil {
 			log.Printf("[warn] user 消息落库失败 会话 %s: %v", sessionID, aerr)
 		}
-		s.executeTurn(ctx, tenant, sessionID, text, emit)
+		s.executeTurn(ctx, sessionID, text, emit)
 	})
 	if err != nil {
 		writeError(w, http.StatusConflict, "%v", err)
@@ -77,7 +76,7 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 
 // executeTurn 是 Run 的执行体：完整 Agent 循环 + 落库（与连接彻底解耦）。
 // ADR-015：前台全记忆不变——Run 仍是完整循环，变的只是执行宿主。
-func (s *Server) executeTurn(ctx context.Context, tenant, sessionID, text string, emit func(agent.Event)) {
+func (s *Server) executeTurn(ctx context.Context, sessionID, text string, emit func(agent.Event)) {
 	emit(agent.Event{Type: "session", Content: sessionID})
 
 	// 取消时 Agent.Message 返回空 content——在 emit 层累积流出的内容增量，
@@ -90,7 +89,7 @@ func (s *Server) executeTurn(ctx context.Context, tenant, sessionID, text string
 		emit(e)
 	}
 
-	content, _, trace, err := s.agent.Message(ctx, tenant, sessionID, text, emitWrap)
+	content, _, trace, err := s.agent.Message(ctx, sessionID, text, emitWrap)
 	if err != nil {
 		if ctx.Err() != nil {
 			// 显式取消（用户点了停止）：已流出内容 + 停止标记落库
@@ -124,8 +123,7 @@ func (s *Server) executeTurn(ctx context.Context, tenant, sessionID, text string
 // 再续传 live；Run 结束且缓冲追平后关流。
 func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	tenant := tenantFrom(r)
-	if _, err := s.history.GetSession(tenant, sessionID); err != nil {
+	if _, err := s.history.GetSession(sessionID); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return
 	}
@@ -195,8 +193,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 // 租户校验：只返回本租户会话的运行态（跨租户 404）。
 func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	tenant := tenantFrom(r)
-	if _, err := s.history.GetSession(tenant, sessionID); err != nil {
+	if _, err := s.history.GetSession(sessionID); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return
 	}
@@ -211,8 +208,7 @@ func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	runID := r.PathValue("run_id")
-	tenant := tenantFrom(r)
-	if _, err := s.history.GetSession(tenant, sessionID); err != nil {
+	if _, err := s.history.GetSession(sessionID); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return
 	}
@@ -227,9 +223,8 @@ func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 // 删除 seq 之后的消息 + 关联 tool_calls + 全部 checkpoints（F1）。
 func (s *Server) handleMessagesTruncate(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	tenant := tenantFrom(r)
 	// 先租户归属校验（防跨租户探测运行态），再检查运行状态
-	if _, err := s.history.GetSession(tenant, sessionID); err != nil {
+	if _, err := s.history.GetSession(sessionID); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return
 	}
@@ -247,7 +242,7 @@ func (s *Server) handleMessagesTruncate(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "seq 必须为正整数（该消息及其之后将被删除）")
 		return
 	}
-	deleted, err := s.history.TruncateAfter(tenant, sessionID, after)
+	deleted, err := s.history.TruncateAfter(sessionID, after)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "截断失败: %v", err)
 		return

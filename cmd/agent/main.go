@@ -78,18 +78,18 @@ func main() {
 	// ── Agent 核心：自主循环 ────────────────────────────────
 	ag := agent.New(modelMgr, toolRegistry, asm, sessions)
 	// 断点续传：checkpoint 持久化到 SQLite，重启后恢复
-	ag.SetCheckpointSink(func(tenantID, sessionID string, cp *domain.Checkpoint) {
-		_ = hist.AppendCheckpoint(tenantID, sessionID, cp)
+	ag.SetCheckpointSink(func(sessionID string, cp *domain.Checkpoint) {
+		_ = hist.AppendCheckpoint(sessionID, cp)
 	})
 	ag.SetCheckpointSource(hist.ListCheckpoints)
 	// 跨会话客户上下文：从会话记录解析关联客户（非空时注入客户画像）
-	ag.SetCustomerResolver(func(tenantID, sessionID string) string {
-		if det, err := hist.GetSession(tenantID, sessionID); err == nil {
+	ag.SetCustomerResolver(func(sessionID string) string {
+		if det, err := hist.GetSession(sessionID); err == nil {
 			return det.Session.Customer
 		}
 		return ""
 	})
-	// P1 history_search：Agent 可回溯历史对话原文（跨会话，tenant 隔离）
+	// P1 history_search：Agent 可回溯历史对话原文（跨会话）
 	ag.SetHistorySearcher(hist.SearchMessages)
 
 	// ── 审核系统 ────────────────────────────────────────────

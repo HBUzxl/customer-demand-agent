@@ -87,9 +87,9 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 - stdlib `log.Printf`。请求日志：`%s %s %s %v`（method, path, tenant, duration），在 `logging` 中间件。
 - 启动日志用 `[ok]` / `[warn]` 前缀。**不记 api_key / 敏感配置**。
 
-## 多租户
+## 单租户（de-tenancy，2026-08-14 裁决）
 
-请求头 `X-Tenant-ID`（缺省用 `config.default_tenant`）。tenant_id 贯穿 session / history / 使用者画像；产品/行业/客户记忆是组织级共享（ADR-011）。**一期无鉴权**。
+多租户已砍除（ADR-011 废止——无使用场景，单租户内部工具）：代码无 tenant 概念；`X-Tenant-ID` 请求头接受但忽略；SQLite `sessions.tenant_id` 列保留但代码不读写（老数据兼容，新行写死 "default"）；产品/行业/客户记忆组织级共享语义不变。
 
 ## 前后端连接
 

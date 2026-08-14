@@ -17,57 +17,30 @@ func openTestStore(t *testing.T) *Store {
 	return s
 }
 
-// TestCrossTenantCheckpointIsolation 验证跨租户隔离（核心数据泄漏修复）：
-// 租户 B 用租户 A 的 session_id：① EnsureSession 被拒（防占用/续传）；② 读不到 A 的 checkpoint。
-func TestCrossTenantCheckpointIsolation(t *testing.T) {
+// TestCheckpointRoundTrip de-tenancy 后：checkpoint 按 session 存取（无租户维度）。
+func TestCheckpointRoundTrip(t *testing.T) {
 	s := openTestStore(t)
-
-	// A 建会话 + 写 checkpoint
-	if err := s.EnsureSession("tenantA", "sess-shared", "A的需求", ""); err != nil {
-		t.Fatalf("A EnsureSession: %v", err)
+	_ = s.EnsureSession("sess-x", "标题", "")
+	cp := &domain.Checkpoint{ID: "cp-1", Type: domain.CheckpointInitial}
+	if err := s.AppendCheckpoint("sess-x", cp); err != nil {
+		t.Fatal(err)
 	}
-	cp := &domain.Checkpoint{
-		ID: "cp1", Type: domain.CheckpointInitial, Document: "A的机密文档",
-		Analysis: &domain.AnalysisResult{DemandAnalysis: "A的结论"},
-	}
-	if err := s.AppendCheckpoint("tenantA", "sess-shared", cp); err != nil {
-		t.Fatalf("A AppendCheckpoint: %v", err)
-	}
-
-	// B 用 A 的 session_id EnsureSession → 应被拒
-	if err := s.EnsureSession("tenantB", "sess-shared", "B想劫持", ""); err == nil {
-		t.Error("租户 B 用 A 的 session_id EnsureSession 应失败（跨租户拒绝），got nil")
-	}
-
-	// B 直接读 A 的 checkpoint → 应空（JOIN sessions 校验）
-	cps, err := s.ListCheckpoints("tenantB", "sess-shared")
-	if err != nil {
-		t.Fatalf("B ListCheckpoints: %v", err)
-	}
-	if len(cps) != 0 {
-		t.Errorf("B 不应读到 A 的 checkpoint，got %d 条", len(cps))
-	}
-
-	// 回归：A 自己能读到
-	cpsA, err := s.ListCheckpoints("tenantA", "sess-shared")
-	if err != nil {
-		t.Fatalf("A ListCheckpoints: %v", err)
-	}
-	if len(cpsA) != 1 || cpsA[0].ID != "cp1" {
-		t.Errorf("A 应读到自己的 1 条 checkpoint，got %+v", cpsA)
+	cps, err := s.ListCheckpoints("sess-x")
+	if err != nil || len(cps) != 1 {
+		t.Fatalf("按 session 取回 checkpoint 失败: %v (%d)", err, len(cps))
 	}
 }
 
 // TestEnsureSessionSameTenantUpdate 验证同租户重复 EnsureSession 正常更新（不误拒）。
 func TestEnsureSessionSameTenantUpdate(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.EnsureSession("t1", "s1", "标题1", ""); err != nil {
+	if err := s.EnsureSession("s1", "标题1", ""); err != nil {
 		t.Fatalf("首次: %v", err)
 	}
-	if err := s.EnsureSession("t1", "s1", "标题2", "客户X"); err != nil {
+	if err := s.EnsureSession("s1", "标题2", "客户X"); err != nil {
 		t.Fatalf("同租户更新: %v", err)
 	}
-	det, err := s.GetSession("t1", "s1")
+	det, err := s.GetSession("s1")
 	if err != nil {
 		t.Fatalf("GetSession: %v", err)
 	}

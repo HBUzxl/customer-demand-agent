@@ -98,7 +98,7 @@ deleteAs() { # deleteAs <tenant> <path>
   "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: $1" -X DELETE "$BASE$2"
 }
 
-echo "-- 6. 安全（C1 SSRF / C2 凭据外泄 / 跨租户隔离） --"
+echo "-- 6. 安全（C1 SSRF / C2 凭据外泄 / de-tenancy） --"
 # 注：以下均在 LLM 调用前被拒，无需 api_key（与 e2e 的无 LLM 前提一致）。
 # C1 SSRF：探测端点拒绝云元数据 / 回环
 [ "$(post /api/config/test '{"endpoint":"http://169.254.169.254/","api_key":"x","model":"m","protocol":"openai-chat"}')" = "400" ] && ok "C1 /api/config/test 拒绝云元数据" || fail "C1 SSRF config/test 未拒绝"
@@ -107,13 +107,14 @@ echo "-- 6. 安全（C1 SSRF / C2 凭据外泄 / 跨租户隔离） --"
 [ "$(post /api/models '{"endpoint":"http://127.0.0.1:80/","api_key":"x","protocol":"openai-chat"}')" = "400" ] && ok "C1 /api/models 拒绝回环" || fail "C1 SSRF models 未拒绝"
 # C2 凭据外泄：name 命中已存模型但 endpoint 不同源、未传 key → 拒绝代填
 [ "$(post /api/config/test '{"name":"default","endpoint":"http://e2e-credexfil.invalid/v1","protocol":"openai-chat","model":"m"}')" = "400" ] && ok "C2 不同源 endpoint 拒绝代填 key" || fail "C2 凭据外泄未堵"
-# 跨租户：tenantA 认领 session（F0：202 建会话；Run 即刻 cancel 防占用），tenantB 复用同一 session_id → 403
-SECRESP=$(postt tenantA /api/analyze '{"session_id":"e2e-sec","text":"x"}')
-echo "$SECRESP" | grep -q run_id && ok "跨租户 tenantA 认领 session（202）" || fail "跨租户 A 认领失败（got ${SECRESP}）"
+# de-tenancy：X-Tenant-ID 头接受但忽略——任意头同会话可访问（无 403）
+SECRESP=$(postt whatever /api/analyze '{"session_id":"e2e-sec","text":"x"}')
+echo "$SECRESP" | grep -q run_id && ok "de-tenancy：带任意租户头建会话（202）" || fail "de-tenancy 建会话失败（got ${SECRESP}）"
 SECRID=$(echo "$SECRESP" | sed 's/.*"run_id":"\([^"]*\)".*/\1/')
-[ -n "$SECRID" ] && "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/e2e-sec/runs/$SECRID/cancel" -H "X-Tenant-ID: tenantA"
-[ "$(posttcode tenantB /api/analyze '{"session_id":"e2e-sec","text":"x"}')" = "403" ] && ok "跨租户 tenantB 被拒（403）" || fail "跨租户 B 未拒绝（隔离泄漏）"
-[ "$(deleteAs tenantA /api/sessions/e2e-sec)" = "200" ] && ok "清理 e2e-sec session" || fail "清理 e2e-sec"
+[ -n "$SECRID" ] && "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/e2e-sec/runs/$SECRID/cancel"
+DT_CODE=$(posttcode other /api/analyze '{"session_id":"e2e-sec","text":"x"}')
+[ "$DT_CODE" != "403" ] && ok "de-tenancy：不同租户头同会话不再被拒（${DT_CODE}，202/409 均为正常）" || fail "de-tenancy 跨头仍 403（租户隔离未砍净）"
+[ "$(deleteAs whoever /api/sessions/e2e-sec)" = "200" ] && ok "清理 e2e-sec session" || fail "清理 e2e-sec"
 
 echo "-- 7. 清理测试数据 --"
 [ "$(delete /api/sessions/e2e-msg)" = "200" ] && ok "清理 e2e-msg session" || fail "清理 e2e-msg"

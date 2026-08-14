@@ -116,10 +116,9 @@ func (s *Server) resetRegistry() error {
 
 // handleSessionList: GET /api/sessions?limit=&offset=
 func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
-	tenant := tenantFrom(r)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	items, err := s.history.ListSessions(tenant, limit, offset)
+	items, err := s.history.ListSessions(limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "%v", err)
 		return
@@ -138,9 +137,8 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 
 // handleSessionGet: GET /api/sessions/{id}
 func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
-	tenant := tenantFrom(r)
 	id := r.PathValue("id")
-	det, err := s.history.GetSession(tenant, id)
+	det, err := s.history.GetSession(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "%v", err)
 		return
@@ -150,9 +148,8 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 
 // handleSessionDelete: DELETE /api/sessions/{id}
 func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
-	tenant := tenantFrom(r)
 	id := r.PathValue("id")
-	if err := s.history.DeleteSession(tenant, id); err != nil {
+	if err := s.history.DeleteSession(id); err != nil {
 		writeError(w, http.StatusNotFound, "%v", err)
 		return
 	}

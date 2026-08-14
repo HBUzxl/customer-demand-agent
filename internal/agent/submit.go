@@ -188,7 +188,7 @@ func (a *Agent) execHistorySearch(argsRaw string, st *turnState) string {
 	if args.AllSessions {
 		scope = ""
 	}
-	hits, err := a.histSearch(st.tenantID, scope, args.Query, args.Limit)
+	hits, err := a.histSearch(scope, args.Query, args.Limit)
 	if err != nil {
 		return fmt.Sprintf(`{"error":"%s"}`, jsonEscape(err.Error()))
 	}

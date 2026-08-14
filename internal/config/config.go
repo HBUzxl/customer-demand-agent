@@ -24,7 +24,6 @@ type Config struct {
 	Server        ServerCfg           `json:"server"`
 	WikiDir       string              `json:"wiki_dir"`
 	HistoryDB     string              `json:"history_db"`
-	DefaultTenant string              `json:"default_tenant"`
 	DefaultUser   string              `json:"default_user"`    // 当前使用者（销售），影响分级输出
 	LLMTimeoutSec int                 `json:"llm_timeout_sec"` // 全局 LLM 调用超时（非模型属性）
 	Models        []model.ModelConfig `json:"models"`
@@ -53,7 +52,6 @@ func template() *Config {
 		},
 		WikiDir:       "./wiki",
 		HistoryDB:     "./data/history.db",
-		DefaultTenant: "default",
 		DefaultUser:   "张三",
 		LLMTimeoutSec: 120,
 		Models: []model.ModelConfig{
@@ -165,9 +163,6 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.HistoryDB == "" {
 		cfg.HistoryDB = "./data/history.db"
-	}
-	if cfg.DefaultTenant == "" {
-		cfg.DefaultTenant = "default"
 	}
 	if cfg.DefaultUser == "" {
 		cfg.DefaultUser = "张三"

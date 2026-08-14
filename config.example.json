@@ -5,7 +5,6 @@
   },
   "wiki_dir": "./wiki",
   "history_db": "./data/history.db",
-  "default_tenant": "default",
   "models": [
     {
       "name": "default",

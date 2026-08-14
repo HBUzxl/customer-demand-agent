@@ -227,55 +227,36 @@ func TestChatShimStillWorks(t *testing.T) {
 	}
 }
 
-// TestRunEndpointsTenantIsolation F0 安全：running/cancel 跨租户 404。
-func TestRunEndpointsTenantIsolation(t *testing.T) {
+// TestRunEndpointsNoTenantHeader de-tenancy 后：无租户头/任意租户头均可
+// 访问（X-Tenant-ID 接受但忽略），会话按 id 全局可见。
+func TestRunEndpointsNoTenantHeader(t *testing.T) {
 	ts, _ := setupServer(t)
-	// tenantA 建会话并启动 Run
-	code, sid, rid := postMessage(t, ts.URL, "tenantA", `{"text":"你好","session_id":"iso-s"}`)
+	code, sid, rid := postMessage(t, ts.URL, "", `{"text":"你好","session_id":"nt-s"}`)
 	if code != http.StatusAccepted {
 		t.Fatalf("202 expected, got %d", code)
 	}
-	// tenantB 查 running → 404
-	rreq, _ := http.NewRequest("GET", ts.URL+"/api/sessions/"+sid+"/running", nil)
-	rreq.Header.Set("X-Tenant-ID", "tenantB")
-	rresp, err := http.DefaultClient.Do(rreq)
+	// 无租户头查 running → 200（此前 404）
+	req, _ := http.NewRequest("GET", ts.URL+"/api/sessions/"+sid+"/running", nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rresp.Body.Close()
-	if rresp.StatusCode != http.StatusNotFound {
-		t.Errorf("跨租户 running 应 404，got %d", rresp.StatusCode)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("无租户头 running 应 200，got %d", resp.StatusCode)
 	}
-	// tenantB cancel → 404（Run 不受影响）
-	creq, _ := http.NewRequest("POST", ts.URL+"/api/sessions/"+sid+"/runs/"+rid+"/cancel", nil)
-	creq.Header.Set("X-Tenant-ID", "tenantB")
-	cresp, err := http.DefaultClient.Do(creq)
+	// 任意 X-Tenant-ID 头 → 忽略不拒
+	req2, _ := http.NewRequest("GET", ts.URL+"/api/sessions/"+sid+"/running", nil)
+	req2.Header.Set("X-Tenant-ID", "anything")
+	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cresp.Body.Close()
-	if cresp.StatusCode != http.StatusNotFound {
-		t.Errorf("跨租户 cancel 应 404，got %d", cresp.StatusCode)
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Errorf("任意租户头 running 应 200（头被忽略），got %d", resp2.StatusCode)
 	}
-	// 跨租户 cancel 被 404 拒绝后，本租户 running 接口仍可用（200）——
-	// 注：setupServer 的 LLM 端点不可达，Run 可能在断言前已结束，故只验
-	// 接口可用性 + 响应结构，不断言 running 布尔值。
-	areq, _ := http.NewRequest("GET", ts.URL+"/api/sessions/"+sid+"/running", nil)
-	areq.Header.Set("X-Tenant-ID", "tenantA")
-	aresp, err := http.DefaultClient.Do(areq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer aresp.Body.Close()
-	if aresp.StatusCode != http.StatusOK {
-		t.Errorf("本租户 running 应 200，got %d", aresp.StatusCode)
-	}
-	var out struct {
-		Running bool   `json:"running"`
-		RunID   string `json:"run_id"`
-	}
-	_ = json.NewDecoder(aresp.Body).Decode(&out)
-	_ = out
+	_ = rid
 }
 
 // TestMessageBusy409NoOrphanUserMessage 并发 409 不留孤儿 user 消息：

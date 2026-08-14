@@ -76,10 +76,10 @@ type Agent struct {
 	tools      *tools.Registry
 	assembler  *assembler.Assembler
 	sessions   *shortterm.SessionManager
-	saveCP     func(tenantID, sessionID string, cp *domain.Checkpoint)                          // checkpoint 持久化回调（断点续传）
-	loadCP     func(tenantID, sessionID string) ([]*domain.Checkpoint, error)                   // checkpoint 读取回调（断点续传）
-	customerOf func(tenantID, sessionID string) string                                          // 会话关联客户名（跨会话客户上下文）
-	histSearch func(tenantID, sessionID, query string, limit int) ([]history.MessageHit, error) // 历史检索（P1 history_search 工具）
+	saveCP     func(sessionID string, cp *domain.Checkpoint)                          // checkpoint 持久化回调（断点续传）
+	loadCP     func(sessionID string) ([]*domain.Checkpoint, error)                   // checkpoint 读取回调（断点续传）
+	customerOf func(sessionID string) string                                          // 会话关联客户名（跨会话客户上下文）
+	histSearch func(sessionID, query string, limit int) ([]history.MessageHit, error) // 历史检索（P1 history_search 工具）
 }
 
 // New 创建 Agent。
@@ -87,36 +87,35 @@ func New(modelMgr *model.Manager, tr *tools.Registry, asm *assembler.Assembler, 
 	return &Agent{modelMgr: modelMgr, tools: tr, assembler: asm, sessions: sessions}
 }
 
-// SetCheckpointSink 设置 checkpoint 持久化回调（断点续传）。tenantID 用于跨租户隔离。
-func (a *Agent) SetCheckpointSink(fn func(tenantID, sessionID string, cp *domain.Checkpoint)) {
+// SetCheckpointSink 设置 checkpoint 持久化回调（断点续传）。
+func (a *Agent) SetCheckpointSink(fn func(sessionID string, cp *domain.Checkpoint)) {
 	a.saveCP = fn
 }
 
-// SetCheckpointSource 设置 checkpoint 读取回调（断点续传）。tenantID 用于跨租户隔离。
-func (a *Agent) SetCheckpointSource(fn func(tenantID, sessionID string) ([]*domain.Checkpoint, error)) {
+// SetCheckpointSource 设置 checkpoint 读取回调（断点续传）。
+func (a *Agent) SetCheckpointSource(fn func(sessionID string) ([]*domain.Checkpoint, error)) {
 	a.loadCP = fn
 }
 
 // SetCustomerResolver 设置会话→客户名解析回调（跨会话客户上下文：非空时
 // assembler 注入该客户的画像，同一客户多次沟通不再各说各话）。
-func (a *Agent) SetCustomerResolver(fn func(tenantID, sessionID string) string) {
+func (a *Agent) SetCustomerResolver(fn func(sessionID string) string) {
 	a.customerOf = fn
 }
 
 // SetHistorySearcher 设置历史检索回调（history_search 工具的后端：
 // Agent 可回溯原始对话轨迹，P1——checkpoint 注入摘要不够用时兜底）。
-func (a *Agent) SetHistorySearcher(fn func(tenantID, sessionID, query string, limit int) ([]history.MessageHit, error)) {
+func (a *Agent) SetHistorySearcher(fn func(sessionID, query string, limit int) ([]history.MessageHit, error)) {
 	a.histSearch = fn
 }
 
 // restoreIfNeeded 若内存无 checkpoint 且历史有，则恢复短期记忆（断点续传）。
-// 按 tenant 作用域读取，读不到他租户的 checkpoint。
-func (a *Agent) restoreIfNeeded(tenantID, sessionID string) *shortterm.Manager {
+func (a *Agent) restoreIfNeeded(sessionID string) *shortterm.Manager {
 	stm := a.sessions.Get(sessionID)
 	if stm.HasHistory() || a.loadCP == nil {
 		return stm
 	}
-	if cps, err := a.loadCP(tenantID, sessionID); err == nil && len(cps) > 0 {
+	if cps, err := a.loadCP(sessionID); err == nil && len(cps) > 0 {
 		a.sessions.Restore(sessionID, cps)
 		stm = a.sessions.Get(sessionID)
 	}
@@ -125,7 +124,6 @@ func (a *Agent) restoreIfNeeded(tenantID, sessionID string) *shortterm.Manager {
 
 // turnState 收集本轮自主循环的产物。
 type turnState struct {
-	tenantID string                // 本轮租户（history_search 跨会话检索用）
 	session  string                // 本轮会话（history_search 默认范围）
 	analysis *AnalysisSubmission   // 最后一次 analysis_submit 的结果（nil = 本轮未提交分析）
 	answered []domain.AnsweredInfo // 本轮记录的"追问已回答"（missing_answer）
@@ -136,15 +134,15 @@ type turnState struct {
 //
 // 记忆系统覆盖所有前台轮次（ADR-015/Q1）：无论是否提交分析都建 checkpoint——
 // 提交过建 initial/reanalysis，纯聊天/追问建轻量 followup，对话链完整。
-func (a *Agent) Message(ctx context.Context, tenantID, sessionID, text string, emit func(Event)) (string, *domain.AnalysisResult, *Trace, error) {
-	stm := a.restoreIfNeeded(tenantID, sessionID)
+func (a *Agent) Message(ctx context.Context, sessionID, text string, emit func(Event)) (string, *domain.AnalysisResult, *Trace, error) {
+	stm := a.restoreIfNeeded(sessionID)
 	// DetermineOp 仅作 checkpoint 类型提示与上下文拼装参考，不决定 Agent 行为。
 	op := shortterm.DetermineOp(stm, text)
 
 	sessCtx := stm.BuildContext(op)
 	// 会话关联的客户（跨会话客户上下文：非空时 assembler 注入该客户画像）。
 	if a.customerOf != nil {
-		sessCtx.Customer = a.customerOf(tenantID, sessionID)
+		sessCtx.Customer = a.customerOf(sessionID)
 	}
 
 	msgList := a.assembler.Assemble(op, sessCtx, text)
@@ -161,7 +159,7 @@ func (a *Agent) Message(ctx context.Context, tenantID, sessionID, text string, e
 		}
 	}
 	trace.SystemPrompt = sb.String()
-	st := &turnState{tenantID: tenantID, session: sessionID}
+	st := &turnState{session: sessionID}
 
 	content, err := a.runStreaming(ctx, msgList, trace, emit, st)
 	if err != nil {
@@ -185,7 +183,7 @@ func (a *Agent) Message(ctx context.Context, tenantID, sessionID, text string, e
 		cp.Answered = st.answered // 本轮记录的追问答案（随 checkpoint 持久化，追问闭环）
 	}
 	if a.saveCP != nil && cp != nil {
-		a.saveCP(tenantID, sessionID, cp) // 持久化（断点续传，按 tenant 隔离）
+		a.saveCP(sessionID, cp) // 持久化（断点续传）
 	}
 
 	// done：content 恒有；analysis 仅本轮提交过才有。

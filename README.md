@@ -29,7 +29,7 @@ React+Vite 前端 ──HTTP──→ channel/http → agent（自主循环）
 | 历史记录 | `internal/history` | SQLite 完整轨迹持久化（ADR-010）|
 | 审核系统 | `internal/review` | 待审核记忆队列（ADR-005）|
 | Channel | `internal/channel` | HTTP 实现 + 钉钉预留口子（ADR-012）|
-| 多租户 | 全链路 | tenant_id 隔离，一期不鉴权（ADR-011）|
+| 租户 | — | 单租户（de-tenancy，X-Tenant-ID 忽略，列保留；ADR-011 废止）|
 
 ## 快速开始
 

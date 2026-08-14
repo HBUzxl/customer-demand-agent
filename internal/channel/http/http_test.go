@@ -163,46 +163,6 @@ func TestConfigGetPut(t *testing.T) {
 	}
 }
 
-func TestTenantIsolation(t *testing.T) {
-	// 多租户隔离在 history 层生效：不同 tenant 看不到彼此的会话。
-	ts, _ := setupServer(t)
-
-	// tenant A 写一个会话
-	reqA, _ := http.NewRequest("POST", ts.URL+"/api/analyze", nopCloser{bytes.NewReader([]byte(`{"text":"A的文本"}`))})
-	reqA.Header.Set("Content-Type", "application/json")
-	reqA.Header.Set("X-Tenant-ID", "tenantA")
-	respA, errA := http.DefaultClient.Do(reqA)
-	if errA != nil {
-		t.Fatal(errA)
-	}
-	defer respA.Body.Close()
-	// analyze 会因 LLM 不可用失败，但会话已创建（EnsureSession 在 LLM 调用前）
-
-	// tenant A 能看到会话、tenant B 看不到
-	reqLA, _ := http.NewRequest("GET", ts.URL+"/api/sessions", nil)
-	reqLA.Header.Set("X-Tenant-ID", "tenantA")
-	respLA, _ := http.DefaultClient.Do(reqLA)
-	var bodyA map[string]any
-	_ = json.NewDecoder(respLA.Body).Decode(&bodyA)
-	respLA.Body.Close()
-
-	reqLB, _ := http.NewRequest("GET", ts.URL+"/api/sessions", nil)
-	reqLB.Header.Set("X-Tenant-ID", "tenantB")
-	respLB, _ := http.DefaultClient.Do(reqLB)
-	var bodyB map[string]any
-	_ = json.NewDecoder(respLB.Body).Decode(&bodyB)
-	respLB.Body.Close()
-
-	countA, _ := bodyA["count"].(float64)
-	countB, _ := bodyB["count"].(float64)
-	if int(countA) != 1 {
-		t.Errorf("tenantA should see 1 session, got %v", countA)
-	}
-	if int(countB) != 0 {
-		t.Errorf("tenantB should see 0 sessions (isolation), got %v", countB)
-	}
-}
-
 // TestMessageCustomerFieldPersisted 客户身份端到端（ADR-016 L2）：
 // /api/message 带 customer → EnsureSession 落库 → 会话详情读回。
 // LLM 不可达会失败，但 customer 落库发生在 LLM 调用前——验证不受影响。

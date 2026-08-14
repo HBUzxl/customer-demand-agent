@@ -9,7 +9,6 @@ import (
 
 // InboundMessage is a normalized incoming message from some channel.
 type InboundMessage struct {
-	TenantID  string // 多租户标识（一期只区分不鉴权，ADR-011）
 	SessionID string // 会话标识（空则由后端创建）
 	Content   string // 用户输入（客户沟通文本 / 追问）
 	Source    string // 来源渠道："http" / "dingtalk"

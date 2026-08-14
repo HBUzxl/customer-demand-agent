@@ -135,7 +135,7 @@ func TestAgentGreetingChat(t *testing.T) {
 		{content: "你好！我是售前需求分析助手，把客户沟通原文发我就行。"},
 	})
 
-	content, analysis, trace, err := ag.Message(context.Background(), "t1", "sess-chat", "你好", nil)
+	content, analysis, trace, err := ag.Message(context.Background(), "sess-chat", "你好", nil)
 	if err != nil {
 		t.Fatalf("Message failed: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestAgentDemandAnalysis(t *testing.T) {
 		{content: "结论：客户网站被 CC 攻击，**雷池**可直接覆盖（置信度 0.95），建议先确认攻击规模。"},
 	})
 
-	content, analysis, trace, err := ag.Message(context.Background(), "t1", "sess-req", "我们电商网站大促被CC攻击，要过等保二级", nil)
+	content, analysis, trace, err := ag.Message(context.Background(), "sess-req", "我们电商网站大促被CC攻击，要过等保二级", nil)
 	if err != nil {
 		t.Fatalf("Message failed: %v", err)
 	}
@@ -237,12 +237,12 @@ func TestAgentFollowupAfterAnalysis(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	_, analysis, _, err := ag.Message(ctx, "t1", "sess-fu", "我们网站被CC攻击了", nil)
+	_, analysis, _, err := ag.Message(ctx, "sess-fu", "我们网站被CC攻击了", nil)
 	if err != nil || analysis == nil {
 		t.Fatalf("首轮分析失败: %v / analysis=%v", err, analysis)
 	}
 
-	content2, analysis2, _, err := ag.Message(ctx, "t1", "sess-fu", "那部署方式呢？", nil)
+	content2, analysis2, _, err := ag.Message(ctx, "sess-fu", "那部署方式呢？", nil)
 	if err != nil {
 		t.Fatalf("追问失败: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestAgentReanalysisCheckpoint(t *testing.T) {
 		{content: "需求实质变化，重新分析如下。"},
 	})
 
-	_, analysis, _, err := ag.Message(context.Background(), "t1", "sess-re", "完全新的数据泄露场景", nil)
+	_, analysis, _, err := ag.Message(context.Background(), "sess-re", "完全新的数据泄露场景", nil)
 	if err != nil {
 		t.Fatalf("Message failed: %v", err)
 	}
@@ -300,16 +300,16 @@ func TestAgentCheckpointRestore(t *testing.T) {
 
 	// 模拟持久化：sink 收集 → source 供 restore。
 	var saved []*domain.Checkpoint
-	ag1.SetCheckpointSink(func(_, _ string, cp *domain.Checkpoint) { saved = append(saved, cp) })
+	ag1.SetCheckpointSink(func(_ string, cp *domain.Checkpoint) { saved = append(saved, cp) })
 	var gotErr error
-	ag1.SetCheckpointSource(func(_, _ string) ([]*domain.Checkpoint, error) { return saved, gotErr })
+	ag1.SetCheckpointSource(func(_ string) ([]*domain.Checkpoint, error) { return saved, gotErr })
 
 	// 轮 1：真实需求（initial）
-	if _, a, _, err := ag1.Message(ctx, "t1", "sess-rs", "我们网站被CC攻击", nil); err != nil || a == nil {
+	if _, a, _, err := ag1.Message(ctx, "sess-rs", "我们网站被CC攻击", nil); err != nil || a == nil {
 		t.Fatalf("首轮失败: %v", err)
 	}
 	// 轮 2：纯聊天（轻量 followup）
-	if _, a2, _, err := ag1.Message(ctx, "t1", "sess-rs", "你好", nil); err != nil {
+	if _, a2, _, err := ag1.Message(ctx, "sess-rs", "你好", nil); err != nil {
 		t.Fatalf("纯聊天失败: %v", err)
 	} else if a2 != nil {
 		t.Fatal("纯聊天不应有 analysis")
@@ -329,10 +329,10 @@ func TestAgentCheckpointRestore(t *testing.T) {
 		{content: "你好呀！"},
 		{content: "雷池支持旁路部署。"},
 	})
-	ag2.SetCheckpointSource(func(_, _ string) ([]*domain.Checkpoint, error) { return saved, gotErr })
+	ag2.SetCheckpointSource(func(_ string) ([]*domain.Checkpoint, error) { return saved, gotErr })
 
 	// 重启后追问：restore 应生效（内存无链 → 从 saved 载入 → DetermineOp 走 followup）。
-	content2, _, _, err := ag2.Message(ctx, "t1", "sess-rs", "那部署方式呢？", nil)
+	content2, _, _, err := ag2.Message(ctx, "sess-rs", "那部署方式呢？", nil)
 	if err != nil {
 		t.Fatalf("重启后追问失败: %v", err)
 	}
@@ -351,7 +351,7 @@ func TestAgentChatUsesMemoryTools(t *testing.T) {
 		{content: "雷池是长亭的下一代 WAF，支持 CC 攻击防护等场景。"},
 	})
 
-	content, analysis, trace, err := ag.Message(context.Background(), "t1", "sess-mc", "顺便问下雷池是什么产品？", nil)
+	content, analysis, trace, err := ag.Message(context.Background(), "sess-mc", "顺便问下雷池是什么产品？", nil)
 	if err != nil {
 		t.Fatalf("Message failed: %v", err)
 	}
@@ -410,11 +410,11 @@ func TestRestorePromptKeepsAnalysis(t *testing.T) {
 	})
 	ctx := context.Background()
 	var saved []*domain.Checkpoint
-	ag1.SetCheckpointSink(func(_, _ string, cp *domain.Checkpoint) { saved = append(saved, cp) })
-	if _, a, _, err := ag1.Message(ctx, "t1", "s", "我们网站被CC攻击", nil); err != nil || a == nil {
+	ag1.SetCheckpointSink(func(_ string, cp *domain.Checkpoint) { saved = append(saved, cp) })
+	if _, a, _, err := ag1.Message(ctx, "s", "我们网站被CC攻击", nil); err != nil || a == nil {
 		t.Fatalf("首轮: %v", err)
 	}
-	if _, _, _, err := ag1.Message(ctx, "t1", "s", "谢谢", nil); err != nil {
+	if _, _, _, err := ag1.Message(ctx, "s", "谢谢", nil); err != nil {
 		t.Fatalf("聊天轮: %v", err)
 	}
 
@@ -426,7 +426,7 @@ func TestRestorePromptKeepsAnalysis(t *testing.T) {
 		{content: "聊天回复"},
 		{content: "重启后的回答"},
 	})
-	ag2.SetCheckpointSource(func(_, _ string) ([]*domain.Checkpoint, error) { return saved, nil })
+	ag2.SetCheckpointSource(func(_ string) ([]*domain.Checkpoint, error) { return saved, nil })
 	// 用 emit 捕获不了 prompt；改为直接检查 restore 后的 BuildContext 经 Assemble 的结果——
 	// 通过一个变通：restore 后再发一轮，检查 Agent 行为路径中 LastAnalysis 被注入。
 	// 这里直接构造同链 assembler 验证（restore 的本质 = 同一条链）。
@@ -443,7 +443,7 @@ func TestRestorePromptKeepsAnalysis(t *testing.T) {
 		t.Fatal("restore 后 prompt 应包含分析上下文（LastAnalysis 注入）")
 	}
 	// ag2 重启后追问仍正常（restore 生效）
-	if _, _, _, err := ag2.Message(ctx, "t1", "s", "那部署方式呢", nil); err != nil {
+	if _, _, _, err := ag2.Message(ctx, "s", "那部署方式呢", nil); err != nil {
 		t.Fatalf("重启后追问: %v", err)
 	}
 }
@@ -480,7 +480,7 @@ func TestAgentMissingAnswerLoop(t *testing.T) {
 		// 第 2 轮：自然语言确认
 		{content: "已记录：预算 50 万、私有云部署。"},
 	})
-	_, _, _, err := ag.Message(context.Background(), "t1", "sess-ma", "预算50万，部署在私有云", nil)
+	_, _, _, err := ag.Message(context.Background(), "sess-ma", "预算50万，部署在私有云", nil)
 	if err != nil {
 		t.Fatalf("Message: %v", err)
 	}
@@ -595,8 +595,8 @@ func TestAgentHistorySearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hist.Close() })
-	_ = hist.EnsureSession("t1", "sess-a", "会话A", "")
-	_ = hist.EnsureSession("t1", "sess-b", "会话B", "")
+	_ = hist.EnsureSession("sess-a", "会话A", "")
+	_ = hist.EnsureSession("sess-b", "会话B", "")
 	_, _ = hist.AppendMessage("sess-a", "user", "我们官网被挂马了，要过等保三级", "")
 	_, _ = hist.AppendMessage("sess-b", "user", "上次说过的那个预算50万的项目", "")
 
@@ -608,7 +608,7 @@ func TestAgentHistorySearch(t *testing.T) {
 	})
 	ag.SetHistorySearcher(hist.SearchMessages)
 	_ = sessions
-	content, _, _, err := ag.Message(context.Background(), "t1", "sess-a", "之前有没有聊过预算的事", nil)
+	content, _, _, err := ag.Message(context.Background(), "sess-a", "之前有没有聊过预算的事", nil)
 	if err != nil {
 		t.Fatalf("Message: %v", err)
 	}
