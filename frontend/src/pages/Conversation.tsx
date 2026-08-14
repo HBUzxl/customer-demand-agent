@@ -166,8 +166,6 @@ export default function Conversation() {
   }
 
   function handleEvent(e: AgentEvent) {
-    // 多轮/切回防串台：只处理当前订阅 Run 的事件（历史 Run 的事件忽略）
-    if (activeRunRef.current && e.run_id && e.run_id !== activeRunRef.current) return;
     switch (e.type) {
       case "session":
         setSessionId(e.content || "");
@@ -244,9 +242,17 @@ export default function Conversation() {
     // 游标按会话隔离；新 Run 用该会话已见最大 seq（上一轮 done 已记）——
     // 增量订阅天然跳过历史 Run 事件（run_id 过滤双保险见 handleEvent）
     const since = lastSeqRef.current.get(sid) || 0;
-    unsubRef.current = subscribeStream(sid, since, handleEvent, (seq) => {
-      lastSeqRef.current.set(sid, seq);
-    });
+    unsubRef.current = subscribeStream(
+      sid,
+      since,
+      handleEvent,
+      (seq) => lastSeqRef.current.set(sid, seq),
+      (run) => {
+        // x-run 标注当前活跃 Run（首个事件后锁定；resume 时缓冲里历史 Run
+        // 的事件无 x-run 混入风险——只有 live 事件带）
+        if (run && activeRunRef.current !== run) activeRunRef.current = run;
+      },
+    );
   }
 
   function stopSubscription() {

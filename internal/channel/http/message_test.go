@@ -386,9 +386,9 @@ func sseIDs(raw string) []int {
 	return out
 }
 
-// TestSecondRunEventsFilteredByRunID 同会话第二轮：事件带各自 run_id，
-// 增量订阅（since=第一轮最大 seq）不回放第一轮事件——多轮不串台的
-// 服务端保证。
+// TestSecondRunEventsFilteredByRunID 同会话第二轮：SSE x-run 字段行标注
+// 产生事件的 Run（data payload schema 不变），增量订阅（since=第一轮最大
+// seq）不回放第一轮事件——多轮不串台的服务端保证。
 func TestSecondRunEventsFilteredByRunID(t *testing.T) {
 	ts, _ := setupServer(t)
 	// 第一轮（LLM 不可达 → 等超时失败后 Run 结束）
@@ -418,10 +418,14 @@ func TestSecondRunEventsFilteredByRunID(t *testing.T) {
 	if rid2 == rid1 {
 		t.Fatal("两轮 run_id 应不同")
 	}
-	// 全量 replay（since=0）：第一轮事件带 rid1，第二轮带 rid2
+	// 全量 replay（since=0）：事件经 x-run 字段行标注当前 Run
 	raw := sseRead(t, ts.URL, sid, 0, 2*time.Second)
-	if !strings.Contains(raw, `"run_id":"`+rid1+`"`) {
-		t.Fatalf("第一轮事件应带 run_id %s", rid1)
+	if !strings.Contains(raw, "x-run: "+rid2) {
+		t.Fatalf("第二轮事件应经 x-run 标注 %s", rid2)
+	}
+	// data payload schema 不变：不含 run_id 字段
+	if strings.Contains(raw, `"run_id":"`+rid1+`"`) {
+		t.Fatal("data payload 不应含 run_id（schema 不得变更）")
 	}
 	// 取第一轮最大 seq，增量订阅：不应再见到 rid1 的 done 事件
 	seqs := sseIDs(raw)
@@ -432,7 +436,7 @@ func TestSecondRunEventsFilteredByRunID(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	inc := sseRead(t, ts.URL, sid, maxSeq, 2*time.Second)
 	for _, line := range strings.Split(inc, "\n") {
-		if strings.Contains(line, `"type":"done"`) && strings.Contains(line, `"run_id":"`+rid1+`"`) {
+		if strings.Contains(line, `"type":"done"`) && strings.Contains(line, "x-run: "+rid1) {
 			t.Fatal("增量续传收到第一轮 done（多轮串台）")
 		}
 	}

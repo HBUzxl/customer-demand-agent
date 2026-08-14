@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"customer-demand-agent/internal/agent"
 )
@@ -62,11 +63,7 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 		if _, aerr := s.history.AppendMessage(sessionID, "user", text, ""); aerr != nil {
 			log.Printf("[warn] user 消息落库失败 会话 %s: %v", sessionID, aerr)
 		}
-		// 事件统一带 run_id：前端按 Run 过滤（同会话多轮/切回恢复不串台）
-		s.executeTurn(ctx, tenant, sessionID, text, func(e agent.Event) {
-			e.RunID = fullRunID
-			emit(e)
-		})
+		s.executeTurn(ctx, tenant, sessionID, text, emit)
 	})
 	if err != nil {
 		writeError(w, http.StatusConflict, "%v", err)
@@ -86,8 +83,14 @@ func (s *Server) executeTurn(ctx context.Context, tenant, sessionID, text string
 	content, _, trace, err := s.agent.Message(ctx, tenant, sessionID, text, emit)
 	if err != nil {
 		if ctx.Err() != nil {
-			// 显式取消（用户点了停止）：不是系统失败，不写 [失败]
-			log.Printf("[info] Run 被取消，会话 %s 中止: %v", sessionID, err)
+			// 显式取消（用户点了停止）：已流出的部分内容落库 + 停止标记——
+			// 刷新/切回后中断结果不丢（中断态持久化）。
+			if strings.TrimSpace(content) != "" {
+				_, _ = s.history.AppendMessage(sessionID, "assistant", content+"\n\n（已停止）", "")
+			} else {
+				_, _ = s.history.AppendMessage(sessionID, "assistant", "（已停止）", "")
+			}
+			log.Printf("[info] Run 被取消，会话 %s 中止（部分内容已落库）: %v", sessionID, err)
 			return
 		}
 		_, _ = s.history.AppendMessage(sessionID, "assistant", "[失败] "+err.Error(), "")
@@ -124,6 +127,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	}
 	replay, live, done, unsub := s.runs.Subscribe(sessionID, since)
 	defer unsub()
+	curRun := s.runs.RunID(sessionID) // 当前 Run（replay 里历史 Run 的事件无标注——由游标语义隔离）
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -138,10 +142,10 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 			since = n
 		}
 	}
-	// replay 阶段（带 seq 游标）
+	// replay 阶段（带 seq 游标；历史 Run 事件 data schema 不变）
 	for _, be := range replay {
 		if be.Seq > since {
-			writeSSESeq(w, flusher, be.Seq, be.Event)
+			writeSSESeq(w, flusher, be.Seq, curRun, be.Event)
 		}
 	}
 	// 无活跃 Run：replay 完即结束
@@ -158,7 +162,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case be := <-live:
 			if be.Seq > lastSeq {
-				writeSSESeq(w, flusher, be.Seq, be.Event)
+				writeSSESeq(w, flusher, be.Seq, curRun, be.Event)
 				lastSeq = be.Seq
 			}
 		case <-done:
@@ -167,7 +171,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 			tail := s.runs.ReplayAfter(sessionID, lastSeq)
 			for _, be := range tail {
 				if be.Seq > lastSeq {
-					writeSSESeq(w, flusher, be.Seq, be.Event)
+					writeSSESeq(w, flusher, be.Seq, curRun, be.Event)
 					lastSeq = be.Seq
 				}
 			}
@@ -274,11 +278,16 @@ func setSSEHeaders(w http.ResponseWriter) {
 	h.Set("X-Accel-Buffering", "no") // nginx 不缓冲
 }
 
-// writeSSESeq 写带 SSE id（事件游标 seq）的事件——客户端重连时
-// 用 Last-Event-ID / 记录的 seq 作为 since 增量续传，不重复不丢。
-func writeSSESeq(w http.ResponseWriter, flusher http.Flusher, seq int, e agent.Event) {
+// writeSSESeq 写带 SSE id（事件游标）与 x-run（产生事件的 Run）的事件。
+// data payload 的 agent.Event schema 保持不变——run_id 走 SSE 字段行
+// （x-run:），浏览器 EventSource 忽略未知字段，自定义客户端可解析。
+func writeSSESeq(w http.ResponseWriter, flusher http.Flusher, seq int, runID string, e agent.Event) {
 	data, _ := json.Marshal(e)
-	fmt.Fprintf(w, "id: %d\ndata: %s\n\n", seq, data)
+	if runID != "" {
+		fmt.Fprintf(w, "id: %d\nx-run: %s\ndata: %s\n\n", seq, runID, data)
+	} else {
+		fmt.Fprintf(w, "id: %d\ndata: %s\n\n", seq, data)
+	}
 	flusher.Flush()
 }
 

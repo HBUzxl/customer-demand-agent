@@ -50,7 +50,6 @@ type Event struct {
 	Analysis *domain.AnalysisResult `json:"analysis,omitempty"` // done 事件：本轮提交过 analysis_submit 才有
 	Content  string                 `json:"content,omitempty"`  // done 事件：最终自然语言答案（恒有）
 	Error    string                 `json:"error,omitempty"`    // error 事件
-	RunID    string                 `json:"run_id,omitempty"`   // F0：产生该事件的 Run（前端多轮过滤用）
 }
 
 // 事件类型常量。

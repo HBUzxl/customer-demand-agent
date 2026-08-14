@@ -61,6 +61,7 @@ export function subscribeStream(
   since: number,
   onEvent: (e: AgentEvent) => void,
   onSeq?: (seq: number) => void,
+  onRun?: (run: string) => void,
 ): () => void {
   const ac = new AbortController();
   (async () => {
@@ -68,7 +69,7 @@ export function subscribeStream(
       signal: ac.signal,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    await readSSE(res, onEvent, onSeq);
+    await readSSE(res, onEvent, onSeq, onRun);
   })().catch(() => {
     /* 订阅中止（组件卸载/切换会话）——正常 */
   });
@@ -113,6 +114,7 @@ async function readSSE(
   res: Response,
   onEvent: (e: AgentEvent) => void,
   onSeq?: (seq: number) => void,
+  onRun?: (run: string) => void,
 ): Promise<void> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
@@ -127,15 +129,19 @@ async function readSSE(
       buf = buf.slice(idx + 2);
       let seq = -1;
       let payload = "";
+      let run = "";
       for (const line of raw.split("\n")) {
         if (line.startsWith("id:")) {
           const n = parseInt(line.slice(3).trim(), 10);
           if (!Number.isNaN(n)) seq = n;
+        } else if (line.startsWith("x-run:")) {
+          run = line.slice(6).trim();
         } else if (line.startsWith("data:")) {
           payload = line.slice(5).trim();
         }
       }
       if (seq >= 0 && onSeq) onSeq(seq);
+      if (run && onRun) onRun(run);
       if (!payload) continue;
       try {
         onEvent(JSON.parse(payload));
