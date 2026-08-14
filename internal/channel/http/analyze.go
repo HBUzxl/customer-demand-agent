@@ -205,6 +205,11 @@ func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMessagesTruncate(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	tenant := tenantFrom(r)
+	// 先租户归属校验（防跨租户探测运行态），再检查运行状态
+	if _, err := s.history.GetSession(tenant, sessionID); err != nil {
+		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
+		return
+	}
 	if s.runs.Running(sessionID) {
 		writeError(w, http.StatusConflict, "会话正在运行，先停止再编辑")
 		return
