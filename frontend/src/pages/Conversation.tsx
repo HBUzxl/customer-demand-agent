@@ -15,7 +15,8 @@ import ToolTimeline from "../components/ToolTrace";
 import type { ToolTrace } from "../components/ToolTrace";
 
 interface ChatMsg {
-  id: string;
+  id: string; // 稳定渲染 key（"m{seq}" 或 uid()）
+  seq?: number; // 持久化序号（编辑重发截断用，本地新消息无）
   role: "user" | "assistant";
   text: string;
   reasoning?: string;
@@ -44,7 +45,7 @@ function parseSubmitParams(params: string): AnalysisResult | undefined {
 // 工具调用按 message_id 精确归属到对应 assistant 消息（服务端持久化时写入），
 // analysis 从该轮的 analysis_submit params 还原；不做老数据兼容——用户裁决）。
 function reconstruct(
-  messages: { id: number; role: string; content: string }[],
+  messages: { id: number; role: string; content: string; seq: number }[],
   toolCalls: { message_id: number; tool_name: string; params: string; result: string }[],
 ): ChatMsg[] {
   const byMessage = new Map<number, ToolTrace[]>();
@@ -56,9 +57,10 @@ function reconstruct(
   const out: ChatMsg[] = [];
   for (const m of messages) {
     if (m.role === "user") {
-      out.push({ id: `m${m.id}`, role: "user", text: m.content });
+      out.push({ id: `m${m.seq}`, seq: m.seq, role: "user", text: m.content });
     } else if (m.role === "assistant") {
-      const msg: ChatMsg = { id: `m${m.id}`, role: "assistant", text: m.content };
+      const msg: ChatMsg = { id: `m${m.seq}`, seq: m.seq, role: "assistant", text: m.content };
+      // system 消息间的 assistant：工具按 message_id（数据库 id）归属
       const mine = byMessage.get(m.id);
       if (mine && mine.length > 0) {
         msg.tools = mine;
@@ -272,16 +274,13 @@ export default function Conversation() {
   async function editResend(msg: ChatMsg) {
     if (loading) return;
     try {
-      // 找该消息在持久化里的 seq：用 messages 里的 index+1 近似不可靠，
-      // 从 sessionGet 拿真实 seq（msg.id 形如 "m{seq}"——reconstruct 用的是持久化 id）
-      const seq = parseInt(msg.id.replace(/^m/, ""), 10);
-      if (!seq || Number.isNaN(seq)) {
-        // 本地新消息（无持久化 id）：直接本地移除
+      if (!msg.seq) {
+        // 本地新消息（无持久化 seq）：直接本地移除
         setMessages((m) => m.filter((x) => x.id !== msg.id));
         setInput(msg.text);
         return;
       }
-      await truncateMessages(sessionId, seq);
+      await truncateMessages(sessionId, msg.seq); // 真实持久化 seq（≠数据库 id）
       // 本地重放：删掉该条及之后
       const idx = messages.findIndex((m) => m.id === msg.id);
       if (idx >= 0) setMessages((m) => m.slice(0, idx));

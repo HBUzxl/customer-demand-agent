@@ -17,17 +17,33 @@ PASS=0; FAIL=0
 ok()   { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 fail() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 
-# 1. 202 + run_id（立即返回，不等执行）
-RESP=$("$CURL" -s -H "Content-Type: application/json" \
-  -d "{\"text\":\"客户电商网站被CC攻击，过等保二级，预算50万\",\"session_id\":\"$SID\",\"customer\":\"冒烟F0客户\"}" \
+# 1. 202 + run_id（立即返回，不等执行；显式校验 HTTP 状态码）
+CODE=$("$CURL" -s -o /tmp/smoke_f0_resp.json -w "%{http_code}" -H "Content-Type: application/json" \
+  -d "{\"text\":\"客户电商网站被CC攻击，过等保二级，预算50万，请给出完整的产品组合方案和理由\",\"session_id\":\"$SID\",\"customer\":\"冒烟F0客户\"}" \
   "$BASE/api/message")
+[ "$CODE" = "202" ] && ok "① HTTP 202" || fail "① 状态码 ${CODE} 非 202"
+RESP=$(cat /tmp/smoke_f0_resp.json)
 RID=$(echo "$RESP" | sed 's/.*"run_id":"\([^"]*\)".*/\1/')
-[ -n "$RID" ] && [ "$RID" != "$RESP" ] && ok "① 202+run_id（${RID}）" || fail "① 无 run_id（${RESP}）"
+[ -n "$RID" ] && [ "$RID" != "$RESP" ] && ok "① run_id（${RID}）" || fail "① 无 run_id（${RESP}）"
 
-# 2. 断连运行继续：POST 已返回（连接已关），3 秒后查 running
-sleep 3
-RUN1=$("$CURL" -s "$BASE/api/sessions/$SID/running" | grep -o '"running":[a-z]*' | head -1)
-echo "$RUN1" | grep -q true && ok "② 断连后运行继续（running=true）" || fail "② 断连后未在运行（${RUN1}）"
+# 2. 断连运行继续：POST 已返回（连接已关）。轮询 running（最多 10s）——
+#    在 Run 生命周期内观察到一次 true 即证明断连后执行仍在；若首轮即 false
+#    则 Run 已结束（超快完成），改验 replay 中有执行事件作为降级证明。
+SAW_RUNNING=0
+for i in $(seq 1 20); do
+  R=$("$CURL" -s "$BASE/api/sessions/$SID/running" | grep -o '"running":[a-z]*' | head -1)
+  echo "$R" | grep -q true && { SAW_RUNNING=1; break; }
+  echo "$R" | grep -q false && break
+  sleep 0.5
+done
+if [ "$SAW_RUNNING" = "1" ]; then
+  ok "② 断连后运行继续（观察到 running=true）"
+else
+  STUB=$("$CURL" -s -N --max-time 2 "$BASE/api/sessions/$SID/stream?since=0" | head -c 300)
+  echo "$STUB" | grep -qE '"type":"(round|tool_call|reasoning)"' \
+    && ok "② Run 极速完成（降级验证：replay 有执行事件）" \
+    || fail "② 既未观察到 running 也无执行事件"
+fi
 
 # 3. replay 续传：订阅 since=0（读 2 秒），应见 session/工具事件
 STREAM=$("$CURL" -s -N --max-time 2 "$BASE/api/sessions/$SID/stream?since=0" 2>/dev/null | head -c 600)

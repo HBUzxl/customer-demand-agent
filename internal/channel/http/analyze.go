@@ -54,10 +54,14 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 		writeError(w, http.StatusForbidden, "无权访问该会话: %v", err)
 		return
 	}
-	_, _ = s.history.AppendMessage(sessionID, "user", text, "")
 
 	runID := newSessionID()
-	err := s.runs.Start(sessionID, "run-"+runID[5:], func(ctx context.Context, emit func(agent.Event)) {
+	fullRunID := "run-" + runID[5:]
+	err := s.runs.Start(sessionID, fullRunID, func(ctx context.Context, emit func(agent.Event)) {
+		// user 消息在 Run 确认占用后写入（并发 409 不留孤儿消息）
+		if _, aerr := s.history.AppendMessage(sessionID, "user", text, ""); aerr != nil {
+			log.Printf("[warn] user 消息落库失败 会话 %s: %v", sessionID, aerr)
+		}
 		s.executeTurn(ctx, tenant, sessionID, text, emit)
 	})
 	if err != nil {
@@ -66,7 +70,7 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{
 		"session_id": sessionID,
-		"run_id":     "run-" + runID[5:],
+		"run_id":     fullRunID,
 	})
 }
 
@@ -165,8 +169,14 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSessionRunning 会话是否有活跃 Run（前端运行指示/切回恢复用）。
+// 租户校验：只返回本租户会话的运行态（跨租户 404）。
 func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
+	tenant := tenantFrom(r)
+	if _, err := s.history.GetSession(tenant, sessionID); err != nil {
+		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"running": s.runs.Running(sessionID),
 		"run_id":  s.runs.RunID(sessionID),
@@ -174,9 +184,15 @@ func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRunCancel 显式取消会话的活跃 Run（唯一停止途径）。
+// 租户校验：只能取消本租户会话的 Run（跨租户 404）。
 func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	runID := r.PathValue("run_id")
+	tenant := tenantFrom(r)
+	if _, err := s.history.GetSession(tenant, sessionID); err != nil {
+		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
+		return
+	}
 	if err := s.runs.Cancel(sessionID, runID); err != nil {
 		writeError(w, http.StatusNotFound, "%v", err)
 		return
