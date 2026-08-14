@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"customer-demand-agent/internal/history"
 	"strings"
 	"syscall"
 	"time"
@@ -122,7 +124,16 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"count": len(items), "items": items})
+	// F0：附带运行状态（侧栏运行指示）
+	type itemWithRun struct {
+		history.SessionListItem
+		Running bool `json:"running"`
+	}
+	out := make([]itemWithRun, len(items))
+	for i, it := range items {
+		out[i] = itemWithRun{SessionListItem: it, Running: s.runs.Running(it.SessionID)}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(out), "items": out})
 }
 
 // handleSessionGet: GET /api/sessions/{id}

@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { messageStream, sessionGet } from "../api/client";
+import {
+  submitMessage,
+  subscribeStream,
+  cancelRun,
+  truncateMessages,
+  sessionRunning,
+  sessionGet,
+} from "../api/client";
 import type { AnalysisResult, AgentEvent } from "../types";
 import MarkdownView from "../components/MarkdownView";
 import ResultCard from "../components/ResultCard";
@@ -79,32 +86,58 @@ export default function Conversation() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); // 本视图内订阅进行中
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState(routeSid || "");
   const [customer, setCustomer] = useState(""); // 会话关联客户（身份行注入 ADR-016 L2）
   const [editingCustomer, setEditingCustomer] = useState(false);
+  const [activeRun, setActiveRun] = useState<{ sid: string; rid: string } | null>(null); // F0：本视图发起/恢复订阅的 Run
   const scrollRef = useRef<HTMLDivElement>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
+  const msgsRef = useRef<ChatMsg[]>([]);
+  msgsRef.current = messages;
 
   useEffect(() => {
     if (!routeSid) {
+      stopSubscription();
       setMessages([]);
       setSessionId("");
       setCustomer("");
+      setActiveRun(null);
       return;
     }
-    // 流式进行中不做历史重载（审计修复：新会话首个 session 事件触发导航，
-    // 此时历史只有 user 消息，重载会覆盖正在流式输出的 assistant 消息）。
-    if (loading) return;
-    setSessionId(routeSid);
-    sessionGet(routeSid)
-      .then((d) => {
+    // 流式订阅进行中不做历史重载（切回自己会话）；切换到别的会话先停旧订阅
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await sessionGet(routeSid);
+        if (cancelled) return;
         setMessages(reconstruct(d.messages || [], d.tool_calls || []));
         setCustomer(d.session.customer || "");
-      })
-      .catch((e) => setError(e.message));
+        setSessionId(routeSid);
+        // F0 切回恢复：会话还在跑 → 重建流式中的 assistant 消息并续订
+        const running = await sessionRunning(routeSid);
+        if (cancelled) return;
+        if (running) {
+          setActiveRun(null); // rid 由 running 接口给（stop 用兜底路径）
+          const r2 = await fetch(`/api/sessions/${routeSid}/running`)
+            .then((x) => x.json())
+            .catch(() => null);
+          if (r2?.run_id) setActiveRun({ sid: routeSid, rid: r2.run_id });
+          attachStream(routeSid, { resume: true });
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSid]);
+
+  // 组件卸载：只取消订阅（Run 在服务端继续，F0）
+  useEffect(() => () => unsubRef.current?.(), []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -166,36 +199,96 @@ export default function Conversation() {
           if (e.analysis) m.analysis = e.analysis;
           m.streaming = false;
         });
+        stopSubscription();
+        setActiveRun(null);
         break;
       case "error":
         setError(e.error || "未知错误");
         patchLast((m) => {
           m.streaming = false;
         });
+        stopSubscription();
+        setActiveRun(null);
         break;
     }
+  }
+
+  // ── F0 订阅模式：attach 到会话的 Run（事件 → 消息流）──
+  // resume=true 时消息流里已有历史重建，事件只 patch 流式中的最后一条。
+  function attachStream(sid: string, opts?: { resume?: boolean }) {
+    unsubRef.current?.();
+    setLoading(true);
+    if (!opts?.resume) {
+      setMessages((m) => [...m, { id: uid(), role: "assistant", text: "", streaming: true }]);
+    } else if (!msgsRef.current.length || !msgsRef.current[msgsRef.current.length - 1].streaming) {
+      setMessages((m) => [...m, { id: uid(), role: "assistant", text: "", streaming: true }]);
+    }
+    unsubRef.current = subscribeStream(sid, 0, handleEvent);
+  }
+
+  function stopSubscription() {
+    unsubRef.current?.();
+    unsubRef.current = null;
+    setLoading(false);
+  }
+
+  // F1：显式停止（cancel Run + 结束本视图订阅；assistant 留中断态）
+  async function stopRun() {
+    if (!activeRun) return;
+    try {
+      await cancelRun(activeRun.sid, activeRun.rid);
+    } catch {
+      /* Run 可能刚自然结束 */
+    }
+    stopSubscription();
+    patchLast((m) => {
+      m.streaming = false;
+      if (!m.text && !m.analysis) m.text = "（已停止）";
+    });
+    setActiveRun(null);
   }
 
   async function send(text: string) {
     const content = text.trim();
     if (!content || loading) return;
     setError("");
-    setMessages((m) => [
-      ...m,
-      { id: uid(), role: "user", text: content },
-      { id: uid(), role: "assistant", text: "", streaming: true },
-    ]);
+    setMessages((m) => [...m, { id: uid(), role: "user", text: content }]);
     setInput("");
     setLoading(true);
     try {
-      await messageStream(content, sessionId || undefined, handleEvent, customer || undefined);
+      const handle = await submitMessage(content, sessionId || undefined, customer || undefined);
+      setSessionId(handle.session_id);
+      setActiveRun({ sid: handle.session_id, rid: handle.run_id });
+      if (!routeSid && handle.session_id)
+        navigate(`/analyze/${handle.session_id}`, { replace: true });
+      attachStream(handle.session_id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      patchLast((m) => {
-        m.streaming = false;
-      });
-    } finally {
       setLoading(false);
+    }
+  }
+
+  // F1：编辑重发——截断该 user 消息及其之后，把原文填回输入框
+  async function editResend(msg: ChatMsg) {
+    if (loading) return;
+    try {
+      // 找该消息在持久化里的 seq：用 messages 里的 index+1 近似不可靠，
+      // 从 sessionGet 拿真实 seq（msg.id 形如 "m{seq}"——reconstruct 用的是持久化 id）
+      const seq = parseInt(msg.id.replace(/^m/, ""), 10);
+      if (!seq || Number.isNaN(seq)) {
+        // 本地新消息（无持久化 id）：直接本地移除
+        setMessages((m) => m.filter((x) => x.id !== msg.id));
+        setInput(msg.text);
+        return;
+      }
+      await truncateMessages(sessionId, seq);
+      // 本地重放：删掉该条及之后
+      const idx = messages.findIndex((m) => m.id === msg.id);
+      if (idx >= 0) setMessages((m) => m.slice(0, idx));
+      setInput(msg.text);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -223,22 +316,15 @@ export default function Conversation() {
         style={{ height: "auto" }}
       />
       <button
-        className="btn primary send"
-        onClick={() => send(input)}
-        disabled={loading || !input.trim()}
-        aria-label="发送"
+        className={`btn send${loading ? " stop" : " primary"}`}
+        onClick={() => (loading ? stopRun() : send(input))}
+        disabled={!loading && !input.trim()}
+        aria-label={loading ? "停止" : "发送"}
+        title={loading ? "停止生成" : "发送"}
       >
         {loading ? (
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="9" opacity=".25" />
-            <path d="M12 3a9 9 0 0 1 9 9" strokeLinecap="round" />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <rect x="6" y="6" width="12" height="12" rx="2" />
           </svg>
         ) : (
           <svg
@@ -320,6 +406,15 @@ export default function Conversation() {
             m.role === "user" ? (
               <div key={m.id} className="msg user">
                 <div className="bubble">{m.text}</div>
+                {!loading && (
+                  <button
+                    className="edit-resend"
+                    onClick={() => editResend(m)}
+                    title="编辑后重发（删除此消息及之后的对话）"
+                  >
+                    ✎ 编辑重发
+                  </button>
+                )}
               </div>
             ) : (
               <AssistantMsg key={m.id} m={m} />

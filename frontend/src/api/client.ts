@@ -28,21 +28,82 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return data as unknown as T;
 }
 
-// ── 对话（统一入口 /api/message，ADR-014）──────────────
-// 任意输入（寒暄/需求/追问）都走同一自主循环；onEvent 实时回调每个轨迹事件。
-export async function messageStream(
+// ── 对话（统一入口 /api/message，ADR-014 + F0 Run 任务）────────
+// F0：POST 创建 Run 立即返回 202 {session_id, run_id}（执行与连接解耦）；
+// 事件通过订阅式 SSE GET /api/sessions/{id}/stream?since=N 消费（replay+live）。
+
+export interface RunHandle {
+  session_id: string;
+  run_id: string;
+}
+
+// submitMessage 提交消息并启动 Run（不等待执行）。
+export async function submitMessage(
   text: string,
   sessionId: string | undefined,
-  onEvent: (e: AgentEvent) => void,
   customer?: string,
-): Promise<void> {
+): Promise<RunHandle> {
   const res = await fetch(BASE + "/message", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, session_id: sessionId, customer: customer || undefined }),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  await readSSE(res, onEvent);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// subscribeStream 订阅会话事件流；返回 abort 函数（只取消订阅，不影响 Run）。
+export function subscribeStream(
+  sessionId: string,
+  since: number,
+  onEvent: (e: AgentEvent) => void,
+): () => void {
+  const ac = new AbortController();
+  (async () => {
+    const res = await fetch(`${BASE}/sessions/${sessionId}/stream?since=${since}`, {
+      signal: ac.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await readSSE(res, onEvent);
+  })().catch(() => {
+    /* 订阅中止（组件卸载/切换会话）——正常 */
+  });
+  return () => ac.abort();
+}
+
+// cancelRun 显式停止会话的活跃 Run（唯一停止途径）。
+export async function cancelRun(sessionId: string, runId: string): Promise<void> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}/runs/${runId}/cancel`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+}
+
+// truncateMessages 删除会话中 seq 及之后的消息（编辑重发用）。
+export async function truncateMessages(sessionId: string, seq: number): Promise<void> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}/messages/after?seq=${seq}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+}
+
+// sessionRunning 查询会话是否有活跃 Run（侧栏运行指示/切回恢复用）。
+export async function sessionRunning(sessionId: string): Promise<boolean> {
+  try {
+    const r = await req<{ running?: boolean }>(`/sessions/${sessionId}/running`);
+    return !!r.running;
+  } catch {
+    return false;
+  }
 }
 
 // readSSE 从 fetch 响应体读 text/event-stream，逐事件回调。

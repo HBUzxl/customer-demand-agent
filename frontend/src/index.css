@@ -1524,6 +1524,57 @@ tbody tr:last-child td {
   font-size: 11px;
   color: var(--text-faint);
 }
+/* F0 运行指示点 */
+.run-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-right: 5px;
+  animation: runpulse 1.2s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes runpulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+}
+/* F1 编辑重发 */
+.edit-resend {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-faint);
+  font-size: 11px;
+  border-radius: 99px;
+  padding: 2px 10px;
+  margin-top: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    color 0.12s;
+}
+.msg.user:hover .edit-resend {
+  opacity: 1;
+}
+.edit-resend:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+/* 停止按钮 */
+.btn.send.stop {
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--red, #d64545) 50%, transparent);
+  color: var(--red, #d64545);
+}
 
 /* 空状态：垂直居中 */
 .empty-state {

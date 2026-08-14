@@ -1,10 +1,12 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"customer-demand-agent/internal/agent"
 )
@@ -43,7 +45,9 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	s.messageCore(w, r, sessionID, req.Text, req.Customer)
 }
 
-// messageCore 是所有消息入口共享的核心逻辑（tenant 从请求头解析）。
+// messageCore 创建 Run 并立即返回 202（F0：执行与连接解耦）。
+// 真正的 Agent 循环跑在 RunManager 的 goroutine 里；事件进缓冲，
+// 客户端通过 GET /api/sessions/{id}/stream 订阅（replay+live）。
 func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, text, customer string) {
 	tenant := tenantFrom(r)
 	if err := s.history.EnsureSession(tenant, sessionID, firstLine(text), customer); err != nil {
@@ -52,23 +56,30 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 	}
 	_, _ = s.history.AppendMessage(sessionID, "user", text, "")
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, http.StatusInternalServerError, "当前环境不支持流式响应")
-		return
-	}
-	setSSEHeaders(w)
-	// 先发一个 session_id 事件，客户端立刻拿到
-	writeSSE(w, flusher, agent.Event{Type: "session", Content: sessionID})
-
-	content, _, trace, err := s.agent.Message(r.Context(), tenant, sessionID, text, func(e agent.Event) {
-		writeSSE(w, flusher, e)
+	runID := newSessionID()
+	err := s.runs.Start(sessionID, "run-"+runID[5:], func(ctx context.Context, emit func(agent.Event)) {
+		s.executeTurn(ctx, tenant, sessionID, text, emit)
 	})
 	if err != nil {
-		if r.Context().Err() != nil {
-			// 客户端断开（刷新页面/关闭连接/超时掐断）：不是系统失败，
-			// 不往历史写 [失败]——用户主动离开，留痕只会污染会话。
-			log.Printf("[warn] 客户端断开，会话 %s 流式中止: %v", sessionID, err)
+		writeError(w, http.StatusConflict, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"session_id": sessionID,
+		"run_id":     "run-" + runID[5:],
+	})
+}
+
+// executeTurn 是 Run 的执行体：完整 Agent 循环 + 落库（与连接彻底解耦）。
+// ADR-015：前台全记忆不变——Run 仍是完整循环，变的只是执行宿主。
+func (s *Server) executeTurn(ctx context.Context, tenant, sessionID, text string, emit func(agent.Event)) {
+	emit(agent.Event{Type: "session", Content: sessionID})
+
+	content, _, trace, err := s.agent.Message(ctx, tenant, sessionID, text, emit)
+	if err != nil {
+		if ctx.Err() != nil {
+			// 显式取消（用户点了停止）：不是系统失败，不写 [失败]
+			log.Printf("[info] Run 被取消，会话 %s 中止: %v", sessionID, err)
 			return
 		}
 		_, _ = s.history.AppendMessage(sessionID, "assistant", "[失败] "+err.Error(), "")
@@ -86,6 +97,119 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 			_, _ = s.history.AppendToolCall(sessionID, assistantID, tc.Tool, tc.Params, tc.Result)
 		}
 	}
+}
+
+// handleSessionStream 订阅会话事件流（SSE）：先 replay since 之后的事件，
+// 再续传 live；Run 结束且缓冲追平后关流。
+func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	tenant := tenantFrom(r)
+	if _, err := s.history.GetSession(tenant, sessionID); err != nil {
+		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
+		return
+	}
+	since := 0
+	if v := r.URL.Query().Get("since"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			since = n
+		}
+	}
+	replay, live, done, unsub := s.runs.Subscribe(sessionID, since)
+	defer unsub()
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "当前环境不支持流式响应")
+		return
+	}
+	setSSEHeaders(w)
+	// replay 阶段
+	for _, be := range replay {
+		writeSSE(w, flusher, be.Event)
+	}
+	// 无活跃 Run：replay 完即结束
+	if done == nil {
+		return
+	}
+	// live 阶段：Run 结束（done 关闭）后把缓冲尾巴发完即关流
+	lastSeq := 0
+	if len(replay) > 0 {
+		lastSeq = replay[len(replay)-1].Seq
+	}
+	for {
+		select {
+		case be := <-live:
+			if be.Seq > lastSeq {
+				writeSSE(w, flusher, be.Event)
+				lastSeq = be.Seq
+			}
+		case <-done:
+			// Run 结束：补发 live 通道里可能滞留的事件
+			for {
+				select {
+				case be := <-live:
+					if be.Seq > lastSeq {
+						writeSSE(w, flusher, be.Event)
+						lastSeq = be.Seq
+					}
+					continue
+				default:
+				}
+				break
+			}
+			return
+		case <-r.Context().Done():
+			return // 客户端断开：只是取消订阅，Run 继续
+		}
+	}
+}
+
+// handleSessionRunning 会话是否有活跃 Run（前端运行指示/切回恢复用）。
+func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"running": s.runs.Running(sessionID),
+		"run_id":  s.runs.RunID(sessionID),
+	})
+}
+
+// handleRunCancel 显式取消会话的活跃 Run（唯一停止途径）。
+func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	runID := r.PathValue("run_id")
+	if err := s.runs.Cancel(sessionID, runID); err != nil {
+		writeError(w, http.StatusNotFound, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelling"})
+}
+
+// handleMessagesTruncate 截断会话到指定 seq 之后（编辑重发用）：
+// 删除 seq 之后的消息 + 关联 tool_calls + 全部 checkpoints（F1）。
+func (s *Server) handleMessagesTruncate(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	tenant := tenantFrom(r)
+	if s.runs.Running(sessionID) {
+		writeError(w, http.StatusConflict, "会话正在运行，先停止再编辑")
+		return
+	}
+	after := 0
+	if v := r.URL.Query().Get("seq"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			after = n
+		}
+	}
+	if after <= 0 {
+		writeError(w, http.StatusBadRequest, "seq 必须为正整数（该消息及其之后将被删除）")
+		return
+	}
+	deleted, err := s.history.TruncateAfter(tenant, sessionID, after)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "截断失败: %v", err)
+		return
+	}
+	s.runs.DropSession(sessionID)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "deleted_messages": deleted})
 }
 
 // chatReq is the request body for POST /api/chat (deprecated shim, body 映射用).

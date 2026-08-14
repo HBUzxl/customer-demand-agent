@@ -4,6 +4,8 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { sessionDelete, sessionsList } from "../api/client";
 import type { SessionListItem } from "../types";
 
+type RecentSession = SessionListItem & { running?: boolean };
+
 const Ico = ({ d, size = 18 }: { d: string; size?: number }) => (
   <svg
     width={size}
@@ -42,7 +44,7 @@ function relTime(iso: string) {
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [recent, setRecent] = useState<SessionListItem[]>([]);
+  const [recent, setRecent] = useState<RecentSession[]>([]);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar") === "collapsed");
 
   function toggle() {
@@ -54,7 +56,7 @@ export default function AppLayout() {
   async function loadRecent() {
     try {
       const r = await sessionsList(12, 0);
-      setRecent(r.items || []);
+      setRecent((r.items as RecentSession[]) || []);
     } catch {
       /* */
     }
@@ -62,6 +64,12 @@ export default function AppLayout() {
   useEffect(() => {
     loadRecent();
   }, [location.pathname]);
+  // F0 运行指示：有会话在跑时快刷列表（3s），否则慢刷（15s）
+  useEffect(() => {
+    const anyRunning = recent.some((s) => s.running);
+    const t = setInterval(loadRecent, anyRunning ? 3000 : 15000);
+    return () => clearInterval(t);
+  }, [recent]);
 
   async function deleteSession(e: MouseEvent, id: string) {
     e.stopPropagation();
@@ -126,7 +134,10 @@ export default function AppLayout() {
                 title={s.title || s.session_id}
               >
                 <span className="conv-title">{s.title || "未命名对话"}</span>
-                <span className="conv-time">{relTime(s.updated_at)}</span>
+                <span className="conv-time">
+                  {s.running ? <i className="run-dot" title="运行中" /> : null}
+                  {relTime(s.updated_at)}
+                </span>
                 <button
                   className="conv-del"
                   title="删除对话"

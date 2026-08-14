@@ -20,8 +20,8 @@ func postAnalyzeWithTenant(t *testing.T, tsURL, tenant, body string) int {
 	return resp.StatusCode
 }
 
-// TestCrossTenantSessionRefusal 验证租户 B 用租户 A 的 session_id 调 /api/analyze 被拒（403）。
-// （A 先认领 session——analyze 因 LLM 不可用会失败，但 EnsureSession 已建会话；B 续传该 session_id → 拒绝）
+// TestCrossTenantSessionRefusal 验证租户 B 用租户 A 的 session_id 调 /api/message 被拒（403）。
+// （A 先认领 session——message 返回 202，EnsureSession 已建会话；B 复用该 session_id → 拒绝）
 func TestCrossTenantSessionRefusal(t *testing.T) {
 	ts, _ := setupServer(t)
 	body := `{"session_id":"sess-shared","text":"A的需求"}`
@@ -31,8 +31,9 @@ func TestCrossTenantSessionRefusal(t *testing.T) {
 	if code := postAnalyzeWithTenant(t, ts.URL, "tenantB", body); code != http.StatusForbidden {
 		t.Errorf("租户 B 用 A 的 session_id 应被拒（403），got %d", code)
 	}
-	// A 自己仍可用（同租户不误拒）
-	if code := postAnalyzeWithTenant(t, ts.URL, "tenantA", body); code != http.StatusOK {
-		t.Errorf("租户 A 用自己的 session_id 应正常（200，LLM 失败也走 SSE），got %d", code)
+	// A 自己仍可用（同租户不误拒；session Run 占用则 409 也算通过）
+	code := postAnalyzeWithTenant(t, ts.URL, "tenantA", body)
+	if code != http.StatusAccepted && code != http.StatusConflict {
+		t.Errorf("租户 A 用自己的 session_id 应 202/409，got %d", code)
 	}
 }

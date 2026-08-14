@@ -208,12 +208,12 @@ func TestTenantIsolation(t *testing.T) {
 // LLM 不可达会失败，但 customer 落库发生在 LLM 调用前——验证不受影响。
 func TestMessageCustomerFieldPersisted(t *testing.T) {
 	ts, _ := setupServer(t)
-	// 两次发消息：第一次带 customer 建会话，第二次不带（不应清空）
+	// 带 customer 建会话（F0：202 + Run）
 	code, body := do(t, ts, "POST", "/api/message", map[string]any{
 		"text": "你好", "session_id": "sess-cust", "customer": "某跨境电商",
 	})
-	if code != 200 {
-		t.Fatalf("第一次消息应 200，got %d: %v", code, body)
+	if code != 202 {
+		t.Fatalf("消息应 202，got %d: %v", code, body)
 	}
 	code2, body2 := do(t, ts, "GET", "/api/sessions/sess-cust", nil)
 	if code2 != 200 {

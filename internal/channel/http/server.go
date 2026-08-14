@@ -30,6 +30,7 @@ type Server struct {
 	history   *history.Store
 	modelMgr  *model.Manager
 	registry  *model.Registry
+	runs      *RunManager // F0：服务端 Run 任务（执行与连接解耦）
 }
 
 // New creates the HTTP server with all dependencies injected.
@@ -38,6 +39,7 @@ func New(store *config.Store, ag *agent.Agent, rv *review.Service, wiki *longter
 	return &Server{
 		store: store, agent: ag, review: rv, storeWiki: wiki,
 		history: hist, modelMgr: mm, registry: reg,
+		runs: NewRunManager(),
 	}
 }
 
@@ -45,10 +47,14 @@ func New(store *config.Store, ag *agent.Agent, rv *review.Service, wiki *longter
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// 分析对话（统一入口 + deprecated shims，ADR-014）
+	// 分析对话（统一入口 + deprecated shims，ADR-014；F0：202 + Run 任务）
 	mux.HandleFunc("POST /api/message", s.withTenant(s.handleMessage))
 	mux.HandleFunc("POST /api/analyze", s.withTenant(s.handleAnalyze))
 	mux.HandleFunc("POST /api/chat", s.withTenant(s.handleChat))
+	mux.HandleFunc("GET /api/sessions/{id}/stream", s.withTenant(s.handleSessionStream))
+	mux.HandleFunc("GET /api/sessions/{id}/running", s.withTenant(s.handleSessionRunning))
+	mux.HandleFunc("POST /api/sessions/{id}/runs/{run_id}/cancel", s.withTenant(s.handleRunCancel))
+	mux.HandleFunc("DELETE /api/sessions/{id}/messages/after", s.withTenant(s.handleMessagesTruncate))
 
 	// 记忆管理
 	mux.HandleFunc("GET /api/memory/search", s.withTenant(s.handleMemorySearch))

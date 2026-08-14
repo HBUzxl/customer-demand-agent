@@ -17,12 +17,14 @@ ok()   { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 fail() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 DB="data/history.db"
 
-# 1. 真实需求轮（带客户名）——SSE 收完
-$CURL -sN -X POST "$BASE/api/message" -H 'Content-Type: application/json' \
-  -H 'X-Tenant-ID: default' \
+# 1. 真实需求轮（带客户名）——F0：202 创建 Run，订阅流收集事件至完成
+$CURL -s -H 'Content-Type: application/json' -H 'X-Tenant-ID: default' \
   -d "{\"text\":\"客户电商网站大促被CC攻击打慢了，过等保二级\",\"session_id\":\"$SID\",\"customer\":\"冒烟测试电商\"}" \
-  --max-time 180 > /tmp/smoke_p0_sse.txt 2>&1
-
+  "$BASE/api/message" > /tmp/smoke_p0_run.json
+RID=$(sed 's/.*"run_id":"\([^"]*\)".*/\1/' /tmp/smoke_p0_run.json)
+[ -n "$RID" ] && ok "202+run_id（F0）" || fail "无 run_id（$(cat /tmp/smoke_p0_run.json)）"
+# 订阅流收完（Run 结束流自然关闭）
+$CURL -s -N --max-time 180 "$BASE/api/sessions/$SID/stream?since=0" > /tmp/smoke_p0_sse.txt 2>&1
 grep -q '"tool":"analysis_submit"' /tmp/smoke_p0_sse.txt && ok "analysis_submit 出现（工具轨迹正常）" || fail "analysis_submit 未出现"
 
 python3 - "$SID" "$DB" <<'PY'
@@ -49,10 +51,10 @@ sys.exit(1 if fails else 0)
 PY
 [ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 
-# 2. 寒暄轮体积（无会话状态注入时最小）
-$CURL -sN -X POST "$BASE/api/message" -H 'Content-Type: application/json' \
-  -H 'X-Tenant-ID: default' \
-  -d "{\"text\":\"你好\",\"session_id\":\"$SID\"}" --max-time 120 > /dev/null 2>&1
+# 2. 寒暄轮（F0：创建 Run + 订阅收尾）
+$CURL -s -H 'Content-Type: application/json' -H 'X-Tenant-ID: default' \
+  -d "{\"text\":\"你好\",\"session_id\":\"$SID\"}" "$BASE/api/message" > /dev/null
+$CURL -s -N --max-time 120 "$BASE/api/sessions/$SID/stream?since=0" > /dev/null 2>&1
 
 # 2. 寒暄轮：核心断言是「无全量知识注入痕迹」（体积随会话状态注入浮动，
 #    分析后的追问带最近分析结果是 ADR-016 L2 的设计行为）

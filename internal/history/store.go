@@ -421,3 +421,33 @@ func encodeJSON(v any) (string, error) {
 	}
 	return string(b), nil
 }
+
+// TruncateAfter 删除会话中 seq >= after 的消息及其关联 tool_calls，
+// 并清空该会话全部 checkpoints（F1 编辑重发：截断后重发）。
+// 返回删除的消息条数。校验 tenant 归属。
+func (s *Store) TruncateAfter(tenantID, sessionID string, after int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// tenant 归属校验（与 ListCheckpoints 同款 JOIN 检查）
+	var owner string
+	err := s.db.QueryRow(`SELECT tenant_id FROM sessions WHERE session_id=?`, sessionID).Scan(&owner)
+	if err != nil || owner != tenantID {
+		return 0, fmt.Errorf("无权操作该会话")
+	}
+	// 该 seq 起的消息对应的 tool_calls（message_id 关联）
+	_, err = s.db.Exec(`DELETE FROM tool_calls WHERE session_id=? AND message_id IN
+		(SELECT id FROM messages WHERE session_id=? AND seq >= ?)`, sessionID, sessionID, after)
+	if err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`DELETE FROM messages WHERE session_id=? AND seq >= ?`, sessionID, after)
+	if err != nil {
+		return 0, err
+	}
+	deleted, _ := res.RowsAffected()
+	// checkpoints 是链式的，截断对话后短期记忆整体作废（保守但一致）
+	if _, err := s.db.Exec(`DELETE FROM checkpoints WHERE session_id=?`, sessionID); err != nil {
+		return 0, err
+	}
+	return int(deleted), nil
+}
