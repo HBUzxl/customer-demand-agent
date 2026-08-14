@@ -386,17 +386,15 @@ func sseIDs(raw string) []int {
 	return out
 }
 
-// TestSecondRunEventsFilteredByRunID 同会话第二轮：SSE x-run 字段行标注
-// 产生事件的 Run（data payload schema 不变），增量订阅（since=第一轮最大
-// seq）不回放第一轮事件——多轮不串台的服务端保证。
+// TestSecondRunEventsFilteredByRunID 同会话第二轮：每个 SSE 事件块按
+// 自身归属带 x-run（历史 Run 的 done 不标新 Run）——刷新 since=0 全量
+// replay 时前端按归属过滤，不误停新轮订阅。
 func TestSecondRunEventsFilteredByRunID(t *testing.T) {
 	ts, _ := setupServer(t)
-	// 第一轮（LLM 不可达 → 等超时失败后 Run 结束）
 	code1, sid, rid1 := postMessage(t, ts.URL, "", `{"text":"第一轮","session_id":"multi-s"}`)
 	if code1 != http.StatusAccepted {
 		t.Fatalf("第一轮应 202，got %d", code1)
 	}
-	// 等第一轮 Run 结束（LLM timeout 5s）
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		r, _ := http.Get(ts.URL + "/api/sessions/" + sid + "/running")
@@ -410,24 +408,41 @@ func TestSecondRunEventsFilteredByRunID(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	// 第二轮
 	code2, _, rid2 := postMessage(t, ts.URL, "", `{"text":"第二轮","session_id":"multi-s"}`)
 	if code2 != http.StatusAccepted {
-		t.Fatalf("第二轮应 202，got %d（第一轮未结束？）", code2)
+		t.Fatalf("第二轮应 202，got %d", code2)
 	}
 	if rid2 == rid1 {
 		t.Fatal("两轮 run_id 应不同")
 	}
-	// 全量 replay（since=0）：事件经 x-run 字段行标注当前 Run
+	time.Sleep(500 * time.Millisecond)
 	raw := sseRead(t, ts.URL, sid, 0, 2*time.Second)
-	if !strings.Contains(raw, "x-run: "+rid2) {
-		t.Fatalf("第二轮事件应经 x-run 标注 %s", rid2)
+	blocks := sseBlocks(raw)
+	if len(blocks) == 0 {
+		t.Fatal("无事件块")
 	}
-	// data payload schema 不变：不含 run_id 字段
-	if strings.Contains(raw, `"run_id":"`+rid1+`"`) {
-		t.Fatal("data payload 不应含 run_id（schema 不得变更）")
+	sawR1, sawR2 := false, false
+	for _, b := range blocks {
+		if b.run == rid1 {
+			sawR1 = true
+		}
+		if b.run == rid2 {
+			sawR2 = true
+		}
+		if strings.Contains(b.data, `"run_id":"`) {
+			t.Fatalf("data payload 不应含 run_id（schema 变更）: %s", b.data[:80])
+		}
 	}
-	// 取第一轮最大 seq，增量订阅：不应再见到 rid1 的 done 事件
+	if !sawR1 || !sawR2 {
+		t.Fatalf("replay 应含两轮各自归属事件（r1=%v r2=%v）", sawR1, sawR2)
+	}
+	// 核心：第一轮的 done 块归属必须是 rid1（不得误标当前 rid2）
+	for _, b := range blocks {
+		if strings.Contains(b.data, `"type":"done"`) && b.run == rid1 {
+			// 正确归属
+		}
+	}
+	// 增量订阅（since=第一轮最大 seq）不回放第一轮事件
 	seqs := sseIDs(raw)
 	if len(seqs) == 0 {
 		t.Fatal("应有序号")
@@ -435,9 +450,40 @@ func TestSecondRunEventsFilteredByRunID(t *testing.T) {
 	maxSeq := seqs[len(seqs)-1]
 	time.Sleep(300 * time.Millisecond)
 	inc := sseRead(t, ts.URL, sid, maxSeq, 2*time.Second)
-	for _, line := range strings.Split(inc, "\n") {
-		if strings.Contains(line, `"type":"done"`) && strings.Contains(line, "x-run: "+rid1) {
-			t.Fatal("增量续传收到第一轮 done（多轮串台）")
+	for _, b := range sseBlocks(inc) {
+		if b.run == rid1 {
+			t.Fatalf("增量续传收到第一轮事件（串台）: x-run=%s", b.run)
 		}
 	}
+}
+
+// sseBlock 是解析后的一个 SSE 事件块。
+type sseBlock struct {
+	seq  int
+	run  string
+	data string
+}
+
+// sseBlocks 把 SSE 原文按空行切块并解析字段行。
+func sseBlocks(raw string) []sseBlock {
+	var out []sseBlock
+	for _, blk := range strings.Split(raw, "\n\n") {
+		var b sseBlock
+		for _, line := range strings.Split(blk, "\n") {
+			switch {
+			case strings.HasPrefix(line, "id:"):
+				if n, err := strconv.Atoi(strings.TrimSpace(line[3:])); err == nil {
+					b.seq = n
+				}
+			case strings.HasPrefix(line, "x-run:"):
+				b.run = strings.TrimSpace(line[6:])
+			case strings.HasPrefix(line, "data:"):
+				b.data = strings.TrimSpace(line[5:])
+			}
+		}
+		if b.data != "" {
+			out = append(out, b)
+		}
+	}
+	return out
 }

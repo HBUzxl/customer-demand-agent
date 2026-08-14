@@ -59,9 +59,8 @@ export async function submitMessage(
 export function subscribeStream(
   sessionId: string,
   since: number,
-  onEvent: (e: AgentEvent) => void,
+  onEvent: (e: AgentEvent, run: string) => void,
   onSeq?: (seq: number) => void,
-  onRun?: (run: string) => void,
 ): () => void {
   const ac = new AbortController();
   (async () => {
@@ -69,7 +68,7 @@ export function subscribeStream(
       signal: ac.signal,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    await readSSE(res, onEvent, onSeq, onRun);
+    await readSSE(res, onEvent, onSeq);
   })().catch(() => {
     /* 订阅中止（组件卸载/切换会话）——正常 */
   });
@@ -112,9 +111,8 @@ export async function sessionRunning(sessionId: string): Promise<boolean> {
 // 解析 SSE id: 行作为游标（onSeq 回调，增量续传用）。
 async function readSSE(
   res: Response,
-  onEvent: (e: AgentEvent) => void,
+  onEvent: (e: AgentEvent, run: string) => void,
   onSeq?: (seq: number) => void,
-  onRun?: (run: string) => void,
 ): Promise<void> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
@@ -141,10 +139,9 @@ async function readSSE(
         }
       }
       if (seq >= 0 && onSeq) onSeq(seq);
-      if (run && onRun) onRun(run);
       if (!payload) continue;
       try {
-        onEvent(JSON.parse(payload));
+        onEvent(JSON.parse(payload), run); // (事件, 产生它的 Run)——配对，replay 历史事件带自身归属
       } catch {
         /* 忽略解析失败的行 */
       }

@@ -22,9 +22,11 @@ var ErrRunNotFound = errors.New("任务不存在或已结束")
 
 const eventBufferCap = 500 // 每会话事件缓冲上限（一轮完整轨迹 + 余量）
 
-// BufferedEvent 是带序号的已发生事件（replay 用）。
+// BufferedEvent 是带序号的已发生事件（replay 用；RunID 标注产生它的 Run，
+// replay 时按事件自身归属输出 x-run——跨 Run 不串台）。
 type BufferedEvent struct {
 	Seq   int         `json:"seq"`
+	RunID string      `json:"run_id,omitempty"`
 	Event agent.Event `json:"event"`
 }
 
@@ -71,7 +73,7 @@ func (rm *RunManager) Start(sessionID, runID string, fn func(ctx context.Context
 	emit := func(e agent.Event) {
 		rm.mu.Lock()
 		rm.lastSeq[sessionID]++
-		be := BufferedEvent{Seq: rm.lastSeq[sessionID], Event: e}
+		be := BufferedEvent{Seq: rm.lastSeq[sessionID], RunID: run.ID, Event: e}
 		buf := append(rm.buffer[sessionID], be)
 		if len(buf) > eventBufferCap {
 			buf = buf[len(buf)-eventBufferCap:]

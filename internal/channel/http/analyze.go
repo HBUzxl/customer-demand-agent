@@ -80,13 +80,23 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 func (s *Server) executeTurn(ctx context.Context, tenant, sessionID, text string, emit func(agent.Event)) {
 	emit(agent.Event{Type: "session", Content: sessionID})
 
-	content, _, trace, err := s.agent.Message(ctx, tenant, sessionID, text, emit)
+	// 取消时 Agent.Message 返回空 content——在 emit 层累积流出的内容增量，
+	// 取消落库用（中断态持久化：刷新/切回后部分结果不丢）。
+	var streamed strings.Builder
+	emitWrap := func(e agent.Event) {
+		if e.Type == agent.EventContent {
+			streamed.WriteString(e.Text)
+		}
+		emit(e)
+	}
+
+	content, _, trace, err := s.agent.Message(ctx, tenant, sessionID, text, emitWrap)
 	if err != nil {
 		if ctx.Err() != nil {
-			// 显式取消（用户点了停止）：已流出的部分内容落库 + 停止标记——
-			// 刷新/切回后中断结果不丢（中断态持久化）。
-			if strings.TrimSpace(content) != "" {
-				_, _ = s.history.AppendMessage(sessionID, "assistant", content+"\n\n（已停止）", "")
+			// 显式取消（用户点了停止）：已流出内容 + 停止标记落库
+			partial := streamed.String()
+			if strings.TrimSpace(partial) != "" {
+				_, _ = s.history.AppendMessage(sessionID, "assistant", partial+"\n\n（已停止）", "")
 			} else {
 				_, _ = s.history.AppendMessage(sessionID, "assistant", "（已停止）", "")
 			}
@@ -127,7 +137,6 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	}
 	replay, live, done, unsub := s.runs.Subscribe(sessionID, since)
 	defer unsub()
-	curRun := s.runs.RunID(sessionID) // 当前 Run（replay 里历史 Run 的事件无标注——由游标语义隔离）
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -145,7 +154,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	// replay 阶段（带 seq 游标；历史 Run 事件 data schema 不变）
 	for _, be := range replay {
 		if be.Seq > since {
-			writeSSESeq(w, flusher, be.Seq, curRun, be.Event)
+			writeSSESeq(w, flusher, be.Seq, be.RunID, be.Event)
 		}
 	}
 	// 无活跃 Run：replay 完即结束
@@ -162,7 +171,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case be := <-live:
 			if be.Seq > lastSeq {
-				writeSSESeq(w, flusher, be.Seq, curRun, be.Event)
+				writeSSESeq(w, flusher, be.Seq, be.RunID, be.Event)
 				lastSeq = be.Seq
 			}
 		case <-done:
@@ -171,7 +180,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 			tail := s.runs.ReplayAfter(sessionID, lastSeq)
 			for _, be := range tail {
 				if be.Seq > lastSeq {
-					writeSSESeq(w, flusher, be.Seq, curRun, be.Event)
+					writeSSESeq(w, flusher, be.Seq, be.RunID, be.Event)
 					lastSeq = be.Seq
 				}
 			}
