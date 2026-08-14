@@ -2,8 +2,10 @@ package http_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -315,4 +317,71 @@ func TestMessageBusy409NoOrphanUserMessage(t *testing.T) {
 	if userCount != 1 {
 		t.Fatalf("user 消息应恰 1 条（409 不落库），got %d", userCount)
 	}
+}
+
+// TestStreamSeqCursorResume SSE 游标：事件带 id: seq；since=N 只收到 N 之后。
+func TestStreamSeqCursorResume(t *testing.T) {
+	ts, _ := setupServer(t)
+	code, sid, _ := postMessage(t, ts.URL, "", `{"text":"你好","session_id":"cursor-s"}`)
+	if code != http.StatusAccepted {
+		t.Fatalf("202 expected, got %d", code)
+	}
+	// 收一段事件（带 id: 游标）
+	first := sseRead(t, ts.URL, sid, 0, 2*time.Second)
+	if !strings.Contains(first, `"type":"session"`) {
+		t.Fatalf("应含 session 事件: %s", first)
+	}
+	// 提取最大 seq
+	seqs := sseIDs(first)
+	if len(seqs) == 0 {
+		t.Fatal("SSE 应带 id: 游标（无则无法续传）")
+	}
+	maxSeq := seqs[len(seqs)-1]
+	// since=maxSeq 增量订阅：不重复已收事件（所有 id > maxSeq）
+	time.Sleep(300 * time.Millisecond) // 让 Run 再产生些事件
+	second := sseRead(t, ts.URL, sid, maxSeq, 2*time.Second)
+	for _, id := range sseIDs(second) {
+		if id <= maxSeq {
+			t.Fatalf("增量续传收到重复事件 id=%d（游标 %d）", id, maxSeq)
+		}
+	}
+}
+
+// sseRead 读一段 SSE 流（限时）返回原文。
+func sseRead(t *testing.T, tsURL, sid string, since int, d time.Duration) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", tsURL+"/api/sessions/"+sid+"/stream?since=0", nil)
+	if since > 0 {
+		req.URL.RawQuery = "since=" + strconv.Itoa(since)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("sse: %v", err)
+	}
+	defer resp.Body.Close()
+	buf := make([]byte, 8192)
+	var out []byte
+	for len(out) < 65536 {
+		n, err := resp.Body.Read(buf)
+		out = append(out, buf[:n]...)
+		if err != nil || n == 0 {
+			break
+		}
+	}
+	return string(out)
+}
+
+// sseIDs 提取 SSE 流中的全部 id: 游标（升序出现）。
+func sseIDs(raw string) []int {
+	var out []int
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.HasPrefix(line, "id:") {
+			if n, err := strconv.Atoi(strings.TrimSpace(line[3:])); err == nil {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
 }

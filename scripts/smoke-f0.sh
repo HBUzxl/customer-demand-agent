@@ -49,6 +49,16 @@ fi
 STREAM=$("$CURL" -s -N --max-time 2 "$BASE/api/sessions/$SID/stream?since=0" 2>/dev/null | head -c 600)
 echo "$STREAM" | grep -q '"type":"session"' && ok "③ replay 含 session 事件" || fail "③ replay 无 session（${STREAM:0:60}）"
 echo "$STREAM" | grep -qE '"type":"(round|reasoning|tool_call|content)"' && ok "③ replay 含执行事件" || fail "③ replay 无执行事件"
+echo "$STREAM" | grep -q '^id:' && ok "③ SSE 带 id: 游标（可续传）" || fail "③ SSE 无 id: 游标"
+# 非零游标增量续传：取已见最大 seq，since=它 → 只收更大 id
+MAXSEQ=$(echo "$STREAM" | grep '^id:' | tail -1 | tr -dc '0-9')
+if [ -n "$MAXSEQ" ]; then
+  INC=$("$CURL" -s -N --max-time 2 "$BASE/api/sessions/$SID/stream?since=$MAXSEQ" 2>/dev/null | head -c 400)
+  DUP=$(echo "$INC" | grep '^id:' | awk -F': *' -v m="$MAXSEQ" '$2 <= m' | head -1)
+  [ -z "$DUP" ] && ok "③ since=${MAXSEQ} 增量续传无重复" || fail "③ 续传收到重复事件（${DUP}）"
+else
+  fail "③ 无法提取游标"
+fi
 
 # 4. cancel 生效
 "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/$SID/runs/$RID/cancel"

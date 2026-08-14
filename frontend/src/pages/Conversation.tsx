@@ -96,6 +96,7 @@ export default function Conversation() {
   const [activeRun, setActiveRun] = useState<{ sid: string; rid: string } | null>(null); // F0：本视图发起/恢复订阅的 Run
   const scrollRef = useRef<HTMLDivElement>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+  const lastSeqRef = useRef(0); // SSE 事件游标（增量续传）
   const msgsRef = useRef<ChatMsg[]>([]);
   msgsRef.current = messages;
 
@@ -221,11 +222,15 @@ export default function Conversation() {
     unsubRef.current?.();
     setLoading(true);
     if (!opts?.resume) {
+      lastSeqRef.current = 0; // 新 Run 从头收
       setMessages((m) => [...m, { id: uid(), role: "assistant", text: "", streaming: true }]);
     } else if (!msgsRef.current.length || !msgsRef.current[msgsRef.current.length - 1].streaming) {
       setMessages((m) => [...m, { id: uid(), role: "assistant", text: "", streaming: true }]);
     }
-    unsubRef.current = subscribeStream(sid, 0, handleEvent);
+    // resume 时沿用已收游标增量续传；服务端 done 补尾保证不丢不重
+    unsubRef.current = subscribeStream(sid, lastSeqRef.current, handleEvent, (seq) => {
+      lastSeqRef.current = seq;
+    });
   }
 
   function stopSubscription() {
@@ -245,7 +250,9 @@ export default function Conversation() {
     stopSubscription();
     patchLast((m) => {
       m.streaming = false;
+      // 中断态恒可辨：无内容时占位；已有部分内容时追加标记
       if (!m.text && !m.analysis) m.text = "（已停止）";
+      else if (!/（已停止）$/.test(m.text)) m.text = m.text + "\n\n（已停止）";
     });
     setActiveRun(null);
   }

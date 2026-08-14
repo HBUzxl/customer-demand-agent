@@ -60,6 +60,7 @@ export function subscribeStream(
   sessionId: string,
   since: number,
   onEvent: (e: AgentEvent) => void,
+  onSeq?: (seq: number) => void,
 ): () => void {
   const ac = new AbortController();
   (async () => {
@@ -67,7 +68,7 @@ export function subscribeStream(
       signal: ac.signal,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    await readSSE(res, onEvent);
+    await readSSE(res, onEvent, onSeq);
   })().catch(() => {
     /* 订阅中止（组件卸载/切换会话）——正常 */
   });
@@ -106,8 +107,13 @@ export async function sessionRunning(sessionId: string): Promise<boolean> {
   }
 }
 
-// readSSE 从 fetch 响应体读 text/event-stream，逐事件回调。
-async function readSSE(res: Response, onEvent: (e: AgentEvent) => void): Promise<void> {
+// readSSE 从 fetch 响应体读 text/event-stream，逐事件回调；
+// 解析 SSE id: 行作为游标（onSeq 回调，增量续传用）。
+async function readSSE(
+  res: Response,
+  onEvent: (e: AgentEvent) => void,
+  onSeq?: (seq: number) => void,
+): Promise<void> {
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -117,10 +123,19 @@ async function readSSE(res: Response, onEvent: (e: AgentEvent) => void): Promise
     buf += decoder.decode(value, { stream: true });
     let idx: number;
     while ((idx = buf.indexOf("\n\n")) >= 0) {
-      const raw = buf.slice(0, idx).trim();
+      const raw = buf.slice(0, idx);
       buf = buf.slice(idx + 2);
-      if (!raw.startsWith("data:")) continue;
-      const payload = raw.slice(5).trim();
+      let seq = -1;
+      let payload = "";
+      for (const line of raw.split("\n")) {
+        if (line.startsWith("id:")) {
+          const n = parseInt(line.slice(3).trim(), 10);
+          if (!Number.isNaN(n)) seq = n;
+        } else if (line.startsWith("data:")) {
+          payload = line.slice(5).trim();
+        }
+      }
+      if (seq >= 0 && onSeq) onSeq(seq);
       if (!payload) continue;
       try {
         onEvent(JSON.parse(payload));

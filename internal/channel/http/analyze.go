@@ -127,39 +127,45 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSSEHeaders(w)
-	// replay 阶段
+	// 支持 Last-Event-ID 自动续传（浏览器 EventSource 原生）；
+	// 自定义 fetch 客户端用 since 参数，效果相同。
+	if v := r.Header.Get("Last-Event-ID"); v != "" && since == 0 {
+		if n, err := strconv.Atoi(v); err == nil {
+			since = n
+		}
+	}
+	// replay 阶段（带 seq 游标）
 	for _, be := range replay {
-		writeSSE(w, flusher, be.Event)
+		if be.Seq > since {
+			writeSSESeq(w, flusher, be.Seq, be.Event)
+		}
 	}
 	// 无活跃 Run：replay 完即结束
 	if done == nil {
 		return
 	}
-	// live 阶段：Run 结束（done 关闭）后把缓冲尾巴发完即关流
-	lastSeq := 0
-	if len(replay) > 0 {
+	// live 阶段；Run 结束（done 关闭）后从缓冲按最后 seq 补尾——
+	// 慢订阅者 live 通道溢出丢弃的事件由此兜底，保证不丢不重。
+	lastSeq := since
+	if len(replay) > 0 && replay[len(replay)-1].Seq > lastSeq {
 		lastSeq = replay[len(replay)-1].Seq
 	}
 	for {
 		select {
 		case be := <-live:
 			if be.Seq > lastSeq {
-				writeSSE(w, flusher, be.Event)
+				writeSSESeq(w, flusher, be.Seq, be.Event)
 				lastSeq = be.Seq
 			}
 		case <-done:
-			// Run 结束：补发 live 通道里可能滞留的事件
-			for {
-				select {
-				case be := <-live:
-					if be.Seq > lastSeq {
-						writeSSE(w, flusher, be.Event)
-						lastSeq = be.Seq
-					}
-					continue
-				default:
+			// Run 结束：从缓冲补发 lastSeq 之后的所有事件（live 通道
+			// 滞留 + 溢出丢弃一次性兜底），再关流
+			tail := s.runs.ReplayAfter(sessionID, lastSeq)
+			for _, be := range tail {
+				if be.Seq > lastSeq {
+					writeSSESeq(w, flusher, be.Seq, be.Event)
+					lastSeq = be.Seq
 				}
-				break
 			}
 			return
 		case <-r.Context().Done():
@@ -264,10 +270,11 @@ func setSSEHeaders(w http.ResponseWriter) {
 	h.Set("X-Accel-Buffering", "no") // nginx 不缓冲
 }
 
-// writeSSE writes one SSE event and flushes.
-func writeSSE(w http.ResponseWriter, flusher http.Flusher, e agent.Event) {
+// writeSSESeq 写带 SSE id（事件游标 seq）的事件——客户端重连时
+// 用 Last-Event-ID / 记录的 seq 作为 since 增量续传，不重复不丢。
+func writeSSESeq(w http.ResponseWriter, flusher http.Flusher, seq int, e agent.Event) {
 	data, _ := json.Marshal(e)
-	fmt.Fprintf(w, "data: %s\n\n", data)
+	fmt.Fprintf(w, "id: %d\ndata: %s\n\n", seq, data)
 	flusher.Flush()
 }
 

@@ -171,3 +171,16 @@ func (rm *RunManager) DropSession(sessionID string) {
 	delete(rm.subs, sessionID)
 	rm.mu.Unlock()
 }
+
+// ReplayAfter 返回缓冲中 seq 大于 after 的所有事件（慢订阅者补尾用）。
+func (rm *RunManager) ReplayAfter(sessionID string, after int) []BufferedEvent {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+	var out []BufferedEvent
+	for _, be := range rm.buffer[sessionID] {
+		if be.Seq > after {
+			out = append(out, be)
+		}
+	}
+	return out
+}
