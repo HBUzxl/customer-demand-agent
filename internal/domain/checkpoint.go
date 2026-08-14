@@ -39,7 +39,6 @@ type Checkpoint struct {
 	Question  string          `json:"question,omitempty"` // 追问内容（followup）
 	Answer    string          `json:"answer,omitempty"`   // 回答内容（followup）
 	Answered  []AnsweredInfo  `json:"answered,omitempty"` // 本轮记录的"追问已回答"（missing_answer 工具）
-	Notes     []string        `json:"notes,omitempty"`    // 消费掉的便签
 	CreatedAt time.Time       `json:"created_at"`
 }
 

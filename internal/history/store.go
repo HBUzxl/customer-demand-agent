@@ -185,8 +185,21 @@ func (s *Store) AppendCheckpoint(sessionID string, cp *domain.Checkpoint) error 
 	_, err = s.db.Exec(`INSERT INTO checkpoints(session_id, cp_id, cp_type, payload_json, created_at)
 		VALUES(?, ?, ?, ?, ?)`,
 		sessionID, cp.ID, cp.Type, payload, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	// P3 链滚动归档：超软上限时删最老的 followup（保留 initial/reanalysis 骨架；
+	// 与内存 Manager.compactChainLocked 同规则，防 restore 后链无界增长）。
+	_, err = s.db.Exec(`DELETE FROM checkpoints WHERE rowid IN (
+		SELECT rowid FROM checkpoints WHERE session_id=? AND cp_type='followup'
+		ORDER BY id ASC LIMIT (
+			SELECT COUNT(*) FROM checkpoints WHERE session_id=?
+		) - ?)`, sessionID, sessionID, chainSoftLimitSQLite)
 	return err
 }
+
+// chainSoftLimitSQLite 与 shortterm.chainSoftLimit 保持一致（软上限）。
+const chainSoftLimitSQLite = 50
 
 // ListCheckpoints 读回某会话的 checkpoint 链（按创建顺序，用于断点续传）。
 // 跨租户：JOIN sessions 校验归属，非本租户会话返回空（读不到对方 checkpoint）。

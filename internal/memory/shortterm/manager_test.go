@@ -1,6 +1,7 @@
 package shortterm
 
 import (
+	"fmt"
 	"testing"
 
 	"customer-demand-agent/internal/domain"
@@ -59,23 +60,6 @@ func TestCheckpointChain(t *testing.T) {
 	}
 }
 
-func TestNotes(t *testing.T) {
-	m := NewManager()
-	m.AppendNote("观察1")
-	m.AppendNote("观察2")
-
-	// 创建 checkpoint 时消费 notes
-	cp := m.CreateInitialCheckpoint("doc", &domain.AnalysisResult{})
-	if len(cp.Notes) != 2 || cp.Notes[0] != "观察1" {
-		t.Fatalf("notes not consumed into checkpoint: %+v", cp.Notes)
-	}
-
-	// 消费后清空
-	if drained := m.DrainNotes(); drained != nil {
-		t.Fatalf("notes should be empty after drain, got %v", drained)
-	}
-}
-
 func TestBuildContext(t *testing.T) {
 	m := NewManager()
 	m.CreateInitialCheckpoint("文档原文比较长...", &domain.AnalysisResult{DemandAnalysis: "x"})
@@ -86,5 +70,34 @@ func TestBuildContext(t *testing.T) {
 	}
 	if ctx.Current == nil {
 		t.Fatal("current checkpoint missing")
+	}
+}
+
+// TestChainCompaction P3：链超软上限时压缩最老 followup，保留分析骨架
+// （initial/reanalysis 全留 + LastAnalysis 依赖不破）。
+func TestChainCompaction(t *testing.T) {
+	m := NewManager()
+	m.CreateInitialCheckpoint("doc", &domain.AnalysisResult{DemandAnalysis: "首发"})
+	for i := 0; i < 80; i++ {
+		m.CreateFollowupCheckpoint(fmt.Sprintf("问%d", i), "答")
+	}
+	chain := m.CheckpointChain()
+	if len(chain) > chainSoftLimit {
+		t.Fatalf("链应 ≤%d，got %d", chainSoftLimit, len(chain))
+	}
+	// 骨架保留：initial 在链上
+	sawInitial := false
+	for _, cp := range chain {
+		if cp.Type == domain.CheckpointInitial {
+			sawInitial = true
+		}
+	}
+	if !sawInitial {
+		t.Fatal("initial 骨架被压缩掉了（LastAnalysis 依赖破坏）")
+	}
+	// LastAnalysis 仍可回溯
+	ctx := m.BuildContext(domain.OpFollowup)
+	if ctx.LastAnalysis == nil || ctx.LastAnalysis.Analysis == nil {
+		t.Fatal("LastAnalysis 应跨压缩保持")
 	}
 }

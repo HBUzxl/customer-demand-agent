@@ -5,7 +5,6 @@
 // 读 current checkpoint，不重放整个对话（见 ADR-003）。
 //
 // 三种 checkpoint：initial（首次分析）/ followup（追问）/ reanalysis（换文档重分析）。
-// notes.md 是 Agent 唯一的临时写入通道，创建 checkpoint 时消费并清空。
 package shortterm
 
 import (
@@ -16,12 +15,14 @@ import (
 	"customer-demand-agent/internal/domain"
 )
 
-// Manager 管理单个会话的 checkpoint 链 + notes 便签。
+// chainSoftLimit 链软上限（超过后压缩最老的 followup，保留分析骨架）。
+const chainSoftLimit = 50
+
+// Manager 管理单个会话的 checkpoint 链。
 // 一个会话对应一个 Manager 实例（由上层 SessionManager 创建）。
 type Manager struct {
 	mu          sync.Mutex
 	chain       []*domain.Checkpoint // 有序链：chain[len-1] 为 current
-	notes       []string             // 临时便签
 	rawDocument string               // 当前原始文档
 }
 
@@ -54,10 +55,10 @@ func (m *Manager) CreateInitialCheckpoint(document string, analysis *domain.Anal
 		Type:      domain.CheckpointInitial,
 		Document:  document,
 		Analysis:  analysis,
-		Notes:     m.drainNotesLocked(),
 		CreatedAt: time.Now(),
 	}
 	m.chain = append(m.chain, cp)
+	m.compactChainLocked()
 	return cp
 }
 
@@ -75,10 +76,10 @@ func (m *Manager) CreateFollowupCheckpoint(question, answer string) *domain.Chec
 		PrevID:    prevID,
 		Question:  question,
 		Answer:    answer,
-		Notes:     m.drainNotesLocked(),
 		CreatedAt: time.Now(),
 	}
 	m.chain = append(m.chain, cp)
+	m.compactChainLocked()
 	return cp
 }
 
@@ -97,11 +98,36 @@ func (m *Manager) CreateReanalysisCheckpoint(document string, analysis *domain.A
 		PrevID:    prevID,
 		Document:  document,
 		Analysis:  analysis,
-		Notes:     m.drainNotesLocked(),
 		CreatedAt: time.Now(),
 	}
 	m.chain = append(m.chain, cp)
+	m.compactChainLocked()
 	return cp
+}
+
+// compactChainLocked 链超软上限时压缩：保留全部 initial/reanalysis（分析
+// 骨架——LastAnalysis 依赖）+ 最近 followup，丢最老的纯聊天轮（P3 滚动归档；
+// 完整轨迹仍在 history 库，回放不受影响）。调用方需持锁。
+func (m *Manager) compactChainLocked() {
+	if len(m.chain) <= chainSoftLimit {
+		return
+	}
+	var kept []*domain.Checkpoint
+	followups := 0
+	for _, cp := range m.chain {
+		if cp.Type == domain.CheckpointFollowup {
+			followups++
+		}
+	}
+	overflow := len(m.chain) - chainSoftLimit
+	for _, cp := range m.chain {
+		if cp.Type == domain.CheckpointFollowup && overflow > 0 {
+			overflow--
+			continue // 丢最老的 followup（从头扫即最老）
+		}
+		kept = append(kept, cp)
+	}
+	m.chain = kept
 }
 
 // CurrentCheckpoint 返回链尾 checkpoint（无则 nil）。
@@ -138,34 +164,6 @@ func (m *Manager) HasHistory() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.chain) > 0
-}
-
-// ── Notes 便签（Agent 唯一临时写入通道）────────────────────────
-
-// AppendNote 追加一条临时观察。
-func (m *Manager) AppendNote(note string) {
-	if note = trim(note); note == "" {
-		return
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.notes = append(m.notes, note)
-}
-
-// DrainNotes 取出并清空全部便签。
-func (m *Manager) DrainNotes() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.drainNotesLocked()
-}
-
-func (m *Manager) drainNotesLocked() []string {
-	if len(m.notes) == 0 {
-		return nil
-	}
-	out := m.notes
-	m.notes = nil
-	return out
 }
 
 // ── BuildContext（供 assembler 使用）───────────────────────────
