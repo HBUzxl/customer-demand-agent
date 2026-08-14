@@ -94,18 +94,21 @@ type UserProfile struct {
 // Entry 是一条通用记忆条目（记忆工具的统一读写单位）。
 // 不同记忆类型共享这个扁平结构，便于 memory_search/memory_list 跨类型检索。
 type Entry struct {
-	Type      domain.MemoryType `json:"type"`
-	Title     string            `json:"title"` // 唯一标识
-	Aliases   []string          `json:"aliases"`
-	Tags      []string          `json:"tags"`
-	Summary   string            `json:"summary"`             // 摘要
-	Content   string            `json:"content"`             // Markdown 正文
-	Category  string            `json:"category,omitempty"`  // 分类（产品的安全域）
-	Product   string            `json:"product,omitempty"`   // 所属产品（子文档关联到产品）
-	Status    EntryStatus       `json:"status"`              // verified / pending_review / archived
-	Relevance float64           `json:"relevance,omitempty"` // 检索时填充
-	FilePath  string            `json:"-"`                   // 对应的磁盘文件（写回用）
-	typed     *frontmatter      `json:"-"`                   // frontmatter 结构化字段（类型化解析用）
+	Type         domain.MemoryType `json:"type"`
+	Title        string            `json:"title"` // 唯一标识
+	Aliases      []string          `json:"aliases"`
+	Tags         []string          `json:"tags"`
+	Summary      string            `json:"summary"`                 // 摘要
+	Content      string            `json:"content"`                 // Markdown 正文
+	Category     string            `json:"category,omitempty"`      // 分类（产品的安全域）
+	Product      string            `json:"product,omitempty"`       // 所属产品（子文档关联到产品）
+	Status       EntryStatus       `json:"status"`                  // verified / pending_review / archived
+	ValidAt      string            `json:"valid_at,omitempty"`      // P6 时效：事实生效时刻
+	InvalidAt    string            `json:"invalid_at,omitempty"`    // P6 时效：失效时刻（被新版本替代）
+	SupersededBy string            `json:"superseded_by,omitempty"` // P6 时效：替代本条目的新版本
+	Relevance    float64           `json:"relevance,omitempty"`     // 检索时填充
+	FilePath     string            `json:"-"`                       // 对应的磁盘文件（写回用）
+	typed        *frontmatter      `json:"-"`                       // frontmatter 结构化字段（类型化解析用）
 }
 
 // EntryStatus 是记忆条目的审核状态（待审核机制，ADR-005）。

@@ -251,6 +251,15 @@ func (w *WikiStore) UpsertEntry(e *Entry) error {
 			Category: e.Category, Product: e.Product,
 		}
 	}
+	// P6 时效性：同 title 覆盖且正文实质变更 → 旧版本归档留痕
+	// （.superseded-<ts>.md：archived + valid_at/invalid_at + superseded_by 指向新版本），
+	// 不静默丢失——"这客户上月要什么"可回溯。
+	w.mu.Lock()
+	if old, exists := w.entries[mt][e.Title]; exists && old.Content != e.Content {
+		w.archiveSupersededLocked(old, e.Title)
+	}
+	w.mu.Unlock()
+
 	if err := w.writePage(e); err != nil {
 		return fmt.Errorf("写回磁盘: %w", err)
 	}
@@ -263,6 +272,33 @@ func (w *WikiStore) UpsertEntry(e *Entry) error {
 	w.rebuildIndex()
 	w.mu.Unlock()
 	return nil
+}
+
+// archiveSupersededLocked 把被覆盖的旧条目归档为历史版本文件。调用方需持写锁。
+func (w *WikiStore) archiveSupersededLocked(old *Entry, newTitle string) {
+	now := time.Now().UTC()
+	cp := *old
+	cp.Status = StatusArchived
+	cp.FilePath = fmt.Sprintf("%s.superseded-%d.md", trimExt(old.FilePath), now.Unix())
+	if cp.typed != nil {
+		f := *cp.typed
+		f.Status = string(StatusArchived)
+		f.InvalidAt = now.Format(time.RFC3339)
+		f.SupersededBy = newTitle
+		if f.ValidAt == "" {
+			f.ValidAt = now.Format(time.RFC3339) // 无创建时间记录时以归档时刻近似
+		}
+		cp.typed = &f
+	}
+	if err := w.writePage(&cp); err != nil {
+		// 归档失败不阻断覆盖（主流程优先），留日志
+		fmt.Printf("[warn] 归档旧版本失败 %s: %v\n", old.Title, err)
+	}
+}
+
+// trimExt 去掉 .md 扩展名。
+func trimExt(p string) string {
+	return strings.TrimSuffix(p, ".md")
 }
 
 // DeleteEntry 软删除（归档）或物理删除一条记忆。

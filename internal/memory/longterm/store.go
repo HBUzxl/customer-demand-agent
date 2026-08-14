@@ -80,6 +80,10 @@ func (w *WikiStore) Load() error {
 		if d.IsDir() || !strings.HasSuffix(path, ".md") {
 			return nil
 		}
+		// P6 时效归档（.superseded-*.md）不进活跃索引——历史版本仅磁盘留痕
+		if strings.Contains(filepath.Base(path), ".superseded-") {
+			return nil
+		}
 		raw, rErr := os.ReadFile(path)
 		if rErr != nil {
 			fmt.Fprintf(os.Stderr, "[wiki] 跳过 %s: %v\n", path, rErr)
@@ -115,6 +119,12 @@ type frontmatter struct {
 	Tags    []string `yaml:"tags"`
 	Status  string   `yaml:"status"`
 	Summary string   `yaml:"summary"`
+
+	// 时效性（P6）：valid_at/invalid_at 记录事实有效期；superseded_by
+	// 指向替代条目（覆盖时旧版本归档写入）。
+	ValidAt      string `yaml:"valid_at"`
+	InvalidAt    string `yaml:"invalid_at"`
+	SupersededBy string `yaml:"superseded_by"`
 
 	// product
 	FullName     string       `yaml:"full_name"`

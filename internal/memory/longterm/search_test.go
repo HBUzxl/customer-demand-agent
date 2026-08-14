@@ -1,6 +1,9 @@
 package longterm
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"customer-demand-agent/internal/domain"
@@ -78,5 +81,54 @@ func TestSearchWeightTitleBeatsSummary(t *testing.T) {
 	}
 	if hits[0].Title != "等保三级" {
 		t.Fatalf("标题命中应排最前，got %s", hits[0].Title)
+	}
+}
+
+// TestSupersedeArchive P6 时效性：同 title 实质变更覆盖 → 旧版本归档
+// （.superseded-*.md 带 archived/invalid_at/superseded_by），重载后活跃
+// 索引只有新版本。
+func TestSupersedeArchive(t *testing.T) {
+	dir := t.TempDir()
+	w := NewWikiStore(dir)
+	if err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	// 初版
+	if err := w.UpsertEntry(&Entry{
+		Type: domain.MemoryThreat, Title: "客户偏好", Status: StatusVerified,
+		Content: "---\ntype: threat\nstatus: verified\nsummary: 初版偏好\n---\n喜欢私有云",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 实质变更覆盖
+	if err := w.UpsertEntry(&Entry{
+		Type: domain.MemoryThreat, Title: "客户偏好", Status: StatusVerified,
+		Content: "---\ntype: threat\nstatus: verified\nsummary: 新偏好\n---\n转向公有云",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 归档文件存在
+	matches, _ := filepath.Glob(filepath.Join(dir, "行业记忆", "威胁类型", "客户偏好.superseded-*.md"))
+	if len(matches) != 1 {
+		t.Fatalf("应有一个归档版本文件，got %v", matches)
+	}
+	archived, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(archived)
+	for _, want := range []string{"status: archived", "superseded_by: 客户偏好", "invalid_at: "} {
+		if !strings.Contains(body, want) {
+			t.Errorf("归档文件缺 %q:\n%s", want, body[:200])
+		}
+	}
+	// 重载：活跃索引只有新版本，归档不进
+	w2 := NewWikiStore(dir)
+	if err := w2.Load(); err != nil {
+		t.Fatal(err)
+	}
+	hits := w2.SearchEntry("偏好", "threat", 10)
+	if len(hits) != 1 || !strings.Contains(hits[0].Content, "公有云") {
+		t.Fatalf("重载后应只命中新版本，got %+v", hits)
 	}
 }
