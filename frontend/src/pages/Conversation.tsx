@@ -260,6 +260,30 @@ export default function Conversation() {
 
   const isEmpty = messages.length === 0 && !loading;
 
+  // 空状态也提供客户名关联（P0：首轮分析就要带客户身份）
+  const customerChip = editingCustomer ? (
+    <input
+      className="cust-input"
+      autoFocus
+      value={customer}
+      placeholder="客户名（如：某跨境电商）"
+      onChange={(e) => setCustomer(e.target.value)}
+      onBlur={() => setEditingCustomer(false)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === "Escape") setEditingCustomer(false);
+      }}
+      title="关联客户后，Agent 每轮知道在与谁对话（画像细节自动检索）"
+    />
+  ) : (
+    <button
+      className="cust-chip"
+      onClick={() => setEditingCustomer(true)}
+      title="设置会话关联的客户"
+    >
+      {customer ? `客户：${customer}` : "+ 关联客户"}
+    </button>
+  );
+
   // ── 空状态：欢迎语 + 输入框 + 示例，垂直居中 ──
   if (isEmpty) {
     return (
@@ -270,6 +294,10 @@ export default function Conversation() {
             粘贴客户沟通原文，或直接描述场景。我会理解需求、匹配长亭产品、判断可行性——也可以直接跟我聊。
           </p>
           <div className="composer-wrap">{composer}</div>
+          <div className="empty-aux">
+            {customerChip}
+            <span className="empty-hint">先关联客户，首轮分析即可结合其画像</span>
+          </div>
           <div className="examples-grid">
             {EXAMPLES.map((ex, i) => (
               <button key={i} className="ex-card" onClick={() => send(ex.d)}>
@@ -305,28 +333,7 @@ export default function Conversation() {
           {composer}
           <div className="chat-hint">
             {sessionId ? `会话 ${sessionId.slice(5, 17)}` : "新会话"} · 回车发送
-            {editingCustomer ? (
-              <input
-                className="cust-input"
-                autoFocus
-                value={customer}
-                placeholder="客户名（如：某跨境电商）"
-                onChange={(e) => setCustomer(e.target.value)}
-                onBlur={() => setEditingCustomer(false)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === "Escape") setEditingCustomer(false);
-                }}
-                title="关联客户后，Agent 每轮知道在与谁对话（画像细节自动检索）"
-              />
-            ) : (
-              <button
-                className="cust-chip"
-                onClick={() => setEditingCustomer(true)}
-                title="设置会话关联的客户"
-              >
-                {customer ? `客户：${customer}` : "+ 关联客户"}
-              </button>
-            )}
+            {customerChip}
           </div>
         </div>
       </div>

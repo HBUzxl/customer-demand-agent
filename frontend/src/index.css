@@ -1513,6 +1513,17 @@ tbody tr:last-child td {
   outline: none;
   font-family: inherit;
 }
+.empty-aux {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.empty-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
 
 /* 空状态：垂直居中 */
 .empty-state {

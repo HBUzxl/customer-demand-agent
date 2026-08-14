@@ -69,6 +69,15 @@ echo "-- 5. 会话历史 --"
 MSTATUS=$("$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: ${TENANT}" -H "Content-Type: application/json" -d '{"text":"你好","session_id":"e2e-msg"}' --max-time 3 "$BASE/api/message" 2>/dev/null)
 case "$MSTATUS" in *"000"*) MSTATUS="${MSTATUS//000/}";; esac
 [ "$MSTATUS" = "200" ] && ok "POST /api/message（统一入口 SSE）" || fail "POST /api/message（got ${MSTATUS}）"
+
+# P0 前端行为契约：新会话空状态 chip 填客户名后发首条消息——请求体带 customer，
+# 会话落库可读回（首轮身份行注入的数据前提）。
+MSTATUS2=$("$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: ${TENANT}" -H "Content-Type: application/json" -d '{"text":"你好","session_id":"e2e-cust","customer":"E2E测试客户"}' --max-time 3 "$BASE/api/message" 2>/dev/null)
+case "$MSTATUS2" in *"000"*) MSTATUS2="${MSTATUS2//000/}";; esac
+[ "$MSTATUS2" = "200" ] && ok "POST /api/message 首轮带 customer（空状态 chip 契约）" || fail "首轮带 customer（got ${MSTATUS2}）"
+CUSTBACK=$("$CURL" -s -H "X-Tenant-ID: ${TENANT}" "$BASE/api/sessions/e2e-cust" | grep -o '"customer":"[^"]*"' | head -1)
+[ "$CUSTBACK" = '"customer":"E2E测试客户"' ] && ok "首轮 customer 落库可读回" || fail "customer 落库读回（got $CUSTBACK）"
+[ "$("$CURL" -s -o /dev/null -w "%{http_code}" -X DELETE -H "X-Tenant-ID: ${TENANT}" "$BASE/api/sessions/e2e-cust")" = "200" ] && ok "清理 e2e-cust" || fail "清理 e2e-cust"
 DSTATUS=$("$CURL" -s -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" -d '{"text":"hi","session_id":"e2e-an"}' --max-time 3 "$BASE/api/analyze" 2>/dev/null)
 case "$DSTATUS" in *"000"*) DSTATUS="${DSTATUS//000/}";; esac
 [ "$DSTATUS" = "200" ] && ok "POST /api/analyze（deprecated shim 仍可用）" || fail "analyze shim（got ${DSTATUS}）"
