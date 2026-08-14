@@ -289,6 +289,44 @@ type SessionDetail struct {
 	ToolCalls []ToolCallRecord `json:"tool_calls"`
 }
 
+// MessageHit 是历史检索的一条命中。
+type MessageHit struct {
+	SessionID string    `json:"session_id"`
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// SearchMessages 按关键词检索历史消息（tenant 隔离）。
+// sessionID 为空时跨该租户全部会话；大小写不敏感的子串匹配（P1 起步——
+// 历史量级小，LIKE 足够；后续可升级 bigram 权重检索对齐 longterm）。
+func (s *Store) SearchMessages(tenantID, sessionID, query string, limit int) ([]MessageHit, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT m.session_id, m.role, m.content, m.created_at
+		FROM messages m JOIN sessions se ON se.session_id = m.session_id
+		WHERE se.tenant_id = ? AND (? = '' OR m.session_id = ?)
+			AND m.content LIKE '%' || ? || '%'
+		ORDER BY m.created_at DESC LIMIT ?`,
+		tenantID, sessionID, sessionID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MessageHit
+	for rows.Next() {
+		var h MessageHit
+		if err := rows.Scan(&h.SessionID, &h.Role, &h.Content, &h.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, nil
+}
+
 // GetSession 返回会话详情（校验 tenant 归属）。
 func (s *Store) GetSession(tenantID, sessionID string) (*SessionDetail, error) {
 	s.mu.Lock()

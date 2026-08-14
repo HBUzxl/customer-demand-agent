@@ -45,11 +45,12 @@ type memoryUpsertReq struct {
 	Tags    []string `json:"tags"`
 	Aliases []string `json:"aliases"`
 	Summary string   `json:"summary"`
-	Status  string   `json:"status"`
 }
 
 // handleMemoryUpsert: POST /api/memory
 // 这是人工管理入口（产品经理/管理员用），不经过 AI 权限校验，可直接写 product/user。
+// 人工=可信源：一律 verified，不接受 status 传参（pending 是 AI 写入专属语义，
+// 审核状态只能通过审核流改变——P10）。
 func (s *Server) handleMemoryUpsert(w http.ResponseWriter, r *http.Request) {
 	var req memoryUpsertReq
 	if err := decodeBody(r, &req); err != nil {
@@ -62,9 +63,6 @@ func (s *Server) handleMemoryUpsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := longterm.StatusVerified
-	if req.Status != "" {
-		status = longterm.EntryStatus(req.Status)
-	}
 	// 若已存在，以旧条目为基底覆盖可编辑字段，保留其结构化 frontmatter（如产品 capabilities）
 	entry := &longterm.Entry{
 		Type:    mt,

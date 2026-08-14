@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"customer-demand-agent/internal/domain"
 )
@@ -138,4 +139,59 @@ func parseMissingAnswer(raw json.RawMessage) ([]domain.AnsweredInfo, error) {
 		}
 	}
 	return req.Answers, nil
+}
+
+// ToolHistorySearch 是业务工具：检索历史对话原文（P1）。
+// checkpoint 只保留压缩状态，细节（客户原话、当时怎么答的）要回捞时用它。
+const ToolHistorySearch = "history_search"
+
+// historySearchDef 返回 history_search 的 function-calling 定义。
+func historySearchDef() domain.Tool {
+	return domain.Tool{
+		Type: "function",
+		Function: domain.ToolFunction{
+			Name: ToolHistorySearch,
+			Description: "按关键词检索历史对话原文（跨会话）。当前会话的摘要上下文不够用、需要回溯" +
+				"某个客户说过什么/之前怎么回答的细节时调用。返回最近的匹配消息。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "关键词（如客户名、需求关键词）"},
+					"all_sessions": map[string]any{
+						"type": "boolean", "description": "true 跨全部会话检索（默认 false 只搜当前会话）",
+					},
+					"limit": map[string]any{"type": "number", "description": "返回条数，默认 10，上限 50"},
+				},
+				"required": []string{"query"},
+			},
+		},
+	}
+}
+
+// execHistorySearch 执行 history_search（agent 层业务工具：走 histSearch 回调）。
+func (a *Agent) execHistorySearch(argsRaw string, st *turnState) string {
+	var args struct {
+		Query       string `json:"query"`
+		AllSessions bool   `json:"all_sessions"`
+		Limit       int    `json:"limit"`
+	}
+	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
+		return fmt.Sprintf(`{"error":"参数解析: %s"}`, jsonEscape(err.Error()))
+	}
+	if strings.TrimSpace(args.Query) == "" {
+		return `{"error":"query 不能为空"}`
+	}
+	if a.histSearch == nil {
+		return `{"error":"历史检索未配置"}`
+	}
+	scope := st.session
+	if args.AllSessions {
+		scope = ""
+	}
+	hits, err := a.histSearch(st.tenantID, scope, args.Query, args.Limit)
+	if err != nil {
+		return fmt.Sprintf(`{"error":"%s"}`, jsonEscape(err.Error()))
+	}
+	data, _ := json.Marshal(map[string]any{"count": len(hits), "items": hits})
+	return string(data)
 }

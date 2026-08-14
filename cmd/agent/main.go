@@ -89,6 +89,8 @@ func main() {
 		}
 		return ""
 	})
+	// P1 history_search：Agent 可回溯历史对话原文（跨会话，tenant 隔离）
+	ag.SetHistorySearcher(hist.SearchMessages)
 
 	// ── 审核系统 ────────────────────────────────────────────
 	reviewSvc := review.New(wikiStore)

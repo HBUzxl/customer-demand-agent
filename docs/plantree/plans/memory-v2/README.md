@@ -1,7 +1,8 @@
 # 记忆系统二期（memory-v2）
 
-> 短期记忆 checkpoint 链的演进研究 + Agent 记忆能力补全。状态：**Researching**
-> （方案研究中，未开工）。起源于 2026-08-14 对 MiMo Code 记忆架构的调研。
+> 短期记忆 checkpoint 链的演进研究 + Agent 记忆能力补全。状态：**Active**
+> （先锋批 P0/P1/P10 已落地 2026-08-14；其余 Researching）。
+> 起源于 2026-08-14 对 MiMo Code 记忆架构的调研。
 
 ## 为什么有这个 plan
 
@@ -62,26 +63,34 @@ stigmergy / LWC / Provenance-First-Wiki / SIGN）+ 记忆系统三巨头对比
 
 ## 候选项（按优先级）
 
-### P0：System Prompt 分层落地（ADR-016 v2，用户裁决，最优先）
+### P0：System Prompt 分层落地（ADR-016 v2，用户裁决，最优先）✅ 已落地 2026-08-14
 
 见 [[decisions/README.md|ADR-016 v2]]。分层注入：L0 静态模板 +
 L1 使用者画像（风格）+ L2 会话状态（checkpoint 链 + 客户身份一行）+
 L3a 产品目录索引；其余知识全走工具。废除 AllKnowledge 全量注入与
-客户画像内容注入；补会话头客户名 UI。P8 随之消解。改动：assembler、
-会话头 UI、prompt 措辞、测试（TestAssemblerCustomerInjection 改写为
-"画像内容不注入、身份行注入"断言）。
+客户画像内容注入；补会话头客户名 UI。P8 随之消解。
 
-### P1：history_search 工具（Agent 记忆真空缺）
+**落地证据**：assembler 目录索引（名字+Description+别名）替代
+renderKnowledge 全量段（已删）；客户身份行注入；systemConstraints
+强化「推荐前必须检索」；TestAssemblerProductCatalogOnly +
+TestAssemblerCustomerInjection（身份行注入/画像内容禁入双向断言）；
+TestMessageCustomerFieldPersisted（HTTP 端到端）；真实冒烟 prompt
+3387→1748 字符（寒暄轮），LLM 行为正常（知道客户身份并主动检索）。
+Trace.SystemPrompt 改为聚合全部 system 消息（模板+动态注入均落库
+回放可见）。
+
+### P1：history_search 工具（Agent 记忆真空缺）✅ 已落地 2026-08-14
 
 让 Agent 能查 SQLite 里的原始对话轨迹（messages + tool_calls），当
-checkpoint 注入的摘要不够用时回捞细节。对应 MiMo 的 history 工具
-（`operation=around` 按消息上下文回捞）。
+checkpoint 注入的摘要不够用时回捞细节。
 
-- 参数：`query`（关键词）、`session_id`（默认当前会话）、`limit`
-- 实现：history.Store 加检索方法（复用 longterm 的 bigram tokenize），
-  memory tools registry 注册（只读，无审核问题）
-- 也是 Agent 自评（2026-08-14）抱怨"跨会话客户上下文"缺口的另一半：
-  画像给"是什么"，history 给"聊过什么"
+**落地证据**：history.Store.SearchMessages（tenant 隔离 JOIN + 会话
+范围可选 + LIKE + limit 封顶）+ TestSearchMessages（4 断言组）；
+agent 层 history_search 业务工具（SetHistorySearcher 回调 + turnState
+带 tenant/session）；TestAgentHistorySearch 集成（跨会话命中后基于
+历史回答）；prompt 指引「回溯细节 → history_search」；main.go 接线。
+语义对应 MiMo 的 history 工具；也是"跨会话客户上下文"缺口的另一半：
+画像给"是什么"，history 给"聊过什么"。
 
 ### P2：Notes 通道启用或删除
 
@@ -180,6 +189,14 @@ system prompt 不再有知识污染面。剩余小尾巴：工具检索结果里
 
 ### P10：AI 记忆更新粒度补齐（用户命题 2026-08-14：应不应该≠能不能）
 
+**✅ 核心项已落地 2026-08-14（本 goal）**：核实 execEnsure 对
+threat/compliance/industry 一律置 pending（与旧条目状态无关）——AI
+覆盖 verified 必然降级，行为正确，补 TestEnsureOverwriteVerifiedDemotes
+锁定；人工通道 memoryUpsertReq 移除 status 传参（一律 verified，
+pending 是 AI 专属语义），TestMemoryUpsertIgnoresStatusParam +
+e2e 第 4 节改测 P10 新语义。**字段级 patch / 留痕 / 软删回收站**
+（下述 2-4 项）仍为候选项。
+
 用户提出：记忆更新能力上"理论上都应该能更新"。现状盘点：
 
 - AI 通道：threat/compliance/industry/customer 可 upsert（同 title 整条
@@ -271,7 +288,10 @@ UpsertEntry typed=nil 索引漏建修复、analysis_submit 覆盖语义澄清。
 
 ## 下一步
 
-P1 方案细化（history.Store 检索 API + 工具 schema）→ 用户确认后开工。
-P8 的现状核实（AllKnowledge 是否过滤 pending）随手可查，先于 P5-P7。
-中期：P5/P7 共用的后台任务基础设施可先立骨架（ADR-015 预留的
-TaskBackground 域），再逐个挂任务。
+**已完成（2026-08-14 先锋批 goal）**：P0 分层落地（ADR-016 v2 生效）、
+P1 history_search、P10 核心门禁、P8 悬案核实（随 ADR-016 消解）。
+可复现冒烟：`./scripts/smoke-p0.sh`（需真实 LLM 的运行实例）。
+
+**候选批次**：P9 数据全局位置（Docker 迁移刚需）→ P11 记忆管线三阶段
+（方案待用户裁决：主 Agent ensure 是否收紧为仅 observe）→ P5/P6 后台
+任务基础设施（TaskBackground 域，P11/P5 共用）。

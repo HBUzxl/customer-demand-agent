@@ -48,14 +48,13 @@ func (a *Assembler) Assemble(op domain.CheckpointOp, ctx *domain.SessionContext,
 			Content: "【最近的对话状态】\n" + checkpointJSON(ctx.Current),
 		})
 	}
-	// 跨会话客户上下文：会话关联客户时注入其画像（同一客户多次沟通统一视图）。
+	// 跨会话客户上下文（ADR-016 L2）：只注入"身份"一行——画像是知识，
+	// 走 memory_search type=customer 按名取，不注入内容。
 	if ctx != nil && ctx.Customer != "" {
-		if cp, err := a.knowledge.GetCustomerProfile(ctx.Customer); err == nil && cp != nil {
-			msgs = append(msgs, domain.Message{
-				Role:    domain.RoleSystem,
-				Content: "【当前客户画像：" + cp.Name + "】\n" + customerJSON(cp),
-			})
-		}
+		msgs = append(msgs, domain.Message{
+			Role:    domain.RoleSystem,
+			Content: "【当前会话客户】" + ctx.Customer + "（需要画像细节时用 memory_search 检索该客户）",
+		})
 	}
 	// 追问闭环：链上已回答的追问（missing_answer 记录），避免重复追问。
 	if ctx != nil && len(ctx.Answered) > 0 {
@@ -93,10 +92,21 @@ func (a *Assembler) systemPrompt(op domain.CheckpointOp) string {
 		}
 	}
 
-	// 注入全量产品知识（一期产品数量有限，全量注入确定性最高）
-	if kb := a.knowledge.AllKnowledge(); kb != nil && (len(kb.Products) > 0 || len(kb.Threats) > 0) {
-		b.WriteString("\n\n## 可用产品知识库\n")
-		b.WriteString(renderKnowledge(kb))
+	// 产品目录索引（ADR-016 L3a）：只注入"有什么"（名字+一句话+别名），
+	// 不注入内容——能力/场景/竞品等细节走 memory_search 按名检索。
+	// 模型必须知道产品存在，才能形成检索假设并执行"只推荐存在的产品"。
+	if products := a.knowledge.AllProducts(); len(products) > 0 {
+		b.WriteString("\n\n## 长亭产品目录（仅目录；详情必须 memory_search 检索）\n")
+		for _, p := range products {
+			line := "- " + p.Name
+			if p.Description != "" {
+				line += "：" + p.Description
+			}
+			if len(p.Aliases) > 0 {
+				line += "（别名：" + strings.Join(p.Aliases, "/") + "）"
+			}
+			b.WriteString(line + "\n")
+		}
 	}
 
 	// 会话状态提示：只描述事实，不规定行为（决策权在 LLM）。
@@ -118,6 +128,7 @@ const systemRole = `你是长亭科技（Chaitin）的售前需求分析助手�
 
 const systemAutonomy = `每次用户发言，你自己判断怎么回应，没有固定流程。这是和 Agent 的对话，不是普通 chat——你的记忆工具全程在线，任何轮次都该自然使用：
 - 聊天中涉及产品/威胁/合规事实 → 先 memory_search 查证再回答（不凭记忆瞎说）
+- 需要回溯之前对话的细节（客户原话、之前怎么答的、别的会话聊过什么）→ history_search 检索历史原文
 - 聊天中出现新客户信息/线索 → 主动 memory_observe / memory_ensure 记录
 - 此前分析的追问（missing_info）在对话中得到回答 → 调用 missing_answer 记录答案（追问闭环，避免重复追问）
 - 寒暄、闲聊、关于你自己的问题 → 轻松自然语言回答（无需查库的就直接答，不要调用 analysis_submit）
@@ -135,7 +146,8 @@ const systemGoals = `1. 需求理解：把客户的业务语言翻译成具体�
 
 const systemConstraints = `- 你的回复始终是给销售看的自然语言（可用 markdown）
 - 结构化分析结果只通过 analysis_submit 工具提交，不要把 JSON 贴在回复文本里
-- 只推荐知识库中存在的长亭产品，禁止编造产品名或能力
+- 只推荐产品目录中存在的长亭产品，禁止编造产品名或能力
+- 推荐/断言任何产品能力前，必须先 memory_search 检索证实——未检索就推荐视为违规（目录只有一句话定位，细节你并不知道）
 - 不确定时标注"需进一步确认"，不要瞎猜
 - 置信度要诚实：核心能力给 0.9+，边缘能力给 0.5-0.7，不确定给 0.3 以下
 - 真实需求的分析必须给出 feasibility 判断
@@ -158,91 +170,6 @@ func checkpointJSON(cp *domain.Checkpoint) string {
 		if cp.Answer != "" {
 			b.WriteString("\n回答：")
 			b.WriteString(cp.Answer)
-		}
-	}
-	return b.String()
-}
-
-// customerJSON 把客户画像渲染为 prompt 友好的文本（跨会话客户上下文）。
-func customerJSON(cp *longterm.CustomerProfile) string {
-	var b strings.Builder
-	if cp.Industry != "" {
-		fmt.Fprintf(&b, "- 行业：%s\n", cp.Industry)
-	}
-	if cp.Scale != "" {
-		fmt.Fprintf(&b, "- 规模：%s\n", cp.Scale)
-	}
-	if len(cp.TechStack) > 0 {
-		fmt.Fprintf(&b, "- 技术栈：%s\n", strings.Join(cp.TechStack, "、"))
-	}
-	if len(cp.ExistingSecurity) > 0 {
-		fmt.Fprintf(&b, "- 已有安全能力：%s\n", strings.Join(cp.ExistingSecurity, "、"))
-	}
-	if len(cp.PainPoints) > 0 {
-		fmt.Fprintf(&b, "- 已知痛点：%s\n", strings.Join(cp.PainPoints, "、"))
-	}
-	if cp.ProcurementPref != "" {
-		fmt.Fprintf(&b, "- 采购偏好：%s\n", cp.ProcurementPref)
-	}
-	if cp.Notes != "" {
-		fmt.Fprintf(&b, "- 备注：%s\n", truncate(cp.Notes, 200))
-	}
-	if len(cp.Tags) > 0 {
-		fmt.Fprintf(&b, "- 标签：%s\n", strings.Join(cp.Tags, "、"))
-	}
-	return b.String()
-}
-
-// renderKnowledge 把知识库渲染成 prompt 友好的文本。
-func renderKnowledge(kb *longterm.KnowledgeBundle) string {
-	var b strings.Builder
-	if len(kb.Products) > 0 {
-		b.WriteString("### 产品\n")
-		for _, p := range kb.Products {
-			fmt.Fprintf(&b, "- **%s**（%s）", p.Name, p.Category)
-			if len(p.Aliases) > 0 {
-				b.WriteString(" 别名：" + strings.Join(p.Aliases, "/"))
-			}
-			b.WriteString("\n")
-			if p.Description != "" {
-				b.WriteString("  " + truncate(p.Description, 120) + "\n")
-			}
-			for _, c := range p.Capabilities {
-				conf := ""
-				if c.Confidence > 0 {
-					conf = fmt.Sprintf(" [%.1f]", c.Confidence)
-				}
-				fmt.Fprintf(&b, "  - %s%s：%s\n", c.Name, conf, truncate(c.Description, 80))
-			}
-			if len(p.Limitations) > 0 {
-				b.WriteString("  边界：" + strings.Join(p.Limitations, "；") + "\n")
-			}
-		}
-	}
-	if len(kb.Threats) > 0 {
-		b.WriteString("\n### 已知威胁类型\n")
-		for _, t := range kb.Threats {
-			fmt.Fprintf(&b, "- **%s**", t.Name)
-			if len(t.RelatedProducts) > 0 {
-				b.WriteString(" → 关联产品：" + strings.Join(t.RelatedProducts, "、"))
-			}
-			b.WriteString("\n")
-		}
-	}
-	if len(kb.Compliances) > 0 {
-		b.WriteString("\n### 合规要求\n")
-		for _, c := range kb.Compliances {
-			fmt.Fprintf(&b, "- **%s**", c.Name)
-			if len(c.RelatedProducts) > 0 {
-				b.WriteString(" → 关联产品：" + strings.Join(c.RelatedProducts, "、"))
-			}
-			b.WriteString("\n")
-		}
-	}
-	if len(kb.Industries) > 0 {
-		b.WriteString("\n### 行业场景\n")
-		for _, i := range kb.Industries {
-			fmt.Fprintf(&b, "- **%s**：痛点 %s\n", i.Name, strings.Join(i.TypicalPains, "、"))
 		}
 	}
 	return b.String()

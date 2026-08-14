@@ -34,11 +34,12 @@ export async function messageStream(
   text: string,
   sessionId: string | undefined,
   onEvent: (e: AgentEvent) => void,
+  customer?: string,
 ): Promise<void> {
   const res = await fetch(BASE + "/message", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, session_id: sessionId }),
+    body: JSON.stringify({ text, session_id: sessionId, customer: customer || undefined }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   await readSSE(res, onEvent);

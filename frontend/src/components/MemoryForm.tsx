@@ -47,7 +47,7 @@ export function fromValues(
       .split(/[,，]/)
       .map((s) => s.trim())
       .filter(Boolean),
-    status: "verified",
+    // 不传 status：人工通道一律 verified（P10——pending 是 AI 写入专属语义）
   };
 }
 

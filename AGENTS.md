@@ -58,12 +58,15 @@ npm run format:check      # prettier（已配，见「已知基线」）
 - **深模块纪律**：别把单文件扩成大杂烩；按 memory/agent/channel/llm/model/history/review 的领域边界组织。
 - Go 1.22+ ServeMux 方法路由（`mux.HandleFunc("POST /api/analyze", ...)`），不用第三方路由库。
 
-## Agent 自主化（ADR-013/014/015，2026-08-14 落地）
+## Agent 自主化（ADR-013/014/015/016，2026-08-14 落地）
 
 - **业务能力工具化**：需求分析不是固定输出格式，是 `analysis_submit` 工具（agent 层业务工具，`internal/agent/submit.go`，schema=AnalysisResult+is_reanalysis）。done 事件 content 恒有（自然语言），analysis 仅 submit 过才有。
-- **统一对话入口**：`POST /api/message`（{text, session_id?}）走 `agent.Message()` 单一自主循环；`/api/analyze`、`/api/chat` 是 deprecated shim。
+- **统一对话入口**：`POST /api/message`（{text, session_id?, customer?}）走 `agent.Message()` 单一自主循环；`/api/analyze`、`/api/chat` 是 deprecated shim。
+- **System Prompt 分层（ADR-016 v2）**：L0 静态模板 + L1 使用者画像（风格）+ L2 会话状态（checkpoint 链 + 客户身份一行）+ L3a 产品目录索引（名字+一句话+别名）注入；**其余知识全走工具检索**（renderKnowledge 全量注入已废）。约束强化「推荐前必须 memory_search 检索证实」。会话头客户名 UI → EnsureSession 落库 → 身份行注入。
+- **history_search 工具（P1）**：Agent 可检索历史对话原文（agent 层业务工具 + `history.Store.SearchMessages`，tenant 隔离、可选跨会话）。
 - **前后台域划分**：前台（与 Agent 的对话）= 记忆系统成套且**全程在线**——聊天轮次涉及事实也要 memory_search 查证、聊出线索要 memory_observe 记录（不是裸 chat）；后台（TaskBackground，一期未实现）= 无记忆依赖的一次性调用。
 - **checkpoint 全轮次**：提交分析→initial/reanalysis（is_reanalysis 优先）；纯聊天/追问→轻量 followup（Question/Answer 照记）。
+- **记忆写入门禁（P10）**：AI ensure 覆盖 verified 必降级 pending（execEnsure 按类型不按旧状态）；人工 HTTP 通道不接受 status 传参（一律 verified，pending 是 AI 专属语义）。
 - **历史数据契约**：assistant content 存自然语言；结构化分析在 tool_calls 的 analysis_submit params 里（前端回放从 tool_calls 还原）。不做老数据兼容（用户裁决：老数据适配新系统）。
 
 ## 错误处理（已落地，照此延续）
@@ -102,6 +105,7 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 ## 初始化状态（本次 /init，2026-08-13）
 
 已落地（additive，未动现有源码）：
+
 - ✅ Baseline 验证：`go build` / `go vet` / `go test ./...` 全过；前端 `tsc --noEmit` / `npm run build` 过。
 - ✅ CI：`.github/workflows/ci.yml`（后端 build/vet/test + golangci-lint + govulncheck 全门禁；前端 tsc/lint/format:check/build 全门禁；npm audit informational）。
 - ✅ Go lint：`.golangci.yml`（v2，gofmt 走 formatters）+ golangci-lint 已装，**0 issue**。

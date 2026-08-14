@@ -152,3 +152,29 @@ func rawJSON(m map[string]any) json.RawMessage {
 }
 
 var _ domain.MemoryType // keep import
+
+// TestEnsureOverwriteVerifiedDemotes P10：AI ensure 覆盖已 verified 条目时，
+// threat/compliance/industry 必须降级回 pending（改动重新过审，防审核被绕过）。
+func TestEnsureOverwriteVerifiedDemotes(t *testing.T) {
+	r, store := newTestRegistry(t)
+	// 人工先建一条 verified 威胁（模拟已审核通过）
+	if err := store.UpsertEntry(&longterm.Entry{
+		Type: domain.MemoryThreat, Title: "已审威胁", Status: longterm.StatusVerified,
+		Content: "原始内容",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// AI ensure 覆盖
+	if _, err := r.Execute("memory_ensure", rawJSON(map[string]any{
+		"type": "threat", "title": "已审威胁", "content": "AI 改写的内容",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	e, err := store.GetEntry("threat", "已审威胁")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Status != longterm.StatusPendingReview {
+		t.Fatalf("AI 覆盖 verified 条目必须降级 pending，got %s", e.Status)
+	}
+}

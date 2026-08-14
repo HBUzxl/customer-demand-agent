@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"customer-demand-agent/internal/domain"
+	"customer-demand-agent/internal/history"
 	"customer-demand-agent/internal/llm"
 	"customer-demand-agent/internal/memory/assembler"
 	"customer-demand-agent/internal/memory/shortterm"
@@ -75,9 +76,10 @@ type Agent struct {
 	tools      *tools.Registry
 	assembler  *assembler.Assembler
 	sessions   *shortterm.SessionManager
-	saveCP     func(tenantID, sessionID string, cp *domain.Checkpoint)        // checkpoint 持久化回调（断点续传）
-	loadCP     func(tenantID, sessionID string) ([]*domain.Checkpoint, error) // checkpoint 读取回调（断点续传）
-	customerOf func(tenantID, sessionID string) string                        // 会话关联客户名（跨会话客户上下文）
+	saveCP     func(tenantID, sessionID string, cp *domain.Checkpoint)                          // checkpoint 持久化回调（断点续传）
+	loadCP     func(tenantID, sessionID string) ([]*domain.Checkpoint, error)                   // checkpoint 读取回调（断点续传）
+	customerOf func(tenantID, sessionID string) string                                          // 会话关联客户名（跨会话客户上下文）
+	histSearch func(tenantID, sessionID, query string, limit int) ([]history.MessageHit, error) // 历史检索（P1 history_search 工具）
 }
 
 // New 创建 Agent。
@@ -101,6 +103,12 @@ func (a *Agent) SetCustomerResolver(fn func(tenantID, sessionID string) string) 
 	a.customerOf = fn
 }
 
+// SetHistorySearcher 设置历史检索回调（history_search 工具的后端：
+// Agent 可回溯原始对话轨迹，P1——checkpoint 注入摘要不够用时兜底）。
+func (a *Agent) SetHistorySearcher(fn func(tenantID, sessionID, query string, limit int) ([]history.MessageHit, error)) {
+	a.histSearch = fn
+}
+
 // restoreIfNeeded 若内存无 checkpoint 且历史有，则恢复短期记忆（断点续传）。
 // 按 tenant 作用域读取，读不到他租户的 checkpoint。
 func (a *Agent) restoreIfNeeded(tenantID, sessionID string) *shortterm.Manager {
@@ -117,6 +125,8 @@ func (a *Agent) restoreIfNeeded(tenantID, sessionID string) *shortterm.Manager {
 
 // turnState 收集本轮自主循环的产物。
 type turnState struct {
+	tenantID string                // 本轮租户（history_search 跨会话检索用）
+	session  string                // 本轮会话（history_search 默认范围）
 	analysis *AnalysisSubmission   // 最后一次 analysis_submit 的结果（nil = 本轮未提交分析）
 	answered []domain.AnsweredInfo // 本轮记录的"追问已回答"（missing_answer）
 }
@@ -139,14 +149,19 @@ func (a *Agent) Message(ctx context.Context, tenantID, sessionID, text string, e
 
 	msgList := a.assembler.Assemble(op, sessCtx, text)
 	trace := &Trace{}
-	// 捕获本轮 system prompt（回放可见整个调用状态）。
+	// 捕获本轮全部 system 消息（回放可见整个调用状态）：模板 + 动态注入
+	// （产品目录在模板内；客户身份行/会话状态是独立 system 消息）。
+	var sb strings.Builder
 	for _, m := range msgList {
 		if m.Role == domain.RoleSystem {
-			trace.SystemPrompt = m.Content
-			break
+			if sb.Len() > 0 {
+				sb.WriteString("\n\n")
+			}
+			sb.WriteString(m.Content)
 		}
 	}
-	st := &turnState{}
+	trace.SystemPrompt = sb.String()
+	st := &turnState{tenantID: tenantID, session: sessionID}
 
 	content, err := a.runStreaming(ctx, msgList, trace, emit, st)
 	if err != nil {
@@ -186,7 +201,7 @@ func (a *Agent) Message(ctx context.Context, tenantID, sessionID, text string, e
 // 工具调用/结果作为事件推送，直到无工具调用得到最终答案。
 // 不再强制 JSON 输出——输出形态由 Agent 自主决定（ADR-013）。
 func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trace *Trace, emit func(Event), st *turnState) (string, error) {
-	toolDefs := append(a.tools.Definitions(), analysisSubmitDef(), missingAnswerDef())
+	toolDefs := append(a.tools.Definitions(), analysisSubmitDef(), missingAnswerDef(), historySearchDef())
 
 	for iter := 0; iter < MaxIterations; iter++ {
 		emitEvent(emit, Event{Type: EventRound, Round: iter + 1})
@@ -249,6 +264,8 @@ func (a *Agent) executeTool(tc domain.ToolCall, trace *Trace, st *turnState) str
 			st.answered = append(st.answered, ans...)
 			result = `{"received":true}`
 		}
+	case ToolHistorySearch:
+		result = a.execHistorySearch(tc.Function.Arguments, st)
 	default:
 		args := json.RawMessage(tc.Function.Arguments)
 		r, err := a.tools.Execute(tc.Function.Name, args)

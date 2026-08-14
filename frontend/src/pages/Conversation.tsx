@@ -82,12 +82,15 @@ export default function Conversation() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState(routeSid || "");
+  const [customer, setCustomer] = useState(""); // 会话关联客户（身份行注入 ADR-016 L2）
+  const [editingCustomer, setEditingCustomer] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!routeSid) {
       setMessages([]);
       setSessionId("");
+      setCustomer("");
       return;
     }
     // 流式进行中不做历史重载（审计修复：新会话首个 session 事件触发导航，
@@ -95,7 +98,10 @@ export default function Conversation() {
     if (loading) return;
     setSessionId(routeSid);
     sessionGet(routeSid)
-      .then((d) => setMessages(reconstruct(d.messages || [], d.tool_calls || [])))
+      .then((d) => {
+        setMessages(reconstruct(d.messages || [], d.tool_calls || []));
+        setCustomer(d.session.customer || "");
+      })
       .catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSid]);
@@ -182,7 +188,7 @@ export default function Conversation() {
     setInput("");
     setLoading(true);
     try {
-      await messageStream(content, sessionId || undefined, handleEvent);
+      await messageStream(content, sessionId || undefined, handleEvent, customer || undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       patchLast((m) => {
@@ -299,6 +305,28 @@ export default function Conversation() {
           {composer}
           <div className="chat-hint">
             {sessionId ? `会话 ${sessionId.slice(5, 17)}` : "新会话"} · 回车发送
+            {editingCustomer ? (
+              <input
+                className="cust-input"
+                autoFocus
+                value={customer}
+                placeholder="客户名（如：某跨境电商）"
+                onChange={(e) => setCustomer(e.target.value)}
+                onBlur={() => setEditingCustomer(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape") setEditingCustomer(false);
+                }}
+                title="关联客户后，Agent 每轮知道在与谁对话（画像细节自动检索）"
+              />
+            ) : (
+              <button
+                className="cust-chip"
+                onClick={() => setEditingCustomer(true)}
+                title="设置会话关联的客户"
+              >
+                {customer ? `客户：${customer}` : "+ 关联客户"}
+              </button>
+            )}
           </div>
         </div>
       </div>

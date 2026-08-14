@@ -116,3 +116,44 @@ func containsStr(s, sub string) bool {
 	}
 	return false
 }
+
+// TestSearchMessages P1 history_search 后端：tenant 隔离 + 会话范围 + LIKE 命中。
+func TestSearchMessages(t *testing.T) {
+	s := openTestStore(t)
+	_ = s.EnsureSession("t1", "sa", "A", "")
+	_ = s.EnsureSession("t1", "sb", "B", "")
+	_ = s.EnsureSession("t2", "sc", "C", "")
+	_, _ = s.AppendMessage("sa", "user", "预算50万怎么花", "")
+	_, _ = s.AppendMessage("sb", "user", "预算紧张", "")
+	_, _ = s.AppendMessage("sc", "user", "预算保密", "")
+
+	// tenant 内跨会话
+	hits, err := s.SearchMessages("t1", "", "预算", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("t1 应命中 2 条，got %d", len(hits))
+	}
+	// 限定会话
+	hits, err = s.SearchMessages("t1", "sa", "预算", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].SessionID != "sa" {
+		t.Fatalf("限定 sa 应只命中 1 条 sa，got %+v", hits)
+	}
+	// 跨租户隔离
+	hits, err = s.SearchMessages("t2", "", "预算", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].SessionID != "sc" {
+		t.Fatalf("t2 应只见自己的 sc，got %+v", hits)
+	}
+	// 无命中
+	hits, _ = s.SearchMessages("t1", "", "不存在的话题", 10)
+	if len(hits) != 0 {
+		t.Fatalf("无关键词应 0 命中，got %d", len(hits))
+	}
+}

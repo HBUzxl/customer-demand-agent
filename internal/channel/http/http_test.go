@@ -13,6 +13,7 @@ import (
 	"customer-demand-agent/internal/agent"
 	httpapi "customer-demand-agent/internal/channel/http"
 	"customer-demand-agent/internal/config"
+	"customer-demand-agent/internal/domain"
 	"customer-demand-agent/internal/history"
 	"customer-demand-agent/internal/llm"
 	"customer-demand-agent/internal/memory/assembler"
@@ -92,18 +93,19 @@ type nopCloser struct{ *bytes.Reader }
 func (nopCloser) Close() error { return nil }
 
 func TestMemoryUpsertReviewFlow(t *testing.T) {
-	ts, _ := setupServer(t)
+	ts, store := setupServer(t)
 
-	// 1. 人工 upsert 一条 threat（直接 verified，因为是人工接口）
-	code, body := do(t, ts, "POST", "/api/memory", map[string]any{
-		"type": "threat", "title": "测试威胁", "content": "内容", "status": "pending_review",
-	})
-	if code != 200 {
-		t.Fatalf("upsert failed: %d %v", code, body)
+	// 1. AI 路径写入 threat（经 wiki store 打 pending——人工通道已不能传
+	// status，P10；此测试锁定审核流本身）
+	if err := store.UpsertEntry(&longterm.Entry{
+		Type: domain.MemoryThreat, Title: "测试威胁", Content: "内容",
+		Status: longterm.StatusPendingReview,
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	// 2. 出现在审核队列
-	code, body = do(t, ts, "GET", "/api/review/pending", nil)
+	code, body := do(t, ts, "GET", "/api/review/pending", nil)
 	if code != 200 || int(body["count"].(float64)) != 1 {
 		t.Fatalf("expected 1 pending, got %v", body)
 	}
@@ -198,5 +200,46 @@ func TestTenantIsolation(t *testing.T) {
 	}
 	if int(countB) != 0 {
 		t.Errorf("tenantB should see 0 sessions (isolation), got %v", countB)
+	}
+}
+
+// TestMessageCustomerFieldPersisted 客户身份端到端（ADR-016 L2）：
+// /api/message 带 customer → EnsureSession 落库 → 会话详情读回。
+// LLM 不可达会失败，但 customer 落库发生在 LLM 调用前——验证不受影响。
+func TestMessageCustomerFieldPersisted(t *testing.T) {
+	ts, _ := setupServer(t)
+	// 两次发消息：第一次带 customer 建会话，第二次不带（不应清空）
+	code, body := do(t, ts, "POST", "/api/message", map[string]any{
+		"text": "你好", "session_id": "sess-cust", "customer": "某跨境电商",
+	})
+	if code != 200 {
+		t.Fatalf("第一次消息应 200，got %d: %v", code, body)
+	}
+	code2, body2 := do(t, ts, "GET", "/api/sessions/sess-cust", nil)
+	if code2 != 200 {
+		t.Fatalf("读取会话应 200，got %d", code2)
+	}
+	cust, _ := body2["session"].(map[string]any)["customer"].(string)
+	if cust != "某跨境电商" {
+		t.Fatalf("customer 应已落库为 某跨境电商，got %q", cust)
+	}
+}
+
+// TestMemoryUpsertIgnoresStatusParam P10：人工通道不接受 status 传参——
+// 传 pending_review 也必须落 verified（pending 是 AI 写入专属语义）。
+func TestMemoryUpsertIgnoresStatusParam(t *testing.T) {
+	ts, store := setupServer(t)
+	code, _ := do(t, ts, "POST", "/api/memory", map[string]any{
+		"type": "threat", "title": "人工条目", "content": "x", "status": "pending_review",
+	})
+	if code != 200 {
+		t.Fatalf("upsert 应 200，got %d", code)
+	}
+	e, err := store.GetEntry("threat", "人工条目")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Status != longterm.StatusVerified {
+		t.Fatalf("人工写入必须 verified（忽略 status 传参），got %s", e.Status)
 	}
 }

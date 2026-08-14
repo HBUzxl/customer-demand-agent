@@ -15,6 +15,7 @@ import (
 
 	"customer-demand-agent/internal/agent"
 	"customer-demand-agent/internal/domain"
+	"customer-demand-agent/internal/history"
 	"customer-demand-agent/internal/llm"
 	"customer-demand-agent/internal/memory/assembler"
 	"customer-demand-agent/internal/memory/longterm"
@@ -513,35 +514,108 @@ func TestAgentMissingAnswerLoop(t *testing.T) {
 	}
 }
 
-// TestAssemblerCustomerInjection 跨会话客户上下文：ctx.Customer 非空且画像
-// 存在时，prompt 注入【当前客户画像】。
+// TestAssemblerCustomerInjection 客户身份行（ADR-016 L2）：ctx.Customer
+// 非空时注入一行身份（指引工具取画像），画像内容绝不注入。
 func TestAssemblerCustomerInjection(t *testing.T) {
 	wiki := seedWiki(t)
-	// 建一个客户画像（AI 可写类型，直接 verified）
+	// 建一个客户画像（含鲜明内容字段，若被注入必然断言失败）
 	if err := wiki.UpsertEntry(&longterm.Entry{
 		Type: domain.MemoryCustomer, Title: "某电商集团", Status: longterm.StatusVerified,
 		Summary: "头部电商，大促流量峰值高",
-		Content: "---\ntype: customer\nstatus: verified\nindustry: 电商\nsummary: 头部电商，大促流量峰值高\n---\n大促期间关注 CC 与库存接口防刷",
+		Content: "---\ntype: customer\nstatus: verified\nindustry: 电商\nscale: 大型\nsummary: 头部电商，大促流量峰值高\n---\n大促期间关注 CC 与库存接口防刷",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	asm := assembler.New(wiki, "")
 	ctx := &domain.SessionContext{Op: domain.OpInitial, Customer: "某电商集团"}
 	msgs := asm.Assemble(domain.OpInitial, ctx, "我们网站被CC攻击")
-	found := false
+	foundIdentity := false
 	for _, m := range msgs {
-		if m.Role == domain.RoleSystem && strings.Contains(m.Content, "当前客户画像：某电商集团") {
-			found = true
+		if m.Role == domain.RoleSystem {
+			if strings.Contains(m.Content, "【当前会话客户】某电商集团") {
+				foundIdentity = true
+			}
+			// 画像内容字段绝不进 prompt（ADR-016：知识不注入）
+			for _, banned := range []string{"行业：电商", "规模：大型", "【当前客户画像", "采购偏好"} {
+				if strings.Contains(m.Content, banned) {
+					t.Errorf("客户画像内容被注入 prompt（禁止）：%q 出现", banned)
+				}
+			}
 		}
 	}
-	if !found {
-		t.Fatal("ctx.Customer 非空且有画像时应注入客户画像")
+	if !foundIdentity {
+		t.Fatal("ctx.Customer 非空时应注入【当前会话客户】身份行")
 	}
 	// 无客户时不注入
 	msgs2 := asm.Assemble(domain.OpInitial, &domain.SessionContext{Op: domain.OpInitial}, "你好")
 	for _, m := range msgs2 {
-		if m.Role == domain.RoleSystem && strings.Contains(m.Content, "当前客户画像") {
-			t.Fatal("无客户关联时不应注入客户画像")
+		if m.Role == domain.RoleSystem && strings.Contains(m.Content, "当前会话客户") {
+			t.Fatal("无客户关联时不应注入客户身份行")
 		}
+	}
+}
+
+// TestAssemblerProductCatalogOnly 产品知识只注入目录索引（ADR-016 L3a）：
+// 名字+一句话+别名进 prompt；能力/场景/竞品/威胁/合规/行业内容不进。
+func TestAssemblerProductCatalogOnly(t *testing.T) {
+	wiki := seedWiki(t)
+	asm := assembler.New(wiki, "")
+	msgs := asm.Assemble(domain.OpInitial, &domain.SessionContext{Op: domain.OpInitial}, "你好")
+	var sys string
+	for _, m := range msgs {
+		if m.Role == domain.RoleSystem {
+			sys += m.Content
+		}
+	}
+	if !strings.Contains(sys, "长亭产品目录") {
+		t.Fatal("应注入产品目录索引")
+	}
+	if !strings.Contains(sys, "雷池") {
+		t.Fatal("目录应含产品名")
+	}
+	// 全量知识注入的痕迹必须消失
+	for _, banned := range []string{
+		"CC 攻击防护 [1.0]", // capabilities 明细
+		"已知威胁类型",        // 威胁全量段
+		"合规要求",          // 合规全量段
+		"行业场景",          // 行业全量段
+	} {
+		if strings.Contains(sys, banned) {
+			t.Errorf("知识全量注入仍存在（ADR-016 禁止）：%q 出现", banned)
+		}
+	}
+}
+
+// TestAgentHistorySearch（P1）：Agent 能通过 history_search 工具回溯
+// 历史消息原文（当前会话 + 跨会话两个范围）。
+func TestAgentHistorySearch(t *testing.T) {
+	// 真实 history.Store（临时库）
+	hist, err := history.Open(filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hist.Close() })
+	_ = hist.EnsureSession("t1", "sess-a", "会话A", "")
+	_ = hist.EnsureSession("t1", "sess-b", "会话B", "")
+	_, _ = hist.AppendMessage("sess-a", "user", "我们官网被挂马了，要过等保三级", "")
+	_, _ = hist.AppendMessage("sess-b", "user", "上次说过的那个预算50万的项目", "")
+
+	ag, sessions, calls := newTestAgent(t, []step{
+		// 第 1 轮：跨会话搜"预算"
+		{toolCallJSON: `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_0","type":"function","function":{"name":"history_search","arguments":"{\"query\":\"预算\",\"all_sessions\":true}"}}]}}]}`},
+		// 第 2 轮：自然语言回答
+		{content: "找到了：上次有个预算 50 万的项目（会话B）。"},
+	})
+	ag.SetHistorySearcher(hist.SearchMessages)
+	_ = sessions
+	content, _, _, err := ag.Message(context.Background(), "t1", "sess-a", "之前有没有聊过预算的事", nil)
+	if err != nil {
+		t.Fatalf("Message: %v", err)
+	}
+	if !strings.Contains(content, "50 万") {
+		t.Fatalf("应基于历史检索回答，got: %s", content)
+	}
+	if atomic.LoadInt32(calls) < 2 {
+		t.Errorf("expected >=2 LLM calls, got %d", *calls)
 	}
 }

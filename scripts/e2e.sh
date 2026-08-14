@@ -46,13 +46,18 @@ echo "-- 3. 记忆检索 --"
 [ "$(get '/api/memory/search?q=CC&type=product')" = "200" ] && ok "GET /api/memory/search (CC)" || fail "memory search"
 [ "$(get '/api/memory/product/%E9%9B%B7%E6%B1%A0')" = "200" ] && ok "GET /api/memory/product/雷池" || fail "memory get 雷池"
 
-echo "-- 4. 记忆写入 + 审核流 (threat 待审核 -> 批准 -> verified) --"
-[ "$(post /api/memory '{"type":"threat","title":"E2E测试威胁","content":"自动化测试","status":"pending_review"}')" = "200" ] && ok "POST /api/memory (threat, pending)" || fail "memory upsert"
+echo "-- 4. 记忆写入语义 (P10: 人工通道一律 verified, 不接受 status 传参) --"
+[ "$(post /api/memory '{"type":"threat","title":"E2E测试威胁","content":"自动化测试","status":"pending_review"}')" = "200" ] && ok "POST /api/memory (threat)" || fail "memory upsert"
 
+# P10：人工写入即使传 status=pending_review 也落 verified → 不进审核队列
 PENDING="$("$CURL" -s "$BASE/api/review/pending")"
-echo "$PENDING" | grep -q "E2E测试威胁" && ok "GET /api/review/pending (出现待审核)" || fail "review pending 未出现"
+echo "$PENDING" | grep -q "E2E测试威胁" && fail "P10 违规：人工 pending 传参生效" || ok "人工写入不进审核队列（P10 语义）"
 
-[ "$(post /api/review/threat/E2E%E6%B5%8B%E8%AF%95%E5%A8%81%E8%83%81/approve '{}')" = "200" ] && ok "POST /api/review/.../approve" || fail "review approve"
+# 人工写入的条目确为 verified（可被检索）
+GETSTAT="$("$CURL" -s "$BASE/api/memory/threat/E2E%E6%B5%8B%E8%AF%95%E5%A8%81%E8%83%81")"
+echo "$GETSTAT" | grep -q '"verified"' && ok "人工条目状态为 verified" || fail "人工条目应为 verified"
+
+[ "$(delete '/api/memory/threat/E2E%E6%B5%8B%E8%AF%95%E5%A8%81%E8%83%81?archive=false')" = "200" ] && ok "清理测试威胁" || fail "清理威胁"
 
 echo "-- 5. 会话历史 --"
 [ "$(get /api/sessions)" = "200" ] && ok "GET /api/sessions" || fail "sessions list"
@@ -89,7 +94,6 @@ echo "-- 6. 安全（C1 SSRF / C2 凭据外泄 / 跨租户隔离） --"
 [ "$(deleteAs tenantA /api/sessions/e2e-sec)" = "200" ] && ok "清理 e2e-sec session" || fail "清理 e2e-sec"
 
 echo "-- 7. 清理测试数据 --"
-[ "$(delete '/api/memory/threat/E2E%E6%B5%8B%E8%AF%95%E5%A8%81%E8%83%81?archive=false')" = "200" ] && ok "DELETE /api/memory (清理)" || fail "memory delete"
 [ "$(delete /api/sessions/e2e-msg)" = "200" ] && ok "清理 e2e-msg session" || fail "清理 e2e-msg"
 [ "$(delete /api/sessions/e2e-an)" = "200" ] && ok "清理 e2e-an session" || fail "清理 e2e-an"
 
