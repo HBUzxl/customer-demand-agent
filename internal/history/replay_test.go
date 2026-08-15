@@ -169,24 +169,28 @@ func TestTruncateAfterThreeTables(t *testing.T) {
 	aid2, _ := s.AppendMessage("st", "assistant", "a1", "")
 	_, _ = s.AppendToolCall("st", aid2, "memory_search", "{}", "{}")
 	_ = s.AppendCheckpoint("st", &domain.Checkpoint{ID: "cp1", Type: domain.CheckpointInitial})
-	// 从 user（seq=1）起分叉
-	branch, moved, err := s.TruncateAfter("st", 1)
-	if err != nil {
-		t.Fatal(err)
+	// 从 user（seq=1）起分叉（复制语义：前缀空，moved=0 合法；main 全保留）
+	branch, _, err := s.TruncateAfter("st", 1)
+	if err != nil || branch == "" {
+		t.Fatalf("分叉失败: %v %s", err, branch)
 	}
-	if moved != 2 {
-		t.Fatalf("应分叉 2 条消息，got %d", moved)
+	// main 完整保留：消息仍 2 条（原路径不动）+ tool_calls 保留
+	var n, tc int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM messages WHERE session_id='st' AND branch_id='main'").Scan(&n)
+	if n != 2 {
+		t.Fatalf("main 应完整保留 2 条，got %d", n)
 	}
-	// 消息仍 2 条（软分叉不删），全部挂新分支
-	var n, onBranch int
-	_ = s.db.QueryRow("SELECT COUNT(*), COALESCE(SUM(CASE WHEN branch_id=? THEN 1 ELSE 0 END),0) FROM messages WHERE session_id='st'", branch).Scan(&n, &onBranch)
-	if n != 2 || onBranch != 2 {
-		t.Fatalf("软分叉：2 条消息应全挂新分支，got n=%d onBranch=%d", n, onBranch)
-	}
-	// tool_calls 保留（随消息归属）
-	var tc int
 	_ = s.db.QueryRow("SELECT COUNT(*) FROM tool_calls WHERE session_id='st'").Scan(&tc)
 	if tc != 1 {
 		t.Fatalf("tool_calls 应保留 1 条，got %d", tc)
+	}
+	// 分支续写：1 条挂新分支
+	if _, err := s.AppendMessageBranch("st", branch, "user", "重写", ""); err != nil {
+		t.Fatal(err)
+	}
+	var bn int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM messages WHERE session_id='st' AND branch_id=?", branch).Scan(&bn)
+	if bn != 1 {
+		t.Fatalf("分支应有 1 条续写，got %d", bn)
 	}
 }

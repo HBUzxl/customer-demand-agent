@@ -69,6 +69,12 @@ followup 不再是「轻量/次要」的，它就是对话轮本身。）
 - 断点续传（Restore）：按当前分支的链恢复。
 - LastAnalysis 回溯：按当前分支内回溯。
 
+## 设计决策（2026-08-15 实现时明确）
+
+- **消息维度分支**：branch 作用于 messages（用户可见的对话路径）；checkpoint 链保持会话级主线（短期记忆跟随最新对话状态，不按分支分叉）——分支切换后 Agent 记忆是全会话的，与「与 Agent 的对话」统一概念一致。
+- **分叉=复制共享前缀**：BranchAfter 复制 seq<after 的消息副本到新分支（b{seq}-{ts}），main 原路径完整不动；续写走 POST /api/message 带 branch 参数（AppendMessageBranch）。
+- 版本树完整可视化（git graph 式）与「任意 checkpoint 节点回到」为后续迭代（分支数据模型+过滤视图+Conversation/Replay 切换已落地）。
+
 ## 非目标
 
 - 不做分支合并（对话场景无合并语义；想要另一分支的结论就切过去问）。

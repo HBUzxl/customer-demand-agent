@@ -2,6 +2,7 @@ package history
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -218,37 +219,54 @@ func TestSearchSessions(t *testing.T) {
 	}
 }
 
-// TestBranchAfterCheckpointTree checkpoint-tree：编辑重发=软分叉——老消息
-// 保留挂新分支，main 恒在 branches；checkpoint branch_id 同步分叉。
+// TestBranchAfterCheckpointTree checkpoint-tree git 式分叉（2026-08-15 修订）：
+// main 完整保留（零丢失）+共享前缀复制到新分支+分支独立续写互不干扰。
 func TestBranchAfterCheckpointTree(t *testing.T) {
 	s := openTestStore(t)
 	_ = s.EnsureSession("br-s1", "分支测试", "")
-	// 三轮消息
-	for i, txt := range []string{"第一轮", "第二轮", "第三轮"} {
+	for _, txt := range []string{"第一轮", "第二轮", "第三轮"} {
 		if _, err := s.AppendMessage("br-s1", "user", txt, ""); err != nil {
 			t.Fatal(err)
 		}
-		_ = i
 		if _, err := s.AppendMessage("br-s1", "assistant", "答"+txt, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// 从 seq=3（第二轮 user）分叉
-	branch, moved, err := s.BranchAfter("br-s1", 3)
-	if err != nil || moved == 0 || branch == "" {
-		t.Fatalf("分叉失败: %v %d %s", err, moved, branch)
+	branch, copied, err := s.BranchAfter("br-s1", 3)
+	if err != nil || copied != 2 || branch == "" {
+		t.Fatalf("分叉失败: %v %d %s", err, copied, branch)
 	}
-	det, err := s.GetSession("br-s1", "")
+	// main 完整保留 6 条（原路径不动——git 语义）
+	det, err := s.GetSession("br-s1", "main")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 消息零丢失（6 条全在——软分叉不删）
 	if len(det.Messages) != 6 {
-		t.Fatalf("软分叉不删消息：应 6 条，got %d", len(det.Messages))
+		t.Fatalf("main 应完整保留 6 条，got %d", len(det.Messages))
+	}
+	// 分支 = 前缀副本 2 条 + 独立续写 1 条
+	if _, err := s.AppendMessageBranch("br-s1", branch, "user", "第二轮改写", ""); err != nil {
+		t.Fatal(err)
+	}
+	detB, err := s.GetSession("br-s1", branch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(detB.Messages) != 3 {
+		t.Fatalf("分支应 2 副本+1 续写=3 条，got %d", len(detB.Messages))
+	}
+	if detB.Messages[len(detB.Messages)-1].Content != "第二轮改写" {
+		t.Fatalf("分支末条应为续写内容")
+	}
+	// 分支续写不影响 main
+	det2, _ := s.GetSession("br-s1", "main")
+	if len(det2.Messages) != 6 {
+		t.Fatalf("分支续写不应影响 main: %d", len(det2.Messages))
 	}
 	// branches 含 main + 新分支
+	detAll, _ := s.GetSession("br-s1", "")
 	hasMain, hasB := false, false
-	for _, b := range det.Branches {
+	for _, b := range detAll.Branches {
 		if b == "main" {
 			hasMain = true
 		}
@@ -257,6 +275,62 @@ func TestBranchAfterCheckpointTree(t *testing.T) {
 		}
 	}
 	if !hasMain || !hasB {
-		t.Fatalf("branches 应含 main+新分支: %v", det.Branches)
+		t.Fatalf("branches 应含 main+新分支: %v", detAll.Branches)
+	}
+}
+
+// TestCheckpointChainMigrationZeroLoss 老库线性链零丢失迁移：
+// 无 branch_id 列的一期形态库 Open 迁移后消息全部保留在 main。
+func TestCheckpointChainMigrationZeroLoss(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "old-linear.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE sessions (
+    session_id TEXT PRIMARY KEY,
+    title TEXT,
+    customer TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT,
+    tool_call_id TEXT DEFAULT '',
+    seq INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions (session_id, title, customer, created_at, updated_at) VALUES('legacy-1', '老会话', '', '2026-01-01', '2026-01-01')`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 4; i++ {
+		if _, err := db.Exec(`INSERT INTO messages (session_id, role, content, seq) VALUES('legacy-1', 'user', ?, ?)`,
+			fmt.Sprintf("老消息%d", i), i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("老库 Open 迁移: %v", err)
+	}
+	defer s.Close()
+	det, err := s.GetSession("legacy-1", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(det.Messages) != 4 {
+		t.Fatalf("老库 4 条消息应零丢失迁移到 main，got %d", len(det.Messages))
+	}
+	if det.Messages[0].Content != "老消息1" {
+		t.Fatalf("首条内容应保留: %+v", det.Messages[0])
 	}
 }

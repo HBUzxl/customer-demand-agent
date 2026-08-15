@@ -19,6 +19,7 @@ type analyzeReq struct {
 	SessionID string `json:"session_id"`
 	Text      string `json:"text"`
 	Customer  string `json:"customer"` // 可选：会话关联客户（注入客户画像，跨会话统一视图）
+	Branch    string `json:"branch"`   // 可选：分叉后续写指定分支（checkpoint-tree 编辑重发链路）
 }
 
 // handleAnalyze: POST /api/analyze（deprecated shim → 统一 Message 循环，ADR-014）。
@@ -45,13 +46,13 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if sessionID == "" {
 		sessionID = newSessionID()
 	}
-	s.messageCore(w, r, sessionID, req.Text, req.Customer)
+	s.messageCore(w, r, sessionID, req.Text, req.Customer, req.Branch)
 }
 
 // messageCore 创建 Run 并立即返回 202（F0：执行与连接解耦）。
 // 真正的 Agent 循环跑在 RunManager 的 goroutine 里；事件进缓冲，
 // 客户端通过 GET /api/sessions/{id}/stream 订阅（replay+live）。
-func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, text, customer string) {
+func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, text, customer, branch string) {
 	if err := s.history.EnsureSession(sessionID, firstLine(text), customer); err != nil {
 		writeError(w, http.StatusForbidden, "无权访问该会话: %v", err)
 		return
@@ -61,7 +62,11 @@ func (s *Server) messageCore(w http.ResponseWriter, r *http.Request, sessionID, 
 	fullRunID := "run-" + runID[5:]
 	err := s.runs.Start(sessionID, fullRunID, func(ctx context.Context, emit func(agent.Event)) {
 		// user 消息在 Run 确认占用后写入（并发 409 不留孤儿消息）
-		if _, aerr := s.history.AppendMessage(sessionID, "user", text, ""); aerr != nil {
+		if branch != "" {
+			if _, aerr := s.history.AppendMessageBranch(sessionID, branch, "user", text, ""); aerr != nil {
+				log.Printf("[warn] user 消息落分支失败 会话 %s 分支 %s: %v", sessionID, branch, aerr)
+			}
+		} else if _, aerr := s.history.AppendMessage(sessionID, "user", text, ""); aerr != nil {
 			log.Printf("[warn] user 消息落库失败 会话 %s: %v", sessionID, aerr)
 		}
 		s.executeTurn(ctx, sessionID, text, emit)
@@ -287,7 +292,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "session_id 和 question 不能为空")
 		return
 	}
-	s.messageCore(w, r, req.SessionID, req.Question, "")
+	s.messageCore(w, r, req.SessionID, req.Question, "", "")
 }
 
 // setSSEHeaders sets SSE response headers.

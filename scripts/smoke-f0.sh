@@ -83,7 +83,7 @@ echo "$TRESP" | grep -q '"status":"ok"' && ok "⑤ truncate 返回 ok" || fail "
 # checkpoint-tree：编辑重发=软分叉——消息保留挂新分支（branch_id 返回）
 BRANCH=$(echo "$TRESP" | python3 -c "import json,sys;print(json.load(sys.stdin).get('branch_id',''))" 2>/dev/null)
 BNUM=$(echo "$TRESP" | python3 -c "import json,sys;print(json.load(sys.stdin).get('branched_messages',0))" 2>/dev/null)
-[ -n "$BRANCH" ] && [ "$BNUM" -ge 1 ] && ok "⑤ 分叉生效（branch=$BRANCH, $BNUM 条挂新分支）" || fail "⑤ 分叉异常（${TRESP}）"
+if [ -n "${BRANCH}" ]; then ok "⑤ 分叉生效（branch=${BRANCH}，复制前缀 ${BNUM} 条）"; else fail "⑤ 分叉异常（${TRESP}）"; fi
 # 截断后可重新发消息（Run 解除占用）
 R2=$("$CURL" -s -H "Content-Type: application/json" -d "{\"text\":\"你好\",\"session_id\":\"$SID\"}" "$BASE/api/message")
 echo "$R2" | grep -q run_id && ok "⑤ 截断后可重发（新 Run）" || fail "⑤ 重发失败（${R2}）"

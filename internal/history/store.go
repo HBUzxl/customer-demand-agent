@@ -606,7 +606,7 @@ func (s *Store) GetSession(sessionID, branch string) (*SessionDetail, error) {
 
 	var det SessionDetail
 	var sess SessionListItem
-	err := s.db.QueryRow(`SELECT session_id, title, customer, created_at, updated_at
+	err := s.db.QueryRow(`SELECT session_id, COALESCE(title,''), COALESCE(customer,''), created_at, updated_at
 		FROM sessions WHERE session_id=?`, sessionID).
 		Scan(&sess.SessionID, &sess.Title, &sess.Customer, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
@@ -633,7 +633,12 @@ func (s *Store) GetSession(sessionID, branch string) (*SessionDetail, error) {
 			WHERE session_id=? ORDER BY id ASC`
 	}
 
-	rows, err := s.db.Query(msgQuery, sessionID)
+	var rows *sql.Rows
+	if hasBranch && branch != "" {
+		rows, err = s.db.Query(msgQuery, sessionID, branch)
+	} else {
+		rows, err = s.db.Query(msgQuery, sessionID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -777,7 +782,11 @@ func (s *Store) TruncateAfter(sessionID string, after int) (string, int, error) 
 	return s.BranchAfter(sessionID, after)
 }
 
-// BranchAfter 把 seq >= after 的消息软分叉到新分支，返回 (分支 ID, 分叉消息数)。
+// BranchAfter 编辑重发的分叉语义（checkpoint-tree，git 式，2026-08-15 修订）：
+// **保留原路径**——main 上 A B C D E 全部不动；从截断点**复制**共享前缀
+// （A B C 副本挂 branch_id=b{seq}-{ts}），后续新消息写该分支。兄弟分支
+// 并存互不干扰，各视图显示自己完整路径（main=原全路径；bN=前缀副本+
+// 新消息）。返回 (分支 ID, 复制的消息数)。
 func (s *Store) BranchAfter(sessionID string, after int) (string, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -787,20 +796,62 @@ func (s *Store) BranchAfter(sessionID string, after int) (string, int, error) {
 		return "", 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.Exec(`UPDATE messages SET branch_id=? WHERE session_id=? AND seq >= ?`,
-		branchID, sessionID, after)
+	// 复制共享前缀（seq < after）到新分支——先读后插（子查询占位符在
+	// modernc/sqlite 的绑定顺序问题，读出逐条插最稳）；原消息不动。
+	prefix, err := tx.Query(`SELECT role, content, tool_call_id, seq, created_at FROM messages
+		WHERE session_id=? AND seq < ? ORDER BY seq`, sessionID, after)
 	if err != nil {
+		return "", 0, fmt.Errorf("读共享前缀: %w", err)
+	}
+	type pmsg struct {
+		role, content, tcID string
+		createdAt           time.Time
+	}
+	var msgs []pmsg
+	for prefix.Next() {
+		var m pmsg
+		var seq int
+		if err := prefix.Scan(&m.role, &m.content, &m.tcID, &seq, &m.createdAt); err != nil {
+			prefix.Close()
+			return "", 0, err
+		}
+		msgs = append(msgs, m)
+	}
+	prefix.Close()
+	// 新分支 seq 从全局最大值继续（分支消息与 main 消息在同一 seq 空间）
+	var maxSeq int
+	if err := tx.QueryRow(`SELECT COALESCE(MAX(seq),0) FROM messages WHERE session_id=?`, sessionID).Scan(&maxSeq); err != nil {
 		return "", 0, err
 	}
-	affected, _ := res.RowsAffected()
-	// 对应轮的 checkpoint 挂同一分支（按被截断首条消息的创建时间之后的 checkpoint）
-	if _, err := tx.Exec(`UPDATE checkpoints SET payload_json = json_set(payload_json, '$.branch_id', ?)
-		WHERE session_id=? AND created_at >= (SELECT MIN(created_at) FROM messages WHERE session_id=? AND seq >= ?)`,
-		branchID, sessionID, sessionID, after); err != nil {
-		return "", 0, err
+	for _, m := range msgs {
+		maxSeq++
+		if _, err := tx.Exec(`INSERT INTO messages (session_id, role, content, tool_call_id, seq, created_at, branch_id)
+			VALUES(?,?,?,?,?,?,?)`, sessionID, m.role, m.content, m.tcID, maxSeq, m.createdAt, branchID); err != nil {
+			return "", 0, fmt.Errorf("复制前缀消息: %w", err)
+		}
 	}
+	affected := len(msgs)
+	// 原尾部（seq >= after）保留在 main，不再挪走——git 语义：旧路径完整保留
 	if err := tx.Commit(); err != nil {
 		return "", 0, err
 	}
 	return branchID, int(affected), nil
+}
+
+// AppendMessageBranch 追加消息到指定分支（分叉后的续写走这里）。
+func (s *Store) AppendMessageBranch(sessionID, branch string, role, content, toolCallID string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var seq int
+	if err := s.db.QueryRow(`SELECT COALESCE(MAX(seq),0) FROM messages WHERE session_id=? AND branch_id=?`,
+		sessionID, branch).Scan(&seq); err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`INSERT INTO messages (session_id, role, content, tool_call_id, seq, created_at, branch_id)
+		VALUES(?,?,?,?,?,?,?)`, sessionID, role, content, toolCallID, seq+1, time.Now().UTC(), branch)
+	if err != nil {
+		return 0, err
+	}
+	id, _ := res.LastInsertId()
+	return id, nil
 }

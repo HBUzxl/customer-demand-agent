@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"customer-demand-agent/internal/domain"
@@ -164,10 +165,19 @@ func TestMessagesTruncate(t *testing.T) {
 	if tresp.StatusCode != http.StatusOK {
 		t.Fatalf("truncate 应 200，got %d", tresp.StatusCode)
 	}
-	if tout.BranchID == "" || tout.BranchedMessages < 1 {
-		t.Fatalf("应返回分支 ID 与分叉数: %+v", tout)
+	if tout.BranchID == "" {
+		t.Fatalf("应返回分支 ID: %+v", tout)
 	}
-	// 软分叉验证：消息仍在（挂新分支），会话出现两个分支
+	// 复制语义：从 seq=1 分叉时无共享前缀（BranchedMessages=0 合法）
+	// 分支续写：POST /api/message 带 branch（前端编辑重发链路=分叉→带 branch 重发）
+	bresp, err := http.Post(ts.URL+"/api/message", "application/json",
+		strings.NewReader(fmt.Sprintf(`{"text":"改写后的消息","session_id":"trunc-s","branch":%q}`, tout.BranchID)))
+	if err != nil {
+		t.Fatalf("分支续写: %v", err)
+	}
+	bresp.Body.Close()
+	time.Sleep(300 * time.Millisecond) // user 消息异步落库
+	// 软分叉验证：main 原消息保留，新分支已出现
 	dresp2, _ := http.Get(ts.URL + "/api/sessions/trunc-s")
 	var det2 struct {
 		Messages []struct {
@@ -178,8 +188,8 @@ func TestMessagesTruncate(t *testing.T) {
 	}
 	_ = json.NewDecoder(dresp2.Body).Decode(&det2)
 	dresp2.Body.Close()
-	if len(det2.Messages) == 0 {
-		t.Fatal("软分叉：消息不应被物理删除")
+	if len(det2.Messages) < 2 {
+		t.Fatalf("复制语义：main 应保留原消息（≥2），got %d", len(det2.Messages))
 	}
 	hasMain, hasBranch := false, false
 	for _, b := range det2.Branches {
