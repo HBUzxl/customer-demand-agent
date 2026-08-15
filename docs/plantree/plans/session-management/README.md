@@ -47,6 +47,14 @@
 - 侧栏「最近对话」不做多选（窄面板放不下，批量场景在 History 全量页）。
 - 「全部」入口（conv-all → /history）保持现状，批量能力落在 History 页内。
 
+### F3. 消息复制按钮（用户提出 2026-08-15）
+
+- 用户消息气泡 + Agent 回复气泡 hover 显示复制按钮（点击复制完整文本到
+  剪贴板，短暂反馈「已复制」）。
+- Agent 回复制的是最终 markdown 文本（m.text），不含 reasoning/工具轨迹。
+- Replay 页同步补（消息行展开详情处）。
+- 实现：navigator.clipboard.writeText + 现有消息气泡组件加 hover action。
+
 ### 非目标
 
 - 不做后端批量删除端点（循环单删够用；若将来会话量大再议）。
