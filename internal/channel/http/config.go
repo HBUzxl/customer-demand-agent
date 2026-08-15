@@ -466,3 +466,13 @@ func (s *Server) handleTaskConsolidate(w http.ResponseWriter, r *http.Request) {
 	t := s.tasks.Submit(fmt.Sprintf("cons-%d", time.Now().UnixNano()), taskbg.TaskConsolidate, req.Type+"/"+req.Title)
 	writeJSON(w, http.StatusAccepted, t)
 }
+
+// handleTaskLint: POST /api/tasks/lint —— 手动触发 Wiki Lint。
+func (s *Server) handleTaskLint(w http.ResponseWriter, r *http.Request) {
+	if s.tasks == nil {
+		writeError(w, http.StatusServiceUnavailable, "后台任务未启用")
+		return
+	}
+	t := s.tasks.Submit(fmt.Sprintf("lint-%d", time.Now().UnixNano()), taskbg.TaskLint, "全库扫描")
+	writeJSON(w, http.StatusAccepted, t)
+}

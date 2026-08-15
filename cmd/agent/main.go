@@ -134,6 +134,24 @@ func main() {
 			}
 			t.Result = "已固化 " + parts[1] + "（待审核）"
 			return nil
+		case taskbg.TaskLint:
+			entries := collectLintEntries(wikiStore)
+			findings := taskbg.RunLint(taskbg.LintInput{Entries: entries})
+			if len(findings) == 0 {
+				t.Result = "全库健康，无发现"
+				return nil
+			}
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "%d 条发现：", len(findings))
+			for i, f := range findings {
+				if i >= 10 {
+					fmt.Fprintf(&sb, "…（共 %d）", len(findings))
+					break
+				}
+				fmt.Fprintf(&sb, "[%s] %s/%s：%s；", f.Kind, f.Type, f.Title, f.Message)
+			}
+			t.Result = sb.String()
+			return nil
 		default:
 			return fmt.Errorf("未知任务类型: %s", t.Type)
 		}
@@ -258,6 +276,20 @@ func extractObserves(content string) []string {
 	for _, para := range strings.Split(content, "\n\n") {
 		if strings.HasPrefix(strings.TrimSpace(para), "### 观察") {
 			out = append(out, strings.TrimSpace(para))
+		}
+	}
+	return out
+}
+
+// collectLintEntries 收集全库条目快照（Lint 输入）。
+func collectLintEntries(w *longterm.WikiStore) []taskbg.LintEntry {
+	var out []taskbg.LintEntry
+	for _, typ := range []string{"threat", "compliance", "industry", "customer", "product"} {
+		for _, e := range w.ListEntry(typ, 0, 200) {
+			out = append(out, taskbg.LintEntry{
+				Type: typ, Title: e.Title, Aliases: e.Aliases, Tags: e.Tags,
+				Summary: e.Summary, Content: e.Content,
+			})
 		}
 	}
 	return out

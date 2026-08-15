@@ -77,3 +77,21 @@ func containsStr(s, sub string) bool {
 	}
 	return false
 }
+
+func TestRunLint(t *testing.T) {
+	in := LintInput{Entries: []LintEntry{
+		{Type: "threat", Title: "正常", Tags: []string{"a"}, Summary: "s", Content: "c"},
+		{Type: "threat", Title: "孤儿", Summary: "s", Content: "c"},                       // 无 tags → orphan
+		{Type: "customer", Title: "残缺", Tags: []string{"x"}, Summary: "", Content: "c"}, // summary 空
+		{Type: "threat", Title: "甲", Aliases: []string{"同别名"}, Summary: "s", Content: "c"},
+		{Type: "threat", Title: "乙", Aliases: []string{"同别名"}, Summary: "s", Content: "c"}, // 别名冲突
+	}}
+	finds := RunLint(in)
+	kinds := map[string]int{}
+	for _, f := range finds {
+		kinds[f.Kind]++
+	}
+	if kinds["orphan"] != 1 || kinds["incomplete"] != 1 || kinds["duplicate-alias"] != 1 {
+		t.Fatalf("检测数不对: %+v", finds)
+	}
+}

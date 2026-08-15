@@ -78,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	// 会话历史
 	mux.HandleFunc("GET /api/tasks", s.handleTasksList)
 	mux.HandleFunc("POST /api/tasks/consolidate", s.handleTaskConsolidate)
+	mux.HandleFunc("POST /api/tasks/lint", s.handleTaskLint)
 
 	mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionGet)
