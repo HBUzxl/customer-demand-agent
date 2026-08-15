@@ -1,8 +1,7 @@
 # 记忆系统二期（memory-v2）
 
-> 短期记忆 checkpoint 链的演进研究 + Agent 记忆能力补全。状态：**Active**
-> （先锋批 P0/P1/P10 已落地 2026-08-14；其余 Researching）。
-> 起源于 2026-08-14 对 MiMo Code 记忆架构的调研。
+> 短期记忆 checkpoint 链的演进 + Agent 记忆能力。状态：**Done**
+> （全部候选项已落地或消解：P0-P11，2026-08-14 一期收尾 goal）。
 
 ## 为什么有这个 plan
 
@@ -93,7 +92,11 @@ agent 层 history_search 业务工具（SetHistorySearcher 回调 + turnState
 语义对应 MiMo 的 history 工具；也是"跨会话客户上下文"缺口的另一半：
 画像给"是什么"，history 给"聊过什么"。
 
-### P2：Notes 通道启用或删除
+### P2：✅ 已落地：Notes 全链删除（observe 已覆盖职责）
+
+#### 原方案
+
+Notes 通道启用或删除
 
 `Manager.AppendNote/DrainNotes` 无调用方。两个方向二选一：
 
@@ -101,19 +104,31 @@ agent 层 history_search 业务工具（SetHistorySearcher 回调 + turnState
   的零散观察，checkpoint 创建时消费
 - 删除：dead code，清理（倾向此方向——memory_observe 已覆盖该职责）
 
-### P3：checkpoint 链截断策略
+### P3：✅ 已落地：链软上限 50 双端滚动归档（内存 compactChainLocked + SQLite 同规则裁行；LIMIT 负数 bug 修复）
+
+#### 原方案
+
+checkpoint 链截断策略
 
 会话几百轮时链无限增长（内存 + SQLite 全量）。BuildContext 只取局部所以
 token 无压力，但存储无界。方案：链长超过 N（如 50）时滚动归档老 followup
 （保留 initial/reanalysis 骨架）。
 
-### P4：checkpoint 可视化（回放页）
+### P4：✅ 已落地：SessionDetail.Checkpoints + Replay 页 checkpoint 行穿插（initial 前置 user/followup 尾随 assistant）
+
+#### 原方案
+
+checkpoint 可视化（回放页）
 
 回放时间线表格目前只展示消息+工具调用。可加 checkpoint 事件行
 （initial/followup/reanalysis + Analysis 摘要），让"记忆系统在做什么"
 对销售可见。低优先，体验向。
 
-### P5：Wiki Lint 健康检查（后台任务候选）
+### P5：✅ 已落地：RunLint 确定性检测（孤儿/残缺/别名冲突）挂 taskbg + POST /api/tasks/lint + 观测台展示
+
+#### 原方案
+
+Wiki Lint 健康检查（后台任务候选）
 
 对应 Karpathy 三操作里的 lint，我们完全缺失。检查项：
 
@@ -126,7 +141,11 @@ token 无压力，但存储无界。方案：链长超过 N（如 50）时滚动
 一次性 LLM 调用）或手动触发的审核队列入口。产出是**审核建议**不是
 直接写入（人审落地，沿用 ADR-005 模式）。
 
-### P6：事实时效性（invalid_at，Zep 思想）
+### P6：✅ 已落地：Entry 三时效字段 + 覆盖归档 .superseded-<ts>.md（archived+invalid_at+superseded_by 留痕）+ Load 排除归档
+
+#### 原方案
+
+事实时效性（invalid_at，Zep 思想）
 
 现状：UpsertEntry 直接覆盖，客户需求变了老事实无迹可寻（memory_observe
 的时间戳注记是唯一残迹）。售前场景真需求："这客户上个月要的是什么、
@@ -154,7 +173,11 @@ wiki 只增不练，长期使用积累重复与过时。定期（如每周）后
 system prompt 不再有知识污染面。剩余小尾巴：工具检索结果里 pending
 条目带 status 字段传递（现状已满足，marshalHits 保留即可）。
 
-### P9：数据全局存放位置（部署可迁移性）
+### P9：✅ 已落地：CDA_DATA_DIR 三级优先 + XDG 默认 + 旧 ./data 就地兼容 + 服务端播种 + Dockerfile
+
+#### 原方案
+
+数据全局存放位置（部署可迁移性）
 
 2026-08-14 用户发现：**wiki 与历史库存放在项目目录下**（`./data/wiki`、
 `./data/history.db`），路径接线有三处绑死：
@@ -224,7 +247,11 @@ e2e 第 4 节改测 P10 新语义。**字段级 patch / 留痕 / 软删回收站
    （无版本）。对策：删除一律软删（archive）+ 回收站视图（与 P6
    时效性呼应——supersede 链就是版本史）。
 
-### P11：记忆管线三阶段（捕获→固化→人审，方案待用户裁决）
+### P11：✅ 已落地：taskbg 包（Runner+固化管线 observe→LLM 抽结构→pending 人审）+ GET /api/tasks + 手动触发
+
+#### 原方案
+
+记忆管线三阶段（捕获→固化→人审，方案待用户裁决）
 
 用户命题（2026-08-14）：记忆写入是直接放还是专职 Agent 处理？AI 总结
 保结构但丢细节；结构化才能快速检索——两难。

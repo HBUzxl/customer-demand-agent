@@ -64,7 +64,15 @@ npm run format:check      # prettier（已配，见「已知基线」）
 - **统一对话入口**：`POST /api/message`（{text, session_id?, customer?}）走 `agent.Message()` 单一自主循环；`/api/analyze`、`/api/chat` 是 deprecated shim。
 - **服务端 Run 任务（F0，2026-08-14）**：POST /api/message 创建 Run（goroutine 执行）**立即返回 202 {session_id, run_id}**——刷新/切换/断连不影响执行；事件进 per-session 内存缓冲（带 seq），消费走**订阅式 SSE** `GET /api/sessions/{id}/stream?since=N`（replay+live）；`POST .../runs/{run_id}/cancel` 显式停止（唯一停止途径）；每会话单 Run 并发 409；落库在 Run 完成回调与连接解耦；`DELETE .../messages/after?seq=N` 截断（messages+tool_calls+checkpoints 三表联删，编辑重发用，运行中 409）。RunManager 在 `internal/channel/http/runs.go`。
 - **System Prompt 分层（ADR-016 v2）**：L0 静态模板 + L1 使用者画像（风格）+ L2 会话状态（checkpoint 链 + 客户身份一行）+ L3a 产品目录索引（名字+一句话+别名）注入；**其余知识全走工具检索**（renderKnowledge 全量注入已废）。约束强化「推荐前必须 memory_search 检索证实」。会话头客户名 UI → EnsureSession 落库 → 身份行注入。
-- **history_search 工具（P1）**：Agent 可检索历史对话原文（agent 层业务工具 + `history.Store.SearchMessages`，tenant 隔离、可选跨会话）。
+- **history_search 工具（P1）**：Agent 可检索历史对话原文（agent 层业务工具 + `history.Store.SearchMessages`，可选跨会话）。
+- **ask_user 工具（F3）**：关键信息可枚举时给选项让用户点选（轮次终止式——done 前发 ask_user 事件，前端选项卡）；答案走 missing_answer 闭环。
+- **内联审核（F4）**：memory_ensure/observe 的 result 带 `needs_review`+条目标识，前端工具轨迹内渲染审批卡（通过/拒绝调现有 review API），/review 页降级为积压兜底。
+- **后台任务域（TaskBackground，P11/ADR-015）**：`internal/taskbg`——Runner（串行+panic 防护+任务列表）+ 固化（observe→LLM 抽结构→pending 人审）+ Lint（孤儿/残缺/别名冲突）+ 标题生成（Run 完成回调）。`GET /api/tasks`、`POST /api/tasks/consolidate|lint`。
+- **观测台（C2）**：`GET /api/console/logs`（LogRing 500 行+SSE tail）、`/console/llm-audit`（Manager 审计环形 100 条）、`/console/health`；前端 `/observe` 页。
+- **配置中心（C1）**：`GET /api/console/config|prompts|memory`（只读，api_key 只出 has_key）；Settings「配置中心」tab。
+- **Prompt 外置（C3）**：`prompts/system.md` 四段模板（编辑重启生效，缺失回退内置）；快照归档 `data_dir/prompts-snapshots/`。
+- **事实时效（P6）**：Entry valid_at/invalid_at/superseded_by；覆盖时旧版归档 `.superseded-<ts>.md`（Load 排除，磁盘留痕）。
+- **数据根（P9）**：`CDA_DATA_DIR` > config.data_dir > XDG 默认；旧 ./data 就地兼容；Dockerfile `VOLUME /var/lib/cda`。
 - **前后台域划分**：前台（与 Agent 的对话）= 记忆系统成套且**全程在线**——聊天轮次涉及事实也要 memory_search 查证、聊出线索要 memory_observe 记录（不是裸 chat）；后台（TaskBackground，一期未实现）= 无记忆依赖的一次性调用。
 - **checkpoint 全轮次**：提交分析→initial/reanalysis（is_reanalysis 优先）；纯聊天/追问→轻量 followup（Question/Answer 照记）。
 - **记忆写入门禁（P10）**：AI ensure 覆盖 verified 必降级 pending（execEnsure 按类型不按旧状态）；人工 HTTP 通道不接受 status 传参（一律 verified，pending 是 AI 专属语义）。

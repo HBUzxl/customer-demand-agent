@@ -8,10 +8,10 @@
 |------|------|----------|----------|----------|
 | [[plans/customer-demand-agent/README.md\|客户需求分析智能体]] | Landed（一期） | — | 一期全栈实现 + 安全加固 + 基线清零（2026-08-13） | — |
 | [[plans/agent-autonomy-refactor/README.md\|Agent 自主化重构]] | Done | 四 Phase 全部落地 | 2026-08-14 全套验证通过（含审计修复：回放 message_id 归属、LastAnalysis 跨聊天、前端竞态、空响应契约） | — |
-| [[plans/memory-v2/README.md\|记忆系统二期]] | Active（先锋批落地） | **P0/P1/P10 核心已落地（2026-08-14，ADR-016 v2 生效：需求轮 prompt 全量时代 3387 → 目录索引时代 ~1794 字符，知识全走工具）**；P2-P9/P11 Researching | 2026-08-14 先锋批 goal 完成（目录索引+身份行+history_search+P10 语义收紧，e2e 25/0（F0 后），冒烟 smoke-p0.sh 4/4） | 下一批：P9 数据位置 / P11 记忆管线（待裁决） |
-| [[plans/conversation-ux/README.md\|对话交互增强]] | Active | **F0+F1 已落地 2026-08-14**（Run 任务模型：202+订阅流+cancel+编辑重发+断连运行继续+多轮隔离+结构化失败语义，smoke-f0 11/11）；F2-F4/G/H2 待做 | 2026-08-14 F0+F1 goal（commit 78264ea 主体 + 九轮审计修复至 cdd558f，e2e 26/0） | F3 ask_user + F4 内联审核（共用卡片组件）；F2 截断重发验证够用否 |
-| [[plans/console/README.md\|控制台化]] | Shaping | C1 配置中心（prompt/路由/参数/数据位置）+ C2 可观测（后台任务/LLM 审计）+ C3 prompt 配置化 | 2026-08-14 独立立项（源起 H1/H3 升级：后端配置与运行全面前端可见） | C1 只读可直接开工；裁决 C3 外置形态 |
-| [[plans/frontend/README.md\|前端工作台]] | Shaping | **IA 总蓝图**：三层可见性（对话内/会话飞行记录仪/系统观测台），六页收敛五区，G5 否决（对话与回放不合并） | 2026-08-14 立项，汇总三 plan 前端形态 + 后端依赖 API 缺口清单 | 跟随 F0/G1 先行；观测台新页 |
+| [[plans/memory-v2/README.md\|记忆系统二期]] | **Done** | **P0/P1/P10 核心已落地（2026-08-14，ADR-016 v2 生效：需求轮 prompt 全量时代 3387 → 目录索引时代 ~1794 字符，知识全走工具）**——P0-P11 全部落地/消解 | 2026-08-14 一期收尾 goal：P2/P3/P4/P5/P6/P9/P11 补完（e2e 29/0、四冒烟脚本全绿） | — |
+| [[plans/conversation-ux/README.md\|对话交互增强]] | **Done** | **F0+F1 已落地 2026-08-14**（Run 任务模型：202+订阅流+cancel+编辑重发+断连运行继续+多轮隔离+结构化失败语义，smoke-f0 11/11）——F0/F1/F3/F4+G2/G4/G6/G8+H2 全落地 | 2026-08-14 一期收尾 goal：F3/F4/G 系列补完（F2 完整版裁决不做） | — |
+| [[plans/console/README.md\|控制台化]] | **Done** | C1 配置中心（prompt/路由/参数/数据位置）+ C2 可观测（后台任务/LLM 审计）+ C3 prompt 配置化 | 2026-08-14 一期收尾 goal：C1/C2/C3 落地（四个 console API+观测台+prompt 外置快照） | — |
+| [[plans/frontend/README.md\|前端工作台]] | Partial（随收尾归档） | **IA 总蓝图**：三层可见性（对话内/会话飞行记录仪/系统观测台），六页收敛五区，G5 否决（对话与回放不合并） | 2026-08-14 立项；同日收尾 goal 落地主体（订阅模式/观测台/配置中心/回放 checkpoint/审核融入对话） | 剩余项按需二期 |
 | [[plans/de-tenancy/README.md\|移除多租户]] | Done | 四层去 tenant 落地（X-Tenant-ID 忽略、列保留、e2e 26/0、grep 无功能残留） | 2026-08-14 收尾 goal task 1 | — |
 
 ## 基线
