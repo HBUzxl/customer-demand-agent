@@ -3,7 +3,8 @@
 // memory: short-term is working memory for the LLM (in-process checkpoints),
 // history is the durable record for humans / audit / replay (ADR-010).
 //
-// 单租户（de-tenancy）：sessions.tenant_id 列保留但代码不读写（老数据兼容）。
+// 单租户（de-tenancy，ADR-011 废止）：schema 新库无 tenant_id 列；
+// 老库存在该列时 Open 幂等补 DEFAULT 'default' 使无列 INSERT 兼容，读写路径不再涉及。
 // 组织级共享知识（不在此隔离，见 ADR-011）。
 package history
 
@@ -25,21 +26,22 @@ import (
 
 // Store 是 SQLite 历史记录存储。
 type Store struct {
-	mu sync.Mutex
-	db *sql.DB
+	mu           sync.Mutex
+	db           *sql.DB
+	hasTenantCol bool // 老库 sessions.tenant_id 列存在（de-tenancy 前建的库）
 }
 
 // schema 是建表 DDL。
 const schema = `
 CREATE TABLE IF NOT EXISTS sessions (
     session_id  TEXT PRIMARY KEY,
-    tenant_id   TEXT NOT NULL,
+
     title       TEXT,
     customer    TEXT,
     created_at  TIMESTAMP NOT NULL,
     updated_at  TIMESTAMP NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_tenant ON sessions(tenant_id, created_at DESC);
+
 
 CREATE TABLE IF NOT EXISTS messages (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +101,21 @@ func Open(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("建表: %w", err)
 	}
 	// 轻量迁移：老库的 tool_calls 没有 message_id 列（回放归属边界，2026-08-14）。
+	// de-tenancy：探测老库 tenant_id 列（存在则 INSERT 需带默认值）
+	var hasTenantCol bool
+	if rows, err := db.Query(`PRAGMA table_info(sessions)`); err == nil {
+		for rows.Next() {
+			var cid int
+			var name, ctype string
+			var notNull int
+			var dflt any
+			var pk int
+			if rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk) == nil && name == "tenant_id" {
+				hasTenantCol = true
+			}
+		}
+		rows.Close()
+	}
 	if _, err := db.Exec(`ALTER TABLE tool_calls ADD COLUMN message_id INTEGER`); err != nil {
 		// column already exists → 忽略；其它错误才致命
 		if !strings.Contains(err.Error(), "duplicate column") {
@@ -106,7 +123,7 @@ func Open(dbPath string) (*Store, error) {
 			return nil, fmt.Errorf("迁移 tool_calls.message_id: %w", err)
 		}
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, hasTenantCol: hasTenantCol}, nil
 }
 
 // Close 关闭数据库。
@@ -131,8 +148,15 @@ func (s *Store) EnsureSession(sessionID, title, customer string) error {
 		return err
 	case errors.Is(err, sql.ErrNoRows):
 		// 不存在：插入（tenant_id 列保留写默认值——单租户，de-tenancy）
-		_, err = s.db.Exec(`INSERT INTO sessions(session_id, tenant_id, title, customer, created_at, updated_at)
-			VALUES(?,?,?,?,?,?)`, sessionID, "default", title, customer, now, now)
+		var err error
+		if s.hasTenantCol {
+			// 老库：NOT NULL 列仍在，写默认值（读写路径其余完全不涉及 tenant）
+			_, err = s.db.Exec(`INSERT INTO sessions(session_id, tenant_id, title, customer, created_at, updated_at)
+				VALUES(?,?,?,?,?,?)`, sessionID, "default", title, customer, now, now)
+		} else {
+			_, err = s.db.Exec(`INSERT INTO sessions(session_id, title, customer, created_at, updated_at)
+				VALUES(?,?,?,?,?)`, sessionID, title, customer, now, now)
+		}
 		return err
 	default:
 		return err
@@ -232,7 +256,6 @@ func (s *Store) ListCheckpoints(sessionID string) ([]*domain.Checkpoint, error) 
 // SessionListItem 是会话列表的一项。
 type SessionListItem struct {
 	SessionID string    `json:"session_id"`
-	TenantID  string    `json:"tenant_id"` // 恒 "default"（列保留，de-tenancy）
 	Title     string    `json:"title"`
 	Customer  string    `json:"customer"`
 	CreatedAt time.Time `json:"created_at"`
@@ -246,7 +269,7 @@ func (s *Store) ListSessions(limit, offset int) ([]SessionListItem, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rows, err := s.db.Query(`SELECT session_id, tenant_id, title, customer, created_at, updated_at
+	rows, err := s.db.Query(`SELECT session_id, title, customer, created_at, updated_at
 		FROM sessions ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
 		limit, offset)
 	if err != nil {
@@ -256,7 +279,7 @@ func (s *Store) ListSessions(limit, offset int) ([]SessionListItem, error) {
 	var out []SessionListItem
 	for rows.Next() {
 		var it SessionListItem
-		if err := rows.Scan(&it.SessionID, &it.TenantID, &it.Title, &it.Customer, &it.CreatedAt, &it.UpdatedAt); err != nil {
+		if err := rows.Scan(&it.SessionID, &it.Title, &it.Customer, &it.CreatedAt, &it.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
@@ -348,9 +371,9 @@ func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
 
 	var det SessionDetail
 	var sess SessionListItem
-	err := s.db.QueryRow(`SELECT session_id, tenant_id, title, customer, created_at, updated_at
+	err := s.db.QueryRow(`SELECT session_id, title, customer, created_at, updated_at
 		FROM sessions WHERE session_id=?`, sessionID).
-		Scan(&sess.SessionID, &sess.TenantID, &sess.Title, &sess.Customer, &sess.CreatedAt, &sess.UpdatedAt)
+		Scan(&sess.SessionID, &sess.Title, &sess.Customer, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("会话不存在或无权访问: %w", err)
 	}

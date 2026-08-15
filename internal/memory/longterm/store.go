@@ -197,6 +197,8 @@ func parsePage(raw string) (*Entry, error) {
 	if f.Product != "" {
 		e.Product = f.Product
 	}
+	// P6 时效：历史版本链（superseded 归档）的时间字段透出
+	e.ValidAt, e.InvalidAt, e.SupersededBy = f.ValidAt, f.InvalidAt, f.SupersededBy
 	return e, nil
 }
 

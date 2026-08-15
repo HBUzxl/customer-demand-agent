@@ -163,6 +163,40 @@ func (w *WikiStore) SearchEntry(query, typeStr string, limit int) []*Entry {
 	return out
 }
 
+// GetEntryHistory 返回某条目的历史版本链（.superseded-*.md 归档文件，
+// P6 时效查询路径：看一条事实的演进与失效记录）。倒序——最新归档在前。
+func (w *WikiStore) GetEntryHistory(typeStr, title string) []*Entry {
+	mt, ok := domain.ParseMemoryType(typeStr)
+	if !ok {
+		return nil
+	}
+	dir := filepath.Join(w.dir, typedSubdir(mt))
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []*Entry
+	for _, f := range files {
+		name := f.Name()
+		if !strings.HasPrefix(name, title+".superseded-") || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		if pe, err := parsePage(string(data)); err == nil && pe != nil {
+			pe.Type, pe.Title = mt, title
+			out = append(out, pe)
+		}
+	}
+	// 倒序（文件名含 unix 时间戳，字典序即时间序）
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
 // ListEntry 列出某类型全部条目（分页，排除归档）。
 func (w *WikiStore) ListEntry(typeStr string, offset, limit int) []*Entry {
 	if limit <= 0 {

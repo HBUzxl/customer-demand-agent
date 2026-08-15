@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * 工具调用轨迹渲染（流式 + 回放共用一条路径）。
@@ -176,8 +176,18 @@ function parseNeedsReview(result?: string): { type: string; title: string } | nu
 
 // ReviewCard：对话内审批卡（通过=verified 即刻生效 / 拒绝=归档 / 忽略）。
 function ReviewCard({ type, title }: { type: string; title: string }) {
-  const [state, setState] = useState<"pending" | "approved" | "rejected">("pending");
+  const [state, setState] = useState<"pending" | "approved" | "rejected" | "ignored">("pending");
   const [busy, setBusy] = useState(false);
+  // 回放/刷新恢复：挂载时拉条目当前状态（已审过的不重复打扰）
+  useEffect(() => {
+    fetch(`${API_BASE}/memory/${type}/${encodeURIComponent(title)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((e) => {
+        if (e?.status === "verified") setState("approved");
+        else if (e?.status === "pending" || e?.status === "pending_review") setState("pending");
+      })
+      .catch(() => {});
+  }, [type, title]);
   async function act(approve: boolean) {
     setBusy(true);
     try {
@@ -195,6 +205,7 @@ function ReviewCard({ type, title }: { type: string; title: string }) {
   }
   if (state === "approved") return <div className="rv-done ok">✓ 已通过，知识已生效</div>;
   if (state === "rejected") return <div className="rv-done no">✗ 已拒绝（归档）</div>;
+  if (state === "ignored") return <div className="rv-done">已忽略（稍后可在 /review 处理）</div>;
   return (
     <div className="rv-card">
       <div className="rv-title">📝 Agent 记了一条知识，待你确认</div>
@@ -207,6 +218,9 @@ function ReviewCard({ type, title }: { type: string; title: string }) {
         </button>
         <button className="btn ghost sm" disabled={busy} onClick={() => act(false)}>
           拒绝
+        </button>
+        <button className="btn ghost sm" disabled={busy} onClick={() => setState("ignored")}>
+          忽略
         </button>
       </div>
     </div>

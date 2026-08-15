@@ -21,20 +21,23 @@ echo "$STREAM" | grep -q '"type":"ask_user"' && ok "F3 ask_user 事件出现" ||
 $CURL -s -o /dev/null -X POST "$BASE/api/sessions/$SID/runs/$RID/cancel"
 $CURL -s -o /dev/null -X DELETE "$BASE/api/sessions/$SID"
 
-# ── F4：Agent 写待审知识 → needs_review → 前端卡片数据 → approve API 生效 ──
+# ── F4：固定条目走完 needs_review→approve 全链（200 硬断言）+ Agent 事件冒烟 ──
 SID2="sf-rv-$(date +%s)"
 $CURL -s -H "Content-Type: application/json" \
   -d "{\"text\":\"记住一个新趋势：最近金融客户特别关注AI大模型的数据安全合规，请记录到行业记忆\",\"session_id\":\"$SID2\"}" \
   "$BASE/api/message" > /tmp/sf_rv.json
 $CURL -s -N --max-time 150 "$BASE/api/sessions/$SID2/stream?since=0" > /tmp/sf_rv_stream.txt 2>/dev/null
 RV_HIT=$(grep -oE '\\?"needs_review\\?":\\?true' /tmp/sf_rv_stream.txt | head -1)
-[ -n "$RV_HIT" ] && ok "F4 needs_review=true 出现（卡片数据）" || fail "F4 无 needs_review"
-# 审批 API 可用（对该会话产生的条目——不依赖具体 title，验证端点活着）
-CODE=$($CURL -s -o /dev/null -w "%{http_code}" -X POST "$BASE/api/review/industry/金融客户关注AI大模型数据安全合规/approve")
-[ "$CODE" = "200" ] || [ "$CODE" = "404" ] && ok "F4 审批端点可用（${CODE}）" || fail "F4 审批端点异常（${CODE}）"
+[ -n "$RV_HIT" ] && ok "F4 Agent 写入 needs_review=true 事件出现" || fail "F4 无 needs_review"
 $CURL -s -o /dev/null -X DELETE "$BASE/api/sessions/$SID2"
-# 清理测试条目
-$CURL -s -o /dev/null -X DELETE "$BASE/api/memory/industry/%E9%87%91%E8%9E%8D%E5%AE%A2%E6%88%B7%E5%85%B3%E6%B3%A8AI%E5%A4%A7%E6%A8%A1%E5%9E%8B%E6%95%B0%E6%8D%AE%E5%AE%89%E5%85%A8%E5%90%88%E8%A7%84?archive=false"
+# 审批链：抓 Agent 真实创建的条目 title → approve 硬断言 200 → 状态 verified → 清理
+RV_TITLE=$(python3 "$(dirname "$0")/extract_title.py" /tmp/sf_rv_stream.txt)
+if [ -z "$RV_TITLE" ]; then RV_TITLE="金融客户关注AI大模型数据安全合规"; fi
+CODE=$($CURL -s -o /dev/null -w "%{http_code}" -X POST "$BASE/api/review/industry/$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$RV_TITLE")/approve")
+[ "$CODE" = "200" ] && ok "F4 审批 approve → 200（条目: ${RV_TITLE}）" || fail "F4 审批应 200，got $CODE"
+ST=$($CURL -s "$BASE/api/memory/industry/$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$RV_TITLE")" | grep -o '"status":"[a-z_]*"' | head -1)
+echo "$ST" | grep -q 'verified' && ok "F4 审批后状态 verified" || fail "F4 审批后状态 $ST"
+$CURL -s -o /dev/null -X DELETE "$BASE/api/memory/industry/$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$RV_TITLE")?archive=false"
 
 # ── 观测台 ──
 TASKS=$($CURL -s "$BASE/api/tasks")

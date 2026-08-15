@@ -107,3 +107,15 @@ func (s *Server) handleMemoryDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": action})
 }
+
+// handleMemoryHistory P6 时效查询：条目历史版本链（superseded 归档）。
+func (s *Server) handleMemoryHistory(w http.ResponseWriter, r *http.Request) {
+	typeStr := r.PathValue("type")
+	title := r.PathValue("title")
+	hist := s.storeWiki.GetEntryHistory(typeStr, title)
+	if hist == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"history": []any{}, "count": 0})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"history": hist, "count": len(hist)})
+}

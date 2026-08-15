@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/memory/search", s.handleMemorySearch)
 	mux.HandleFunc("GET /api/memory/list", s.handleMemoryList)
 	mux.HandleFunc("GET /api/memory/{type}/{title}", s.handleMemoryGet)
+	mux.HandleFunc("GET /api/memory/{type}/{title}/history", s.handleMemoryHistory)
 	mux.HandleFunc("POST /api/memory", s.handleMemoryUpsert)
 	mux.HandleFunc("DELETE /api/memory/{type}/{title}", s.handleMemoryDelete)
 

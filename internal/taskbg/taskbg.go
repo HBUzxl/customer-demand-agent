@@ -8,6 +8,7 @@ package taskbg
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -33,21 +34,31 @@ type Task struct {
 	DoneAt    *time.Time `json:"done_at,omitempty"`
 }
 
-// Runner 是后台任务执行器：任务列表（观测）+ 串行执行（简单优先）。
+// Runner 是后台任务执行器：串行执行（单 worker 消费队列——同一时刻至多
+// 一个任务在跑，防 LLM 并发打爆网关）+ 任务列表（观测台消费）。
 type Runner struct {
 	mu      sync.Mutex
 	tasks   []*Task
-	history int // 保留最近多少条记录
-	// exec 具体执行函数（按类型分发，由 main 注入——依赖 llm/wiki 但本包不 import）
-	exec func(ctx context.Context, t *Task) error
+	history int
+	queue   chan *Task
+	exec    func(ctx context.Context, t *Task) error
 }
 
-// NewRunner 创建执行器。exec 为实际执行函数。
+// NewRunner 创建执行器（启动单个 worker goroutine 串行消费）。
 func NewRunner(exec func(ctx context.Context, t *Task) error) *Runner {
-	return &Runner{history: 100, exec: exec}
+	r := &Runner{history: 100, queue: make(chan *Task, 64), exec: exec}
+	go r.worker()
+	return r
 }
 
-// Submit 提交任务（异步执行，立即返回任务记录）。
+// worker 串行消费队列。
+func (r *Runner) worker() {
+	for t := range r.queue {
+		r.run(t)
+	}
+}
+
+// Submit 提交任务（入队，立即返回任务记录——状态 running 表示排队+执行中）。
 func (r *Runner) Submit(id string, typ TaskType, detail string) *Task {
 	t := &Task{ID: id, Type: typ, Detail: detail, Status: "running", CreatedAt: time.Now()}
 	r.mu.Lock()
@@ -56,7 +67,7 @@ func (r *Runner) Submit(id string, typ TaskType, detail string) *Task {
 		r.tasks = r.tasks[len(r.tasks)-r.history:]
 	}
 	r.mu.Unlock()
-	go r.run(t)
+	r.queue <- t
 	return t
 }
 
@@ -68,12 +79,13 @@ func (r *Runner) run(t *Task) {
 		defer func() {
 			if p := recover(); p != nil {
 				log.Printf("[taskbg] 任务 %s panic: %v", t.ID, p)
-				err = nil // panic 视为完成（防拖垮进程）
+				err = fmt.Errorf("panic: %v", p) // panic 记失败
 			}
 		}()
 		err = r.exec(ctx, t)
 	}()
 	now := time.Now()
+	r.mu.Lock()
 	t.DoneAt = &now
 	if err != nil {
 		t.Status = "failed"
@@ -82,6 +94,29 @@ func (r *Runner) run(t *Task) {
 	} else {
 		t.Status = "done"
 	}
+	r.mu.Unlock()
+}
+
+// SetResult 任务执行中写结果（带锁——exec 回调在 worker goroutine，
+// 观测台在 HTTP goroutine 读）。
+func (r *Runner) SetResult(t *Task, result string) {
+	r.mu.Lock()
+	t.Result = result
+	r.mu.Unlock()
+}
+
+// Status 返回任务当前状态（带锁——Task 字段跨 goroutine 读写）。
+func (r *Runner) Status(t *Task) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return t.Status
+}
+
+// Result 返回任务结果（带锁）。
+func (r *Runner) Result(t *Task) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return t.Result
 }
 
 // List 返回任务列表（倒序：最新在前）。

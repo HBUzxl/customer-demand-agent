@@ -3,29 +3,32 @@ package taskbg
 import (
 	"context"
 	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"customer-demand-agent/internal/memory/longterm"
 )
 
 func TestRunnerLifecycle(t *testing.T) {
-	var got *Task
+	var gotID string
 	r := NewRunner(func(ctx context.Context, task *Task) error {
-		got = task
-		task.Result = "工作完成"
+		gotID = task.ID
 		return nil
 	})
 	tk := r.Submit("t-1", TaskConsolidate, "threat/挂马")
-	if tk.Status != "running" {
-		t.Fatalf("应 running，got %s", tk.Status)
+	if r.Status(tk) != "running" {
+		t.Fatalf("应 running，got %s", r.Status(tk))
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && tk.Status == "running" {
+	for time.Now().Before(deadline) && r.Status(tk) == "running" {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if tk.Status != "done" {
-		t.Fatalf("应 done，got %s", tk.Status)
+	if r.Status(tk) != "done" {
+		t.Fatalf("应 done，got %s", r.Status(tk))
 	}
-	if got == nil || got.ID != "t-1" {
+	if gotID != "t-1" {
 		t.Fatal("执行函数应收到任务")
 	}
 	// 列表倒序
@@ -41,11 +44,11 @@ func TestRunnerFailure(t *testing.T) {
 	})
 	tk := r.Submit("t-2", TaskLint, "全库")
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && tk.Status == "running" {
+	for time.Now().Before(deadline) && r.Status(tk) == "running" {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if tk.Status != "failed" || tk.Result != "LLM 超时" {
-		t.Fatalf("失败态: %+v", tk)
+	if r.Status(tk) != "failed" || r.Result(tk) != "LLM 超时" {
+		t.Fatalf("失败态: %s / %s", r.Status(tk), r.Result(tk))
 	}
 }
 
@@ -93,5 +96,105 @@ func TestRunLint(t *testing.T) {
 	}
 	if kinds["orphan"] != 1 || kinds["incomplete"] != 1 || kinds["duplicate-alias"] != 1 {
 		t.Fatalf("检测数不对: %+v", finds)
+	}
+}
+
+func TestRunnerPanicMarkedFailed(t *testing.T) {
+	r := NewRunner(func(ctx context.Context, task *Task) error {
+		panic("boom")
+	})
+	tk := r.Submit("t-3", TaskTitle, "x/y")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && r.Status(tk) == "running" {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if r.Status(tk) != "failed" || r.Result(tk) != "panic: boom" {
+		t.Fatalf("panic 应标 failed: %s / %s", r.Status(tk), r.Result(tk))
+	}
+}
+
+func TestRunnerSerialExecution(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	var active int
+	maxActive := 0
+	r := NewRunner(func(ctx context.Context, task *Task) error {
+		mu.Lock()
+		active++
+		if active > maxActive {
+			maxActive = active
+		}
+		mu.Unlock()
+		time.Sleep(30 * time.Millisecond)
+		mu.Lock()
+		order = append(order, task.ID)
+		active--
+		mu.Unlock()
+		return nil
+	})
+	for _, id := range []string{"a", "b", "c"} {
+		r.Submit(id, TaskLint, id)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		done := len(order) == 3
+		mu.Unlock()
+		if done {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) != 3 {
+		t.Fatalf("三个任务应全完成: %v", order)
+	}
+	if maxActive != 1 {
+		t.Fatalf("应串行（同时至多 1 个在跑），峰值并发 %d", maxActive)
+	}
+	if order[0] != "a" || order[1] != "b" || order[2] != "c" {
+		t.Fatalf("应按提交顺序执行: %v", order)
+	}
+}
+
+// TestConsolidateEndToEnd 固化管线端到端：条目带观察注记 → LLM 抽结构 →
+// UpsertEntry(status=pending) → 审核批准 → verified。证 ADR-015 后台域闭环。
+func TestConsolidateEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	wiki := longterm.NewWikiStore(dir)
+	// 1) 条目 + 观察注记（前台 memory_observe 产生的形态）
+	content := "---\ntype: industry\ntitle: 金融AI合规\ntags: [金融, AI]\n---\n\n金融客户关注大模型数据出境。\n\n### 观察\n\n- [high] 银行客户问过大模型训练数据能否出境\n- [medium] 券商关心投研报告用 LLM 生成的合规性\n"
+	if err := wiki.UpsertEntry(&longterm.Entry{Type: "industry", Title: "金融AI合规", Content: content}); err != nil {
+		t.Fatal(err)
+	}
+	// 2) 固化 LLM 输出（mock——返回结构化要点）
+	mockOut := `{"summary":"金融行业客户普遍关注大模型数据出境与生成内容合规","tags":["金融","AI合规"],"content":"## 固化要点\n\n- 银行关注训练数据出境边界\n- 券商关注投研 LLM 生成内容合规"}`
+	// 3) 直接驱动解析+写回（绕过 Runner——管线函数级验证）
+	summary, tags, _, err := ParseConsolidateOutput(mockOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) == 0 {
+		t.Fatal("标签应解析出")
+	}
+	e, _ := wiki.GetEntry("industry", "金融AI合规")
+	e.Content = content + "\n\n### 固化要点（待审核）\n\n- " + summary + "\n"
+	e.Status = "pending"
+	if err := wiki.UpsertEntry(e); err != nil {
+		t.Fatal(err)
+	}
+	// 4) 人审：pending → verified
+	e2, _ := wiki.GetEntry("industry", "金融AI合规")
+	e2.Status = "verified"
+	if err := wiki.UpsertEntry(e2); err != nil {
+		t.Fatal(err)
+	}
+	e3, _ := wiki.GetEntry("industry", "金融AI合规")
+	if e3.Status != "verified" {
+		t.Fatalf("人审后应 verified，got %s", e3.Status)
+	}
+	if !strings.Contains(e3.Content, "固化要点") {
+		t.Fatal("固化要点应并入内容")
 	}
 }

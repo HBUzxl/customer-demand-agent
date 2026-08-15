@@ -228,6 +228,14 @@
 
 ---
 
+## ADR-011：多租户隔离（已废止）
+
+> **状态：废止（2026-08-14 用户裁决）**——单租户内部工具，多租户是过度设计。
+> 见 [[plans/de-tenancy/README.md|de-tenancy plan]]：四层去 tenant 已落地；
+> sessions.tenant_id 列在新 schema 已移除（老库 Open 时探测兼容）。
+
+<details><summary>历史原文（已不生效）</summary>
+
 ## ADR-011：多租户隔离（一期只区分，不做权限）
 
 **日期**：2026-08-13
@@ -249,6 +257,8 @@
 - 账户：每个使用者一个 tenant，登录/标识方式后续定
 
 ---
+
+</details>
 
 ## ADR-012：消息入口抽象，为钉钉留口子
 

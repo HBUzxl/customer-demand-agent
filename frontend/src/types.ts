@@ -64,7 +64,6 @@ export interface ConfigResponse {
 
 export interface SessionListItem {
   session_id: string;
-  tenant_id: string;
   title: string;
   customer: string;
   created_at: string;

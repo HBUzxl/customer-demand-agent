@@ -73,7 +73,7 @@ npm run format:check      # prettier（已配，见「已知基线」）
 - **Prompt 外置（C3）**：`prompts/system.md` 四段模板（编辑重启生效，缺失回退内置）；快照归档 `data_dir/prompts-snapshots/`。
 - **事实时效（P6）**：Entry valid_at/invalid_at/superseded_by；覆盖时旧版归档 `.superseded-<ts>.md`（Load 排除，磁盘留痕）。
 - **数据根（P9）**：`CDA_DATA_DIR` > config.data_dir > XDG 默认；旧 ./data 就地兼容；Dockerfile `VOLUME /var/lib/cda`。
-- **前后台域划分**：前台（与 Agent 的对话）= 记忆系统成套且**全程在线**——聊天轮次涉及事实也要 memory_search 查证、聊出线索要 memory_observe 记录（不是裸 chat）；后台（TaskBackground，一期未实现）= 无记忆依赖的一次性调用。
+- **前后台域划分**：前台（与 Agent 的对话）= 记忆系统成套且**全程在线**——聊天轮次涉及事实也要 memory_search 查证、聊出线索要 memory_observe 记录（不是裸 chat）；后台（TaskBackground，已落地 taskbg 包：固化/Lint/标题）= 无记忆依赖的一次性调用。
 - **checkpoint 全轮次**：提交分析→initial/reanalysis（is_reanalysis 优先）；纯聊天/追问→轻量 followup（Question/Answer 照记）。
 - **记忆写入门禁（P10）**：AI ensure 覆盖 verified 必降级 pending（execEnsure 按类型不按旧状态）；人工 HTTP 通道不接受 status 传参（一律 verified，pending 是 AI 专属语义）。
 - **历史数据契约**：assistant content 存自然语言；结构化分析在 tool_calls 的 analysis_submit params 里（前端回放从 tool_calls 还原）。不做老数据兼容（用户裁决：老数据适配新系统）。
@@ -92,12 +92,12 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 
 ## 日志
 
-- stdlib `log.Printf`。请求日志：`%s %s %s %v`（method, path, tenant, duration），在 `logging` 中间件。
+- stdlib `log.Printf`。请求日志：`%s %s %s %v`（method, path, ip, duration），在 `logging` 中间件。
 - 启动日志用 `[ok]` / `[warn]` 前缀。**不记 api_key / 敏感配置**。
 
 ## 单租户（de-tenancy，2026-08-14 裁决）
 
-多租户已砍除（ADR-011 废止——无使用场景，单租户内部工具）：代码无 tenant 概念；`X-Tenant-ID` 请求头接受但忽略；SQLite `sessions.tenant_id` 列保留但代码不读写（老数据兼容，新行写死 "default"）；产品/行业/客户记忆组织级共享语义不变。
+多租户已砍除（ADR-011 废止——无使用场景，单租户内部工具）：代码无 tenant 概念；`X-Tenant-ID` 请求头接受但忽略；新库 schema 已无 `tenant_id` 列（老库 Open 时探测兼容，INSERT 带默认值）；读路径完全不涉及；产品/行业/客户记忆组织级共享语义不变。
 
 ## 前后端连接
 

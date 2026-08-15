@@ -28,6 +28,7 @@ interface Audit {
 interface Health {
   status: string;
   tasks: { id: string; type: string; status: string }[];
+  taskCount?: number;
 }
 
 export default function Observe() {
@@ -145,6 +146,29 @@ export default function Observe() {
             </div>
           ))}
         </div>
+
+        {/* 系统健康（C2） */}
+        {health && (
+          <div className="ob-panel">
+            <h3>系统健康</h3>
+            <div className="cc-stats">
+              <div className="cc-stat">
+                <div className="cc-num">{health.tasks.length}</div>
+                <div className="cc-label">后台任务（最近 5）</div>
+              </div>
+              <div className="cc-stat">
+                <div className="cc-num">
+                  {health.tasks.filter((t) => t.status === "running").length}
+                </div>
+                <div className="cc-label">运行中</div>
+              </div>
+              <div className="cc-stat">
+                <div className="cc-num">{health.status === "ok" ? "✓" : health.status}</div>
+                <div className="cc-label">服务状态</div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 系统日志 */}
         <div className="ob-panel ob-logs">

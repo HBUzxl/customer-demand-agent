@@ -8,7 +8,7 @@
 
 ## 架构
 
-```
+```text
 
 数据位置（P9）：三级优先 `CDA_DATA_DIR` 环境变量 > `config.json data_dir` > XDG 默认（`~/.local/share/customer-demand-agent/`）；`wiki_dir`/`history_db` 未显式配置时自动落数据根。项目内旧 `./data` 自动就地兼容。Docker：`ENV CDA_DATA_DIR=/var/lib/cda` + `VOLUME /var/lib/cda`，镜像无状态。
 React+Vite 前端 ──HTTP──→ channel/http → agent（自主循环）
@@ -16,7 +16,7 @@ React+Vite 前端 ──HTTP──→ channel/http → agent（自主循环）
                     ┌─────────┼─────────┐
                     │         │         │
               memory(长+短期)  llm+model  history(SQLite)
-              tools(6 FC)    review      多租户
+              tools(6+ FC)   review      后台任务
 ```
 
 | 子系统 | 包 | 说明 |
@@ -82,6 +82,7 @@ FRONTEND_DIST=./frontend/dist ../scripts/run.sh
 ## 核心能力
 
 **自主分析**——粘贴客户文本，Agent 自主调用记忆工具，输出：
+
 - 需求理解（业务语言 → 安全需求）
 - 匹配产品（长亭产品 + 置信度 + 推荐话术）
 - 可行性判断（直接覆盖 / 需定制 / 外部整合 / 不建议接）
@@ -115,8 +116,6 @@ FRONTEND_DIST=./frontend/dist ../scripts/run.sh
 | GET/PUT | `/api/config` | 模型与路由配置 |
 | GET | `/api/sessions` `GET/DELETE /api/sessions/{id}` | 会话历史 |
 
-
-
 ## 测试
 
 ```bash
@@ -129,7 +128,7 @@ go test ./...              # 24 个单测 + 集成测试（含 mock LLM 全链�
 
 ## 项目结构
 
-```
+```text
 cmd/agent/          入口
 internal/
   domain/           共享类型（避免循环依赖的叶子包）

@@ -104,7 +104,8 @@ func main() {
 
 	// ── HTTP Channel（配置回写由 store 持久化）─────────────
 	// ── 后台任务域（TaskBackground，ADR-015/P11）：无记忆依赖的一次性调用 ──
-	runner := taskbg.NewRunner(func(ctx context.Context, t *taskbg.Task) error {
+	var runner *taskbg.Runner
+	runner = taskbg.NewRunner(func(ctx context.Context, t *taskbg.Task) error {
 		switch t.Type {
 		case taskbg.TaskConsolidate:
 			// 固化：Detail 是 "type/title"——读条目正文中的观察注记 → LLM 抽结构 → pending 覆盖
@@ -134,7 +135,7 @@ func main() {
 			if err := wikiStore.UpsertEntry(&longterm.Entry{Type: domain.MemoryType(parts[0]), Title: parts[1], Content: fm, Summary: summary, Tags: tags, Status: longterm.StatusPendingReview}); err != nil {
 				return err
 			}
-			t.Result = "已固化 " + parts[1] + "（待审核）"
+			runner.SetResult(t, "已固化 "+parts[1]+"（待审核）")
 			return nil
 		case taskbg.TaskLint:
 			entries := collectLintEntries(wikiStore)
@@ -152,7 +153,7 @@ func main() {
 				}
 				fmt.Fprintf(&sb, "[%s] %s/%s：%s；", f.Kind, f.Type, f.Title, f.Message)
 			}
-			t.Result = sb.String()
+			runner.SetResult(t, sb.String())
 			return nil
 		case taskbg.TaskTitle:
 			// Detail = "sessionID/firstLine"——LLM 生成标题后更新会话
@@ -173,7 +174,7 @@ func main() {
 			if err := hist.EnsureSession(parts[0], title, ""); err != nil {
 				return err
 			}
-			t.Result = "标题：" + title
+			runner.SetResult(t, "标题："+title)
 			return nil
 		default:
 			return fmt.Errorf("未知任务类型: %s", t.Type)
