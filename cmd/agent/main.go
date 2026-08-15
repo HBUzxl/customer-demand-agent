@@ -105,83 +105,7 @@ func main() {
 
 	// ── HTTP Channel（配置回写由 store 持久化）─────────────
 	// ── 后台任务域（TaskBackground，ADR-015/P11）：无记忆依赖的一次性调用 ──
-	var runner *taskbg.Runner
-	runner = taskbg.NewRunner(func(ctx context.Context, t *taskbg.Task) error {
-		switch t.Type {
-		case taskbg.TaskConsolidate:
-			// 固化：Detail 是 "type/title"——读条目正文中的观察注记 → LLM 抽结构 → pending 覆盖
-			parts := strings.SplitN(t.Detail, "/", 2)
-			if len(parts) != 2 {
-				return fmt.Errorf("detail 应为 type/title: %s", t.Detail)
-			}
-			e, err := wikiStore.GetEntry(parts[0], parts[1])
-			if err != nil {
-				return fmt.Errorf("条目不存在: %w", err)
-			}
-			observes := extractObserves(e.Content)
-			if len(observes) == 0 {
-				return fmt.Errorf("该条目无观察注记可固化")
-			}
-			prompt := taskbg.BuildConsolidatePrompt(taskbg.ConsolidateInput{Type: parts[0], Title: parts[1], Observes: observes})
-			msgs := []domain.Message{{Role: domain.RoleUser, Content: prompt}}
-			resp, err := modelMgr.Chat(ctx, model.TaskAnalysis, &llm.ChatRequest{Messages: msgs})
-			if err != nil {
-				return fmt.Errorf("LLM 固化: %w", err)
-			}
-			summary, tags, content, err := taskbg.ParseConsolidateOutput(resp.Message.Content)
-			if err != nil {
-				return err
-			}
-			fm := "---\ntype: " + parts[0] + "\nstatus: pending_review\nsummary: " + summary + "\ntags: [" + strings.Join(tags, ", ") + "]\n---\n" + content
-			if err := wikiStore.UpsertEntry(&longterm.Entry{Type: domain.MemoryType(parts[0]), Title: parts[1], Content: fm, Summary: summary, Tags: tags, Status: longterm.StatusPendingReview}); err != nil {
-				return err
-			}
-			runner.SetResult(t, "已固化 "+parts[1]+"（待审核）")
-			return nil
-		case taskbg.TaskLint:
-			entries := collectLintEntries(wikiStore)
-			misses := collectMissQueries(hist)
-			findings := taskbg.RunLint(taskbg.LintInput{Entries: entries, RecentMissQueries: misses})
-			if len(findings) == 0 {
-				runner.SetResult(t, "全库健康，无发现")
-				return nil
-			}
-			var sb strings.Builder
-			fmt.Fprintf(&sb, "%d 条发现：", len(findings))
-			for i, f := range findings {
-				if i >= 10 {
-					fmt.Fprintf(&sb, "…（共 %d）", len(findings))
-					break
-				}
-				fmt.Fprintf(&sb, "[%s] %s/%s：%s；", f.Kind, f.Type, f.Title, f.Message)
-			}
-			runner.SetResult(t, sb.String())
-			return nil
-		case taskbg.TaskTitle:
-			// Detail = "sessionID/firstLine"——LLM 生成标题后更新会话
-			parts := strings.SplitN(t.Detail, "/", 2)
-			if len(parts) != 2 {
-				return fmt.Errorf("detail 应为 sessionID/firstLine")
-			}
-			msgs := []domain.Message{{Role: domain.RoleUser, Content: taskbg.BuildTitlePrompt(parts[1])}}
-			resp, err := modelMgr.Chat(ctx, model.TaskAnalysis, &llm.ChatRequest{Messages: msgs})
-			if err != nil {
-				return fmt.Errorf("LLM 标题: %w", err)
-			}
-			title := strings.TrimSpace(resp.Message.Content)
-			title = strings.Trim(title, "\u300c\u300d\"'“”")
-			if title == "" || len([]rune(title)) > 40 {
-				return fmt.Errorf("标题生成异常: %q", title)
-			}
-			if err := hist.EnsureSession(parts[0], title, ""); err != nil {
-				return err
-			}
-			runner.SetResult(t, "标题："+title)
-			return nil
-		default:
-			return fmt.Errorf("未知任务类型: %s", t.Type)
-		}
-	})
+	runner := buildTaskRunner(wikiStore, modelMgr, hist)
 
 	// C3 版本快照：外置模板按内容 hash 归档（data_dir/prompts-snapshots/）
 	snapshotTemplate(cfg.DataDir)
@@ -395,4 +319,88 @@ func snapshotTemplate(dataDir string) {
 	}
 	_ = os.WriteFile(p, raw, 0o644)
 	log.Printf("[ok] Prompt 模板快照：%s", p)
+}
+
+// buildTaskRunner 装配后台任务执行器（固化/Lint/标题——ADR-015 后台域：
+// 一次性 LLM 调用，无记忆依赖）。独立函数便于 HTTP 端到端测试复用真实装配。
+func buildTaskRunner(wikiStore *longterm.WikiStore, modelMgr *model.Manager, hist *history.Store) *taskbg.Runner {
+	var runner *taskbg.Runner
+	runner = taskbg.NewRunner(func(ctx context.Context, t *taskbg.Task) error {
+		switch t.Type {
+		case taskbg.TaskConsolidate:
+			// 固化：Detail 是 "type/title"——读条目正文中的观察注记 → LLM 抽结构 → pending 覆盖
+			parts := strings.SplitN(t.Detail, "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("detail 应为 type/title: %s", t.Detail)
+			}
+			e, err := wikiStore.GetEntry(parts[0], parts[1])
+			if err != nil {
+				return fmt.Errorf("条目不存在: %w", err)
+			}
+			observes := extractObserves(e.Content)
+			if len(observes) == 0 {
+				return fmt.Errorf("该条目无观察注记可固化")
+			}
+			prompt := taskbg.BuildConsolidatePrompt(taskbg.ConsolidateInput{Type: parts[0], Title: parts[1], Observes: observes})
+			msgs := []domain.Message{{Role: domain.RoleUser, Content: prompt}}
+			resp, err := modelMgr.Chat(ctx, model.TaskAnalysis, &llm.ChatRequest{Messages: msgs})
+			if err != nil {
+				return fmt.Errorf("LLM 固化: %w", err)
+			}
+			summary, tags, content, err := taskbg.ParseConsolidateOutput(resp.Message.Content)
+			if err != nil {
+				return err
+			}
+			fm := "---\ntype: " + parts[0] + "\nstatus: pending_review\nsummary: " + summary + "\ntags: [" + strings.Join(tags, ", ") + "]\n---\n" + content
+			if err := wikiStore.UpsertEntry(&longterm.Entry{Type: domain.MemoryType(parts[0]), Title: parts[1], Content: fm, Summary: summary, Tags: tags, Status: longterm.StatusPendingReview}); err != nil {
+				return err
+			}
+			runner.SetResult(t, "已固化 "+parts[1]+"（待审核）")
+			return nil
+		case taskbg.TaskLint:
+			entries := collectLintEntries(wikiStore)
+			misses := collectMissQueries(hist)
+			findings := taskbg.RunLint(taskbg.LintInput{Entries: entries, RecentMissQueries: misses})
+			if len(findings) == 0 {
+				runner.SetResult(t, "全库健康，无发现")
+				return nil
+			}
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "%d 条发现：", len(findings))
+			for i, f := range findings {
+				if i >= 10 {
+					fmt.Fprintf(&sb, "…（共 %d）", len(findings))
+					break
+				}
+				fmt.Fprintf(&sb, "[%s] %s/%s：%s；", f.Kind, f.Type, f.Title, f.Message)
+			}
+			runner.SetResult(t, sb.String())
+			return nil
+		case taskbg.TaskTitle:
+			// Detail = "sessionID/firstLine"——LLM 生成标题后更新会话
+			parts := strings.SplitN(t.Detail, "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("detail 应为 sessionID/firstLine")
+			}
+			msgs := []domain.Message{{Role: domain.RoleUser, Content: taskbg.BuildTitlePrompt(parts[1])}}
+			resp, err := modelMgr.Chat(ctx, model.TaskAnalysis, &llm.ChatRequest{Messages: msgs})
+			if err != nil {
+				return fmt.Errorf("LLM 标题: %w", err)
+			}
+			title := strings.TrimSpace(resp.Message.Content)
+			title = strings.Trim(title, "\u300c\u300d\"'“”")
+			if title == "" || len([]rune(title)) > 40 {
+				return fmt.Errorf("标题生成异常: %q", title)
+			}
+			if err := hist.EnsureSession(parts[0], title, ""); err != nil {
+				return err
+			}
+			runner.SetResult(t, "标题："+title)
+			return nil
+		default:
+			return fmt.Errorf("未知任务类型: %s", t.Type)
+		}
+
+	})
+	return runner
 }

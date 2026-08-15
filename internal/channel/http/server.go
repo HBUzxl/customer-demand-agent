@@ -45,6 +45,15 @@ func New(store *config.Store, ag *agent.Agent, rv *review.Service, wiki *longter
 	}
 }
 
+// NewMinimal 构造只装配后台任务/记忆/审核路由的最小服务（cmd 层端到端
+// 测试用——完整装配走 New）。
+func NewMinimal(tasks *taskbg.Runner, wiki *longterm.WikiStore, rv *review.Service, hist *history.Store) *Server {
+	return &Server{
+		storeWiki: wiki, review: rv, history: hist,
+		runs: NewRunManager(), tasks: tasks,
+	}
+}
+
 // Handler returns the configured ServeMux with all routes registered.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
