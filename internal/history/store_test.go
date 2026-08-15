@@ -3,6 +3,7 @@ package history
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"customer-demand-agent/internal/domain"
@@ -50,8 +51,9 @@ func TestEnsureSessionSameTenantUpdate(t *testing.T) {
 	}
 }
 
-// TestTenantColumnMigration de-tenancy 契约：老库带 NOT NULL tenant_id 列时
-// Open 一次性重建去列（数据原样保留，幂等）。
+// TestTenantColumnMigration de-tenancy 契约：列保留不读写——老库的
+// NOT NULL 无默认 tenant_id 列在 Open 时补 DEFAULT 'default'（表重建，
+// 列与历史值原样保留），此后无列 INSERT 合法。幂等。
 func TestTenantColumnMigration(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "old.db")
@@ -82,24 +84,38 @@ func TestTenantColumnMigration(t *testing.T) {
 		t.Fatalf("Open 应完成迁移: %v", err)
 	}
 	defer s.Close()
-	// 1) 列已消失
+	// 1) 列保留且带默认值
 	rows, err := s.db.Query(`PRAGMA table_info(sessions)`)
 	if err != nil {
 		t.Fatal(err)
 	}
+	colFound := false
+	hasDefault := false
 	for rows.Next() {
 		var cid int
 		var name, ctype string
 		var notNull int
-		var dflt any
+		var dflt sql.NullString
 		var pk int
 		_ = rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk)
 		if name == "tenant_id" {
-			rows.Close()
-			t.Fatal("迁移后 tenant_id 列应消失")
+			colFound = true
+			hasDefault = dflt.Valid && strings.Trim(dflt.String, `"'`) == "default"
 		}
 	}
 	rows.Close()
+	if !colFound {
+		t.Fatal("tenant_id 列应保留（契约：列保留）")
+	}
+	if !hasDefault {
+		t.Fatal("tenant_id 列应有 DEFAULT 'default'")
+	}
+	// 历史租户值原样保留
+	var legacyVal string
+	_ = s.db.QueryRow(`SELECT tenant_id FROM sessions WHERE session_id='legacy-1'`).Scan(&legacyVal)
+	if legacyVal != "corp-a" {
+		t.Fatalf("历史租户值应保留，got %q", legacyVal)
+	}
 	// 2) 数据保留
 	if err := s.EnsureSession("legacy-1", "老会话", ""); err != nil {
 		t.Fatal(err)

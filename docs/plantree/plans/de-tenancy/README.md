@@ -46,7 +46,7 @@ tenant 渗透 9 个文件 124 行（非测试）+ 44 行测试：
 
 ## 明确不做
 
-- 不做数据迁移（列保留，新行 tenant_id 写死 'default' 或 NULL 均可）。
+- 不搬数据不删列：tenant_id 列保留；老库（NOT NULL 无默认）Open 时表重建补 DEFAULT 'default'，历史值原样保留；代码 INSERT/SELECT 均不涉及该列。
 - 不删 wiki/记忆的组织级共享概念（ADR-011 的另一半——产品/行业/客户
   记忆组织级共享——不受影响，本来就无租户维度）。
 
@@ -58,7 +58,7 @@ tenant 渗透 9 个文件 124 行（非测试）+ 44 行测试：
 
 - 协议层：InboundMessage 删 TenantID 字段
 - Agent 层：Message/四大回调（Sink/Source/CustomerResolver/HistorySearcher）签名去 tenantID；turnState 去 tenant
-- 存储层：EnsureSession/AppendCheckpoint/ListCheckpoints/ListSessions/GetSession/DeleteSession/SearchMessages/TruncateAfter 八方法去参；归属校验与 JOIN 删除；新行 tenant_id 写死 "default"（列保留）
+- 存储层：EnsureSession/AppendCheckpoint/ListCheckpoints/ListSessions/GetSession/DeleteSession/SearchMessages/TruncateAfter 八方法去参；归属校验与 JOIN 删除；tenant_id 列保留（新库 DDL 带 DEFAULT，老库表重建补 DEFAULT，INSERT 不提及该列，SELECT 不查）
 - HTTP 层：tenantKey/withTenant/tenantFrom 全删；路由直挂；请求日志去租户列；X-Tenant-ID 头自然忽略（无任何代码读它）
 - 配置：default_tenant 字段删除（example 与运行 config 同步）
 - 测试：cross_tenant_test.go 删除；TestTenantIsolation/TestRunEndpointsTenantIsolation 删除或改写为「无租户头可访问+任意头忽略」正向测试；TestSearchMessages/TestCheckpoint* 适配单租户
