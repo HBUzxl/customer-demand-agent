@@ -32,15 +32,16 @@ type Server struct {
 	registry  *model.Registry
 	runs      *RunManager    // F0：服务端 Run 任务（执行与连接解耦）
 	tasks     *taskbg.Runner // P11：后台任务（观测台消费）
+	logRing   *LogRing       // C2：日志环形缓冲（观测台 tail）
 }
 
 // New creates the HTTP server with all dependencies injected.
 func New(store *config.Store, ag *agent.Agent, rv *review.Service, wiki *longterm.WikiStore,
-	hist *history.Store, mm *model.Manager, reg *model.Registry, tasks *taskbg.Runner) *Server {
+	hist *history.Store, mm *model.Manager, reg *model.Registry, tasks *taskbg.Runner, logs *LogRing) *Server {
 	return &Server{
 		store: store, agent: ag, review: rv, storeWiki: wiki,
 		history: hist, modelMgr: mm, registry: reg,
-		runs: NewRunManager(), tasks: tasks,
+		runs: NewRunManager(), tasks: tasks, logRing: logs,
 	}
 }
 
@@ -80,6 +81,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/console/prompts", s.handleConsolePrompts)
 	mux.HandleFunc("GET /api/console/memory", s.handleConsoleMemoryStats)
 	mux.HandleFunc("GET /api/console/health", s.handleConsoleHealth)
+	mux.HandleFunc("GET /api/console/logs", s.handleConsoleLogs)
+	mux.HandleFunc("GET /api/console/llm-audit", s.handleConsoleLLMAudit)
 	mux.HandleFunc("GET /api/tasks", s.handleTasksList)
 	mux.HandleFunc("POST /api/tasks/consolidate", s.handleTaskConsolidate)
 	mux.HandleFunc("POST /api/tasks/lint", s.handleTaskLint)

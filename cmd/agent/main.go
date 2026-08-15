@@ -8,6 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -178,7 +179,11 @@ func main() {
 		}
 	})
 
-	server := httpapi.New(store, ag, reviewSvc, wikiStore, hist, modelMgr, registry, runner)
+	// C2 观测台：日志环形缓冲（tee：stderr 保留 + ring 供 tail）
+	logRing := httpapi.NewLogRing(500)
+	log.SetOutput(io.MultiWriter(os.Stderr, logRing))
+
+	server := httpapi.New(store, ag, reviewSvc, wikiStore, hist, modelMgr, registry, runner, logRing)
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,

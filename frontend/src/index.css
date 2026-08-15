@@ -2069,3 +2069,129 @@ details > summary {
   color: var(--text-faint);
   margin-top: 2px;
 }
+
+/* C2 观测台 */
+.ob-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+.ob-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  min-width: 0;
+}
+.ob-panel h3 {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ob-panel.ob-logs {
+  grid-column: 1 / -1;
+}
+.ob-empty {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  padding: 8px 0;
+}
+.ob-task {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+.ob-task-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  flex-wrap: wrap;
+}
+.ob-status.running {
+  color: var(--green);
+  animation: runpulse 1.2s ease-in-out infinite;
+}
+.ob-status.done {
+  color: var(--green);
+}
+.ob-status.failed {
+  color: var(--red, #d64545);
+}
+.ob-task-type {
+  font-weight: 600;
+}
+.ob-task-detail {
+  color: var(--text-dim);
+}
+.ob-task-time {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.ob-task-result {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  padding-left: 20px;
+}
+.ob-audit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.ob-audit-ok.ok {
+  color: var(--green);
+}
+.ob-audit-ok.no {
+  color: var(--red, #d64545);
+}
+.ob-audit-model {
+  font-weight: 600;
+}
+.ob-audit-fb {
+  font-size: 10px;
+  color: var(--amber, #c9a227);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.ob-audit-task {
+  color: var(--text-faint);
+}
+.ob-audit-ms {
+  color: var(--text-dim);
+}
+.ob-audit-time {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.ob-audit-err {
+  width: 100%;
+  color: var(--red, #d64545);
+  font-size: 11px;
+  padding-left: 18px;
+}
+.ob-logview {
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.ob-logline {
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-dim);
+}

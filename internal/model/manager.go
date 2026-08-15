@@ -16,6 +16,18 @@ type Manager struct {
 	client   *llm.Client
 	registry *Registry
 	router   *RouterConfig
+	audit    []CallAudit // C2：最近 LLM 调用审计（观测台）
+}
+
+// CallAudit 一次 LLM 调用的审计记录。
+type CallAudit struct {
+	Task       string `json:"task"`     // analysis / background / …
+	Model      string `json:"model"`    // 实际命中的模型名
+	Fallback   bool   `json:"fallback"` // 是否走了回退
+	DurationMs int64  `json:"duration_ms"`
+	OK         bool   `json:"ok"`
+	Error      string `json:"error,omitempty"`
+	At         string `json:"at"`
 }
 
 // NewManager 创建模型管理器。
@@ -49,7 +61,13 @@ func (m *Manager) Chat(ctx context.Context, task TaskType, req *llm.ChatRequest)
 			lastErr = fmt.Errorf("模型 %s: %w", name, err)
 			continue
 		}
+		start := time.Now()
 		resp, err := m.callWithRetry(ctx, cfg, req)
+		m.recordAudit(CallAudit{
+			Task: string(task), Model: name, Fallback: i > 0,
+			DurationMs: time.Since(start).Milliseconds(), OK: err == nil,
+			Error: errStr(err), At: start.Format(time.RFC3339),
+		})
 		if err == nil {
 			return resp, nil
 		}
@@ -60,6 +78,30 @@ func (m *Manager) Chat(ctx context.Context, task TaskType, req *llm.ChatRequest)
 		}
 	}
 	return nil, fmt.Errorf("所有模型均失败，最后错误: %w", lastErr)
+}
+
+// recordAudit 记录一次调用（环形，保 100 条）。
+func (m *Manager) recordAudit(a CallAudit) {
+	m.audit = append(m.audit, a)
+	if len(m.audit) > 100 {
+		m.audit = m.audit[len(m.audit)-100:]
+	}
+}
+
+// AuditRecent 返回最近审计记录（倒序）。
+func (m *Manager) AuditRecent(limit int) []CallAudit {
+	out := make([]CallAudit, 0, limit)
+	for i := len(m.audit) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, m.audit[i])
+	}
+	return out
+}
+
+func errStr(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // callWithRetry 对单个模型做指数退避重试。
@@ -112,6 +154,12 @@ func (m *Manager) ToolsForExport(tools []domain.Tool) []domain.Tool { return too
 // ChatStream 流式调用：按任务路由，失败时仅在「尚未推送任何 byte」时才换模型重试
 // （一旦开始推送内容就无法撤销，不能回退）。
 func (m *Manager) ChatStream(ctx context.Context, task TaskType, req *llm.ChatRequest, cb llm.DeltaCallbacks) (*llm.ChatResponse, error) {
+	start := time.Now()
+	modelName := m.router.Route(task)
+	defer func() {
+		m.recordAudit(CallAudit{Task: string(task), Model: modelName, DurationMs: time.Since(start).Milliseconds(), At: start.Format(time.RFC3339)})
+	}()
+	_ = modelName
 	primary := m.router.Route(task)
 	chain := m.router.Fallback.Chain
 	models := uniqueModels(append([]string{primary}, chain...))

@@ -10,6 +10,7 @@ const MemoryList = lazy(() => import("./pages/MemoryList"));
 const MemoryEditor = lazy(() => import("./pages/MemoryEditor"));
 const MemoryDetail = lazy(() => import("./pages/MemoryDetail"));
 const Review = lazy(() => import("./pages/Review"));
+const Observe = lazy(() => import("./pages/Observe"));
 const Settings = lazy(() => import("./pages/Settings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -61,6 +62,7 @@ export const router = createBrowserRouter([
         ],
       },
       { path: "review", element: withSuspense(Review) },
+      { path: "observe", element: withSuspense(Observe) },
       { path: "settings", element: withSuspense(Settings) },
       { path: "*", element: withSuspense(NotFound) },
     ],

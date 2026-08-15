@@ -105,3 +105,8 @@ func toolDescSummary(s string) string { return s }
 
 // 引用 taskbg 防止 unused（若 Runner 未启用时 handlers 仍可用）
 var _ = taskbg.TaskConsolidate
+
+// handleConsoleLLMAudit: GET /api/console/llm-audit —— 最近 LLM 调用审计。
+func (s *Server) handleConsoleLLMAudit(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"items": s.modelMgr.AuditRecent(50)})
+}
