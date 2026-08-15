@@ -286,9 +286,20 @@ type ToolCallRecord struct {
 
 // SessionDetail 是会话详情（含完整轨迹，供回放）。
 type SessionDetail struct {
-	Session   SessionListItem  `json:"session"`
-	Messages  []MessageRecord  `json:"messages"`
-	ToolCalls []ToolCallRecord `json:"tool_calls"`
+	Session     SessionListItem  `json:"session"`
+	Messages    []MessageRecord  `json:"messages"`
+	ToolCalls   []ToolCallRecord `json:"tool_calls"`
+	Checkpoints []CheckpointRec  `json:"checkpoints"` // P4：回放页 checkpoint 行
+}
+
+// CheckpointRec 是回放用的 checkpoint 摘要（不含完整 payload）。
+type CheckpointRec struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	HasAnalysis bool   `json:"has_analysis"`
+	Question    string `json:"question,omitempty"`
+	Answer      string `json:"answer,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // MessageHit 是历史检索的一条命中。
@@ -371,7 +382,40 @@ func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
 		}
 		det.ToolCalls = append(det.ToolCalls, t)
 	}
+
+	// P4：checkpoint 摘要（回放页时间线行）。已持 s.mu——不调 ListCheckpoints
+	// （它也要 Lock），直接轻量查询 payload 自行解。
+	crows, cerr := s.db.Query(`SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
+		WHERE session_id=? ORDER BY id ASC`, sessionID)
+	if cerr == nil {
+		defer crows.Close()
+		for crows.Next() {
+			var cpID, cpType, payload string
+			var createdAt time.Time
+			if err := crows.Scan(&cpID, &cpType, &payload, &createdAt); err != nil {
+				continue
+			}
+			var cp domain.Checkpoint
+			if json.Unmarshal([]byte(payload), &cp) != nil {
+				continue
+			}
+			det.Checkpoints = append(det.Checkpoints, CheckpointRec{
+				ID: cpID, Type: cpType, HasAnalysis: cp.Analysis != nil,
+				Question: truncateStr(cp.Question, 60), Answer: truncateStr(cp.Answer, 60),
+				CreatedAt: createdAt.Format("15:04:05"),
+			})
+		}
+	}
 	return &det, nil
+}
+
+// truncateStr 截断字符串（checkpoint 摘要用）。
+func truncateStr(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // DeleteSession 删除某会话及其全部轨迹（校验 tenant）。

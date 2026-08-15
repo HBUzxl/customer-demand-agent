@@ -2195,3 +2195,9 @@ details > summary {
   word-break: break-all;
   color: var(--text-dim);
 }
+
+/* P4 checkpoint 行 */
+.rp-kind.k-cp {
+  color: #7c6bd9;
+  background: color-mix(in srgb, #7c6bd9 12%, transparent);
+}

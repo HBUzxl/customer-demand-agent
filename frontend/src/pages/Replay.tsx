@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { sessionGet } from "../api/client";
-import type { AnalysisResult, SessionDetail } from "../types";
+import type { AnalysisResult, CheckpointRec, SessionDetail } from "../types";
 import MarkdownView from "../components/MarkdownView";
 import ResultCard from "../components/ResultCard";
 import { JsonView } from "../components/ToolTrace";
@@ -34,7 +34,8 @@ type Row =
   | { kind: "user"; id: number; time: string; content: string }
   | { kind: "system"; id: number; time: string; content: string }
   | { kind: "tool"; id: number; time: string; tc: ToolTrace }
-  | { kind: "assistant"; id: number; time: string; content: string; analysis?: AnalysisResult };
+  | { kind: "assistant"; id: number; time: string; content: string; analysis?: AnalysisResult }
+  | { kind: "checkpoint"; id: string; time: string; cp: CheckpointRec };
 
 interface Msg {
   id: number;
@@ -48,6 +49,10 @@ interface Msg {
  * message_id 归属、调换到 assistant 之前——真实发生顺序）→ assistant 回复。
  */
 function buildRows(d: SessionDetail): Row[] {
+  // P4：checkpoint 行（记忆系统在做什么）——近似插在对应位置（初始/重分析在
+  // user 行前、followup 在 assistant 行后）按创建顺序穿插
+  const cps = d.checkpoints || [];
+  let cpIdx = 0;
   const byMessage = new Map<number, ToolTrace[]>();
   for (const c of d.tool_calls || []) {
     const list = byMessage.get(c.message_id) || [];
@@ -61,6 +66,16 @@ function buildRows(d: SessionDetail): Row[] {
     const time = new Date(msg.created_at).toLocaleTimeString("zh-CN", { hour12: false });
     if (msg.role === "user") {
       pendingSystem = null; // 用户开新轮，丢弃未消费的 system（防御）
+      // P4：先弹 initial/reanalysis 类 checkpoint（它们跟随需求输入产生）
+      while (cpIdx < cps.length && cps[cpIdx].type !== "followup") {
+        rows.push({
+          kind: "checkpoint",
+          id: cps[cpIdx].id,
+          time: cps[cpIdx].created_at,
+          cp: cps[cpIdx],
+        });
+        cpIdx++;
+      }
       rows.push({ kind: "user", id: msg.id, time, content: msg.content });
     } else if (msg.role === "system") {
       pendingSystem = { kind: "system", id: msg.id, time, content: msg.content };
@@ -81,6 +96,16 @@ function buildRows(d: SessionDetail): Row[] {
         }
       }
       rows.push({ kind: "assistant", id: msg.id, time, content: msg.content, analysis });
+      // P4：followup checkpoint 跟随 assistant 轮次
+      while (cpIdx < cps.length && cps[cpIdx].type === "followup") {
+        rows.push({
+          kind: "checkpoint",
+          id: cps[cpIdx].id,
+          time: cps[cpIdx].created_at,
+          cp: cps[cpIdx],
+        });
+        cpIdx++;
+      }
     }
   }
   return rows;
@@ -91,6 +116,7 @@ const KIND_META: Record<string, { label: string; cls: string }> = {
   system: { label: "系统提示词", cls: "k-system" },
   tool: { label: "工具调用", cls: "k-tool" },
   assistant: { label: "助手", cls: "k-assistant" },
+  checkpoint: { label: "记忆检查点", cls: "k-cp" },
 };
 
 function summaryOf(r: Row): string {
@@ -103,6 +129,11 @@ function summaryOf(r: Row): string {
       return r.tc.tool;
     case "assistant":
       return r.content.replace(/\s+/g, " ").slice(0, 80) || "—";
+    case "checkpoint": {
+      const t =
+        { initial: "首次分析", followup: "追问", reanalysis: "重分析" }[r.cp.type] || r.cp.type;
+      return `${t}${r.cp.has_analysis ? " · 含结构化分析" : ""}${r.cp.question ? ` · Q: ${r.cp.question.slice(0, 30)}` : ""}`;
+    }
   }
 }
 
@@ -117,6 +148,40 @@ function Detail({ row }: { row: Row }) {
         <div className="rp-full">
           {row.analysis && <ResultCard r={row.analysis} />}
           <MarkdownView>{row.content}</MarkdownView>
+        </div>
+      );
+    case "checkpoint":
+      return (
+        <div className="rp-full">
+          <div className="rp-kv">
+            <span>类型</span>
+            <span>
+              {(
+                { initial: "首次分析", followup: "追问", reanalysis: "重新分析" } as Record<
+                  string,
+                  string
+                >
+              )[row.cp.type] || row.cp.type}
+            </span>
+          </div>
+          {row.cp.has_analysis && (
+            <div className="rp-kv">
+              <span>分析</span>
+              <span>本轮提交了结构化需求分析（见上方助手行）</span>
+            </div>
+          )}
+          {row.cp.question && (
+            <div className="rp-kv">
+              <span>问题</span>
+              <span>{row.cp.question}</span>
+            </div>
+          )}
+          {row.cp.answer && (
+            <div className="rp-kv">
+              <span>回答</span>
+              <span>{row.cp.answer}</span>
+            </div>
+          )}
         </div>
       );
     case "tool": {
