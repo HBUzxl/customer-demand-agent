@@ -43,7 +43,7 @@ npm run format:check      # prettier（已配，见「已知基线」）
 
 ## 配置约定（重要）
 
-- **配置走 `config.json`，不用环境变量**。API key / 模型列表 / 路由 / 回退全在这个文件。
+- **业务配置走 `config.json`**。API key / 模型列表 / 路由 / 回退全在这个文件（例外：`CDA_DATA_DIR` 环境变量指定数据根——见下方 P9）。
 - `config.json` 被 `.gitignore` 忽略（含 api_key，**绝不提交**）。首次运行自动从 `config.example.json` 生成。
 - 运行时改配置：前端「设置」页或 `PUT /api/config`，改动**回写文件**。
 - 没配 api_key 时 `/api/analyze` 返回 502，其余接口正常。
@@ -106,7 +106,7 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 
 ## 测试
 
-- **`go test ./...`**：当前 agent / channel/http / history / memory×4 共 8 个包有测试，**含 mock LLM 全链路集成测试**（无需真实 key）。
+- **`go test ./...`**：当前 agent / channel/http / history / memory×4 / config / taskbg / cmd 共 11 个包有测试，**含 mock LLM 全链路集成测试 + 固化 HTTP 端到端**（无需真实 key）。
 - **无测试的包**：config / domain / llm / model / review / api —— 新行为补测试时优先这些。
 - **`./scripts/e2e.sh`**：真实 HTTP 端到端冒烟（健康/配置/记忆 CRUD/审核流/会话），需后端先起。
 - 新逻辑**必须带验证行为的测试**（不是空断言）。

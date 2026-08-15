@@ -251,7 +251,7 @@ e2e 第 4 节改测 P10 新语义。**字段级 patch / 留痕 / 软删回收站
 
 #### 原方案
 
-记忆管线三阶段（捕获→固化→人审，方案待用户裁决）
+记忆管线三阶段（捕获→固化→人审——已裁决落地：主 Agent ensure 不收紧，固化走 taskbg 后台→pending 人审）
 
 用户命题（2026-08-14）：记忆写入是直接放还是专职 Agent 处理？AI 总结
 保结构但丢细节；结构化才能快速检索——两难。
@@ -320,6 +320,9 @@ UpsertEntry typed=nil 索引漏建修复、analysis_submit 覆盖语义澄清。
 P1 history_search、P10 核心门禁、P8 悬案核实（随 ADR-016 消解）。
 可复现冒烟：`./scripts/smoke-p0.sh`（需真实 LLM 的运行实例）。
 
-**候选批次**：P9 数据全局位置（Docker 迁移刚需）→ P11 记忆管线三阶段
-（方案待用户裁决：主 Agent ensure 是否收紧为仅 observe）→ P5/P6 后台
-任务基础设施（TaskBackground 域，P11/P5 共用）。
+**候选批次（已全部落地，2026-08-15）**：P9 数据全局位置 ✅（CDA_DATA_DIR 三级
+
+- XDG 默认 + seedWiki 自动迁移 + Dockerfile）；P11 记忆管线 ✅（taskbg 包：
+主 Agent ensure 不收紧——用户裁决固化走后台：observe 注记 → LLM 抽结构 →
+pending 人审）；P5/P6 后台任务基础设施 ✅（TaskBackground 域，五检查 Lint +
+时效归档）。全部候选项已消化，本 plan 关闭。

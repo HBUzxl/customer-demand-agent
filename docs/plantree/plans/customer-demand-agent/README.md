@@ -17,7 +17,7 @@
 | [[topics/memory-tools.md | Memory Function Calling]] |
 | [[topics/model-management.md | 模型管理系统]] |
 | [[topics/agent-autonomy.md | 自主 Agent 设计]] |
-| [[topics/history-tenancy.md | 历史记录与多租户]] |
+| [[topics/history-tenancy.md | 历史记录与多租户（租户部分已废止）]] |
 | [[topics/wiki-knowledge.md | Wiki 知识库]] |
 | [[topics/agent-core.md | Agent 核心]] |
 | [[open-questions.md]] | 未决问题 |
@@ -30,6 +30,6 @@
 3. [[topics/memory-tools.md]] 理解 AI 能用什么工具操作记忆
 4. [[topics/model-management.md]] 理解模型怎么调度
 5. [[topics/agent-autonomy.md]] 理解为什么是自主 Agent 而非 workflow
-6. [[topics/history-tenancy.md]] 理解历史记录和多租户
+6. [[topics/history-tenancy.md]] 理解历史记录（多租户已废止，读时按顶部声明过滤）
 7. [[topics/agent-core.md]] 理解编排逻辑
 8. [[open-questions.md]] 看看还没定的事
