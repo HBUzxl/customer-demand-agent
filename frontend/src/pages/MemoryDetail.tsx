@@ -209,12 +209,10 @@ export default function MemoryDetail() {
             </div>
           )}
 
-          {/* 正文 markdown 渲染（仅文档详情页；主产品页只显示文档卡片）*/}
-          {!isMainProduct && (
-            <div className="panel">
-              <MarkdownView>{entry.content || ""}</MarkdownView>
-            </div>
-          )}
+          {/* 正文 markdown 渲染（文档详情+主产品页均显示；主产品页在画像下方、文档卡片上方）*/}
+          <div className="panel">
+            <MarkdownView>{entry.content || ""}</MarkdownView>
+          </div>
         </>
       )}
       <ConfirmDialog

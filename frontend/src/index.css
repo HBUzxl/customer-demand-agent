@@ -2390,3 +2390,16 @@ table input[type="checkbox"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 记忆卡片选中态 */
+.doc-card {
+  position: relative;
+}
+.doc-card.sel {
+  border-color: color-mix(in srgb, var(--accent, #4a7dff) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent, #4a7dff) 8%, var(--surface));
+}
+.doc-grid-actions {
+  grid-column: 1 / -1;
+  padding: 0 2px 6px;
+}
