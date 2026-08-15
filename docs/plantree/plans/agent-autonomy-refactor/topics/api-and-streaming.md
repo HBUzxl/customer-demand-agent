@@ -36,5 +36,5 @@ SSE 头 → agent.Message(...) → 持久化 assistant 输出 + trace。
 
 - integration_test：mock LLM 脚本改为"寒暄→纯文本 done"、"需求→tool_call
   analysis_submit→done 带 analysis"两条路径
-- e2e.sh：/api/message 冒烟（无 LLM 路径：session 建立 + 403 跨租户已在覆盖）；
-  analyze/chat shim 回归
+- e2e.sh：/api/message 冒烟（无 LLM 路径：session 建立 + analyze/chat shim
+  回归；跨租户覆盖已随 de-tenancy 移除）

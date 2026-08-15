@@ -31,7 +31,9 @@ Session (session_id, created_at)  # tenant_id 列保留但代码不读写（de-t
 - **审计**：Agent 为什么这么判断？查它的工具调用记录
 - **断点续传**：会话中断后从 checkpoint 恢复
 
-### 存储方案
+### 存储方案（de-tenancy 后已不再按 tenant 隔离；现状 schema 见 `internal/history/store.go` 与 `data/wiki/`）
+
+<details><summary>废止前的设计存档（点击展开）</summary>
 
 SQLite（`modernc.org/sqlite`，纯 Go 无 cgo）：
 
@@ -62,6 +64,8 @@ CREATE TABLE tool_calls (
     created_at  TIMESTAMP
 );
 ```
+
+</details>
 
 ## 二、多租户（已废止——ADR-011 废止 2026-08-14，de-tenancy 已落地）
 
