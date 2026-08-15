@@ -14,6 +14,8 @@
 | console-config | 1433aae（三态+热生效） | 5addb0b（回退链可编辑） |
 | checkpoint-tree | 34b030c（链→树+软分叉+分支过滤） | fccf75d（smoke-f0 断言）+ 5addb0b（Conversation 分支切换+PrevID 父指针语义） |
 | ui-copy-cleanup | 59c834c（三类清扫+终扫断言） | 5addb0b（lint unused 清理连带） |
-| verify-close | 8cdc157（plan-tree 九 Done） | 5addb0b + 本 commit |
+| verify-close（第 10 项：终态验证，goal task 形态无独立 plan 文件） | 8cdc157（九功能 plan 转 Done）+ 852caa4（终态收口） | 本轮 commit |
 
 审计修复轮：fccf75d / 5addb0b（七项）/ 本轮（lint warnings unused 清零+baseline 门禁文档同步+四脚本留证）
+
+> 说明：goal 的「10 个 plan」= 9 个功能 plan + 终态验证（verify-close task）。验证证据 = 本对照表 + scripts/VERIFY_LOG.md + 四脚本可随时复跑。

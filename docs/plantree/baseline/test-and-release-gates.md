@@ -6,10 +6,10 @@
 
 - **后端测试**：`go test ./...`
   - 有测试的包：`internal/agent`（含 mock LLM 全链路集成测试）、`internal/channel/http`、`internal/memory/{longterm,shortterm,tools,assembler}`
-  - 无测试的包（补测优先）：`config`、`domain`、`history`、`llm`、`model`、`review`、`api`
+  - ~~无测试的包~~（2026-08-15 已全覆盖：agent/channel/http/history/memory×4/config/taskbg/cmd 共 11 包有测试；纯类型包 domain/api 不需要独立测试）
   - 集成测试用 `httptest` + mock LLM 网关，**无需真实 API key**
 - **端到端冒烟**：`./scripts/e2e.sh`（健康/配置/记忆 CRUD/审核流/会话，需后端先起，无需 LLM）
-- **前端**：`npm run build`（= `tsc -b && vite build`）作为类型 + 构建门禁；暂无前端单元测试
+- **前端**：`npm run build`（= `tsc -b && vite build`）作为类型 + 构建门禁；无前端单元测试（vitest 为二期候选，一期明确排除）
 - **CI**：`.github/workflows/ci.yml`
   - 阻塞门禁：后端 `go build` / `go vet` / `go test -race` / `golangci-lint`（0 issue）/ `govulncheck`（0 漏洞，需 go1.26.6+ 工具链）；前端 `tsc --noEmit` / `npm run lint`（0 errors） / `npm run format:check` / `npm run build`
   - 非阻塞 informational：`npm audit`（4 漏洞基线，vite 8 breaking 升级待用户决策）
