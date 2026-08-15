@@ -138,3 +138,57 @@ func TestTenantColumnMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestTenantColumnRestore 中间态库（曾经历删列迁移、列已不存在）：
+// Open 时 ALTER 补回带 DEFAULT 的列——契约「列恒在」对任意历史形态成立。
+func TestTenantColumnRestore(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "mid.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE sessions (
+    session_id TEXT PRIMARY KEY,
+    title      TEXT,
+    customer   TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO sessions(session_id, title) VALUES('m1', '中间态')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	rows, _ := s.db.Query(`PRAGMA table_info(sessions)`)
+	colOK := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		_ = rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk)
+		if name == "tenant_id" && dflt.Valid {
+			colOK = true
+		}
+	}
+	rows.Close()
+	if !colOK {
+		t.Fatal("列应被补回且带默认值")
+	}
+	if err := s.EnsureSession("m2", "新行", ""); err != nil {
+		t.Fatalf("无列 INSERT 应合法: %v", err)
+	}
+	var v string
+	_ = s.db.QueryRow(`SELECT tenant_id FROM sessions WHERE session_id='m2'`).Scan(&v)
+	if v != "default" {
+		t.Fatalf("新行应为默认值，got %q", v)
+	}
+}

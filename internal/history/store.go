@@ -30,6 +30,26 @@ type Store struct {
 	db *sql.DB
 }
 
+// hasTenantColumnAny 探测 sessions.tenant_id 列是否存在。
+func hasTenantColumnAny(db *sql.DB) bool {
+	rows, err := db.Query(`PRAGMA table_info(sessions)`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk) == nil && name == "tenant_id" {
+			return true
+		}
+	}
+	return false
+}
+
 // hasTenantColumnWithoutDefault 探测 sessions.tenant_id 列存在且无默认值
 // （de-tenancy 前的老库形态——需要补 DEFAULT 迁移）。
 func hasTenantColumnWithoutDefault(db *sql.DB) bool {
@@ -159,11 +179,16 @@ func Open(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("建表: %w", err)
 	}
 	// 轻量迁移：老库的 tool_calls 没有 message_id 列（回放归属边界，2026-08-14）。
-	// de-tenancy（目标契约：tenant_id 列保留、代码不读写）：老库的
-	// tenant_id 列是 NOT NULL 无默认——无列 INSERT 会失败。一次性表重建
-	// 给该列补 DEFAULT 'default'（列保留、历史值不动），之后 INSERT 完全
-	// 不提及该列。幂等：列已有默认值则跳过。
-	if hasTenantColumnWithoutDefault(db) {
+	// de-tenancy（目标契约：tenant_id 列保留、代码不读写）：
+	// ①列缺失（曾经历删列迁移的中间态库）：ALTER 补列（带 DEFAULT，幂等）；
+	// ②列在但 NOT NULL 无默认（de-tenancy 前老库）：表重建补 DEFAULT
+	//   （列保留、历史值不动），之后 INSERT 完全不提及该列。均幂等。
+	if !hasTenantColumnAny(db) {
+		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'`); err != nil {
+			// 已存在（并发迁移）等 benign 错误忽略
+			_ = err
+		}
+	} else if hasTenantColumnWithoutDefault(db) {
 		if err := addTenantColumnDefault(db); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("老库 tenant_id 列补默认值迁移: %w", err)
