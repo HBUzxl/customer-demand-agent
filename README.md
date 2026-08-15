@@ -76,7 +76,7 @@ FRONTEND_DIST=./frontend/dist ../scripts/run.sh
 ### 4. 验证
 
 ```bash
-./scripts/e2e.sh           # 端到端 API 冒烟测试（10 项，无需 LLM）
+./scripts/e2e.sh           # 端到端 API 冒烟测试（29 项断言，无需 LLM）
 ```
 
 ## 核心能力
