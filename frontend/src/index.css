@@ -2376,3 +2376,17 @@ table input[type="checkbox"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 只读客户标签（Agent 绑定后展示） */
+.cust-ro {
+  font-size: 12px;
+  background: color-mix(in srgb, var(--gold, #d4a843) 14%, transparent);
+  color: var(--gold, #d4a843);
+  border: 1px solid color-mix(in srgb, var(--gold, #d4a843) 30%, transparent);
+  border-radius: 12px;
+  padding: 3px 10px;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

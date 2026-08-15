@@ -253,3 +253,48 @@ func (a *Agent) execAskUser(argsRaw string, st *turnState) string {
 	st.pendingQuestion = &Event{Type: EventAskUser, Question: args.Question, Options: args.Options}
 	return `{"received":true,"note":"本轮结束，等待用户选择"}`
 }
+
+// ToolBindCustomer 是业务工具：把当前会话绑定到某客户（客户身份 Agent 自主
+// 绑定，2026-08-15 用户裁决——绑定后每轮 prompt 自动注入该客户画像）。
+const ToolBindCustomer = "session_bind_customer"
+
+// bindCustomerDef 返回 session_bind_customer 的 function-calling 定义。
+func bindCustomerDef() domain.Tool {
+	return domain.Tool{
+		Type: "function",
+		Function: domain.ToolFunction{
+			Name: ToolBindCustomer,
+			Description: "把当前会话绑定到某客户。调用时机：对话开始涉及具体客户的需求/场景，且本会话尚未绑定客户时" +
+				"（每会话只绑一次）。绑定后每轮自动携带该客户的画像上下文。通常先 memory_list(customer) 看已有客户，" +
+				"再 ask_user 问用户「这是谁家客户」，得到答案后调用本工具。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"customer": map[string]any{"type": "string", "description": "客户名（与客户记忆条目 title 一致最佳）"},
+				},
+				"required": []string{"customer"},
+			},
+		},
+	}
+}
+
+// execBindCustomer 拦截处理：写会话客户绑定（经回调落库 sessions.customer）。
+func (a *Agent) execBindCustomer(argsRaw string, sessionID string) string {
+	var args struct {
+		Customer string `json:"customer"`
+	}
+	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
+		return fmt.Sprintf(`{"error":"参数解析: %s"}`, jsonEscape(err.Error()))
+	}
+	if strings.TrimSpace(args.Customer) == "" {
+		return `{"error":"customer 不能为空"}`
+	}
+	if a.bindCustomer == nil {
+		return `{"error":"未配置绑定回调"}`
+	}
+	if err := a.bindCustomer(sessionID, strings.TrimSpace(args.Customer)); err != nil {
+		return fmt.Sprintf(`{"error":"绑定失败: %s"}`, jsonEscape(err.Error()))
+	}
+	custJSON, _ := json.Marshal(strings.TrimSpace(args.Customer))
+	return fmt.Sprintf(`{"status":"ok","customer":%s,"note":"后续轮次自动携带该客户画像"}`, string(custJSON))
+}

@@ -100,6 +100,11 @@ func main() {
 	// P1 history_search：Agent 可回溯历史对话原文（跨会话）
 	ag.SetHistorySearcher(hist.SearchMessages)
 
+	// 客户绑定 Agent 自主化（2026-08-15）：session_bind_customer 工具落库
+	ag.SetCustomerBinder(func(sessionID, customer string) error {
+		return hist.EnsureSession(sessionID, "", customer)
+	})
+
 	// ── 审核系统 ────────────────────────────────────────────
 	reviewSvc := review.New(wikiStore)
 

@@ -666,3 +666,29 @@ func TestAgentAskUser(t *testing.T) {
 		t.Fatal("ask_user 应在 done 之前")
 	}
 }
+
+// TestAgentBindCustomer 客户绑定 Agent 自主化（2026-08-15 用户裁决）：
+// mock LLM 流 memory_list(customer) → ask_user（问客户）→ session_bind_customer
+// → 绑定落库回调；下一轮 prompt 注入客户身份行。
+func TestAgentBindCustomer(t *testing.T) {
+	tc := func(i int, name, args string) string {
+		return `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":` + fmt.Sprint(i) + `,"id":"call_` + fmt.Sprint(i) + `","type":"function","function":{"name":"` + name + `","arguments":` + jsonString(args) + `}}]}}]}`
+	}
+	ag, _, _ := newTestAgent(t, []step{
+		{toolCallJSON: tc(0, "memory_list", `{"type":"customer"}`)},
+		{toolCallJSON: tc(1, "ask_user", `{"question":"这是谁家客户？","options":[{"label":"某跨境电商"},{"label":"新客户"}]}`)},
+		{toolCallJSON: tc(2, "session_bind_customer", `{"customer":"某跨境电商"}`)},
+		{content: "已绑定某跨境电商，继续聊。"},
+	})
+	var bound []string
+	ag.SetCustomerBinder(func(sessionID, customer string) error {
+		bound = append(bound, sessionID, customer)
+		return nil
+	})
+	if _, _, _, err := ag.Message(context.Background(), "bind-s1", "客户想做大促防护", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(bound) != 2 || bound[0] != "bind-s1" || bound[1] != "某跨境电商" {
+		t.Fatalf("绑定回调应收到 (bind-s1, 某跨境电商): %v", bound)
+	}
+}

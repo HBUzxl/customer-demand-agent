@@ -92,6 +92,7 @@ export default function Conversation() {
   const { sessionId: routeSid } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [sessionCustomer, setSessionCustomer] = useState("");
   const [input, setInput] = useState(() => {
     // G2 草稿：进入时恢复该会话的草稿（新建会话无草稿）
     return "";
@@ -99,8 +100,6 @@ export default function Conversation() {
   const [loading, setLoading] = useState(false); // 本视图内订阅进行中
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState(routeSid || "");
-  const [customer, setCustomer] = useState(""); // 会话关联客户（身份行注入 ADR-016 L2）
-  const [editingCustomer, setEditingCustomer] = useState(false);
   const [activeRun, setActiveRun] = useState<{ sid: string; rid: string } | null>(null); // F0：本视图发起/恢复订阅的 Run
   const scrollRef = useRef<HTMLDivElement>(null);
   const unsubRef = useRef<(() => void) | null>(null);
@@ -122,7 +121,7 @@ export default function Conversation() {
       stopSubscription();
       setMessages([]);
       setSessionId("");
-      setCustomer("");
+      setSessionCustomer("");
       setActiveRun(null);
       return;
     }
@@ -133,8 +132,8 @@ export default function Conversation() {
         const d = await sessionGet(routeSid);
         if (cancelled) return;
         setMessages(reconstruct(d.messages || [], d.tool_calls || []));
-        setCustomer(d.session.customer || "");
         setSessionId(routeSid);
+        setSessionCustomer(d.session?.customer || "");
         // F0 切回恢复（竞态安全）：
         // a) running=true 且二次确认仍在跑 → 续订（带 rid 过滤）；
         // b) 查询窗口内 Run 完成（true→false）→ 重拉详情补最终答案；
@@ -366,7 +365,7 @@ export default function Conversation() {
     setInput("");
     setLoading(true);
     try {
-      const handle = await submitMessage(content, sessionId || undefined, customer || undefined);
+      const handle = await submitMessage(content, sessionId || undefined);
       setSessionId(handle.session_id);
       setActiveRun({ sid: handle.session_id, rid: handle.run_id });
       if (!routeSid && handle.session_id)
@@ -453,29 +452,11 @@ export default function Conversation() {
 
   const isEmpty = messages.length === 0 && !loading;
 
-  // 空状态也提供客户名关联（P0：首轮分析就要带客户身份）
-  const customerChip = editingCustomer ? (
-    <input
-      className="cust-input"
-      autoFocus
-      value={customer}
-      placeholder="客户名（如：某跨境电商）"
-      onChange={(e) => setCustomer(e.target.value)}
-      onBlur={() => setEditingCustomer(false)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === "Escape") setEditingCustomer(false);
-      }}
-      title="关联客户后，Agent 每轮知道在与谁对话（画像细节自动检索）"
-    />
-  ) : (
-    <button
-      className="cust-chip"
-      onClick={() => setEditingCustomer(true)}
-      title="设置会话关联的客户"
-    >
-      {customer ? `客户：${customer}` : "+ 关联客户"}
-    </button>
-  );
+  const custChip = sessionCustomer ? (
+    <span className="cust-ro" title={sessionCustomer}>
+      客户：{sessionCustomer}
+    </span>
+  ) : null;
 
   function onScroll() {
     if (scrollRef.current && sessionId) {
@@ -494,7 +475,7 @@ export default function Conversation() {
           </p>
           <div className="composer-wrap">{composer}</div>
           <div className="empty-aux">
-            {customerChip}
+            {custChip}
             <span className="empty-hint">先关联客户，首轮分析即可结合其画像</span>
           </div>
           <div className="examples-grid">
@@ -538,7 +519,7 @@ export default function Conversation() {
           {composer}
           <div className="chat-hint">
             {sessionId ? `会话 ${sessionId.slice(5, 17)}` : "新会话"} · 回车发送
-            {customerChip}
+            {custChip}
           </div>
         </div>
       </div>

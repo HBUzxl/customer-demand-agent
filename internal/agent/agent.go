@@ -82,14 +82,15 @@ func emitEvent(emit func(Event), e Event) {
 
 // Agent 是自主分析智能体。
 type Agent struct {
-	modelMgr   *model.Manager
-	tools      *tools.Registry
-	assembler  *assembler.Assembler
-	sessions   *shortterm.SessionManager
-	saveCP     func(sessionID string, cp *domain.Checkpoint)                          // checkpoint 持久化回调（断点续传）
-	loadCP     func(sessionID string) ([]*domain.Checkpoint, error)                   // checkpoint 读取回调（断点续传）
-	customerOf func(sessionID string) string                                          // 会话关联客户名（跨会话客户上下文）
-	histSearch func(sessionID, query string, limit int) ([]history.MessageHit, error) // 历史检索（P1 history_search 工具）
+	modelMgr     *model.Manager
+	tools        *tools.Registry
+	assembler    *assembler.Assembler
+	sessions     *shortterm.SessionManager
+	saveCP       func(sessionID string, cp *domain.Checkpoint)        // checkpoint 持久化回调（断点续传）
+	loadCP       func(sessionID string) ([]*domain.Checkpoint, error) // checkpoint 读取回调（断点续传）
+	customerOf   func(sessionID string) string
+	bindCustomer func(sessionID, customer string) error                                 // 客户绑定 Agent 自主化（2026-08-15）                                          // 会话关联客户名（跨会话客户上下文）
+	histSearch   func(sessionID, query string, limit int) ([]history.MessageHit, error) // 历史检索（P1 history_search 工具）
 }
 
 // New 创建 Agent。
@@ -105,6 +106,11 @@ func (a *Agent) SetCheckpointSink(fn func(sessionID string, cp *domain.Checkpoin
 // SetCheckpointSource 设置 checkpoint 读取回调（断点续传）。
 func (a *Agent) SetCheckpointSource(fn func(sessionID string) ([]*domain.Checkpoint, error)) {
 	a.loadCP = fn
+}
+
+// SetCustomerBinder 设置会话→客户绑定写回调（session_bind_customer 工具用）。
+func (a *Agent) SetCustomerBinder(fn func(sessionID, customer string) error) {
+	a.bindCustomer = fn
 }
 
 // SetCustomerResolver 设置会话→客户名解析回调（跨会话客户上下文：非空时
@@ -214,7 +220,7 @@ func (a *Agent) Message(ctx context.Context, sessionID, text string, emit func(E
 // 工具调用/结果作为事件推送，直到无工具调用得到最终答案。
 // 不再强制 JSON 输出——输出形态由 Agent 自主决定（ADR-013）。
 func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trace *Trace, emit func(Event), st *turnState) (string, error) {
-	toolDefs := append(a.tools.Definitions(), analysisSubmitDef(), missingAnswerDef(), historySearchDef(), askUserDef())
+	toolDefs := append(a.tools.Definitions(), analysisSubmitDef(), missingAnswerDef(), historySearchDef(), askUserDef(), bindCustomerDef())
 
 	for iter := 0; iter < MaxIterations; iter++ {
 		emitEvent(emit, Event{Type: EventRound, Round: iter + 1})
@@ -281,6 +287,8 @@ func (a *Agent) executeTool(tc domain.ToolCall, trace *Trace, st *turnState) str
 		result = a.execHistorySearch(tc.Function.Arguments, st)
 	case ToolAskUser:
 		result = a.execAskUser(tc.Function.Arguments, st)
+	case ToolBindCustomer:
+		result = a.execBindCustomer(tc.Function.Arguments, st.session)
 	default:
 		args := json.RawMessage(tc.Function.Arguments)
 		r, err := a.tools.Execute(tc.Function.Name, args)
