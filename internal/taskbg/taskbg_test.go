@@ -220,3 +220,21 @@ func TestConsolidateEndToEnd(t *testing.T) {
 		t.Fatal("固化要点应并入内容")
 	}
 }
+
+// TestRunLintMissingEntries P5 第五检查：检索零命中查询 → 该建未建建议。
+func TestRunLintMissingEntries(t *testing.T) {
+	in := LintInput{
+		Entries:           []LintEntry{{Type: "threat", Title: "正常", Tags: []string{"a"}, Summary: "s", Content: "c"}},
+		RecentMissQueries: []string{"零信任架构", "零信任架构", "  ", "ab"},
+	}
+	finds := RunLint(in)
+	var missing []LintFinding
+	for _, f := range finds {
+		if f.Kind == "missing-entry" {
+			missing = append(missing, f)
+		}
+	}
+	if len(missing) != 1 || missing[0].Title != "零信任架构" {
+		t.Fatalf("应去重后报 1 条该建未建（短查询跳过）: %+v", missing)
+	}
+}

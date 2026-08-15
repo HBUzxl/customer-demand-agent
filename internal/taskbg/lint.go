@@ -16,6 +16,9 @@ type LintFinding struct {
 // LintInput Lint 扫描的输入（main 侧收集，避免本包依赖 wiki 结构）。
 type LintInput struct {
 	Entries []LintEntry `json:"entries"`
+	// RecentMissQueries 近期 memory_search 零命中查询原文（main 从 history
+	// tool_calls 收集）——「该建未建」检测输入。
+	RecentMissQueries []string `json:"recent_miss_queries"`
 }
 
 // LintEntry 是参与 Lint 的条目快照。
@@ -66,6 +69,26 @@ func RunLint(in LintInput) []LintFinding {
 	}
 	// ④重叠/矛盾候选（同类型正文 Jaccard > 0.6）
 	out = append(out, findOverlap(in.Entries)...)
+	// ⑤该建未建（检索零命中查询）
+	out = append(out, findMissingEntries(in)...)
+	return out
+}
+
+// findMissingEntries 检索零命中的查询 → 该建未建建议（去重，同查询词只报一次）。
+func findMissingEntries(in LintInput) []LintFinding {
+	seen := map[string]bool{}
+	var out []LintFinding
+	for _, q := range in.RecentMissQueries {
+		q = strings.TrimSpace(q)
+		if len([]rune(q)) < 3 || seen[q] {
+			continue
+		}
+		seen[q] = true
+		out = append(out, LintFinding{
+			Kind: "missing-entry", Type: "all", Title: q,
+			Message: "近期检索零命中：知识库可能缺这个主题的条目，建议人工评估是否新建",
+		})
+	}
 	return out
 }
 

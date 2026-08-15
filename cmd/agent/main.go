@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -139,7 +140,8 @@ func main() {
 			return nil
 		case taskbg.TaskLint:
 			entries := collectLintEntries(wikiStore)
-			findings := taskbg.RunLint(taskbg.LintInput{Entries: entries})
+			misses := collectMissQueries(hist)
+			findings := taskbg.RunLint(taskbg.LintInput{Entries: entries, RecentMissQueries: misses})
 			if len(findings) == 0 {
 				runner.SetResult(t, "全库健康，无发现")
 				return nil
@@ -333,6 +335,31 @@ func extractObserves(content string) []string {
 			b.WriteString(p)
 		}
 		out = append(out, b.String())
+	}
+	return out
+}
+
+// collectMissQueries 收集近期 memory_search 零命中查询（该建未建输入）。
+func collectMissQueries(h *history.Store) []string {
+	var out []string
+	rows, err := h.DB().Query(`SELECT params_json, result_json FROM tool_calls
+		WHERE tool_name='memory_search' AND result_json LIKE '%"count":0%'
+		ORDER BY id DESC LIMIT 200`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var params, result string
+		if rows.Scan(&params, &result) != nil {
+			continue
+		}
+		var p struct {
+			Query string `json:"query"`
+		}
+		if json.Unmarshal([]byte(params), &p) == nil && p.Query != "" {
+			out = append(out, p.Query)
+		}
 	}
 	return out
 }
