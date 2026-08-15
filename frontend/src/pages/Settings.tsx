@@ -582,12 +582,17 @@ interface MemStats {
 
 function ConsoleCenter() {
   const [cfg, setCfg] = useState<ConsoleData | null>(null);
+  const [behavior, setBehavior] = useState<ConsoleData["behavior"] | null>(null);
+  const [savingBehavior, setSavingBehavior] = useState(false);
   const [prompts, setPrompts] = useState<PromptLayers | null>(null);
   const [mem, setMem] = useState<MemStats | null>(null);
   useEffect(() => {
     fetch("/api/console/config")
       .then((r) => r.json())
-      .then(setCfg)
+      .then((d: ConsoleData) => {
+        setCfg(d);
+        setBehavior(d.behavior);
+      })
       .catch(() => {});
     fetch("/api/console/prompts")
       .then((r) => r.json())
@@ -598,44 +603,31 @@ function ConsoleCenter() {
       .then(setMem)
       .catch(() => {});
   }, []);
-  if (!cfg) return <div className="loading">加载中…</div>;
+  async function saveBehavior() {
+    if (!behavior) return;
+    setSavingBehavior(true);
+    try {
+      const res = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          default_user: behavior.default_user,
+          llm_timeout_sec: behavior.llm_timeout_sec,
+          agent_max_iterations: behavior.agent_max_iterations,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingBehavior(false);
+    }
+  }
+
+  if (!cfg || !behavior) return <div className="loading">加载中…</div>;
   return (
     <>
       <h2>配置中心（只读）</h2>
-
-      <h3 className="cc-h">Prompt 分层（ADR-016 v2）</h3>
-      {prompts?.layers.map((l) => (
-        <div key={l.id} className="cc-layer">
-          <div className="cc-layer-head">
-            <span className="cc-badge">{l.id}</span> {l.name}
-            <span className={`cc-dyn ${l.dynamic ? "dyn" : ""}`}>
-              {l.dynamic ? "运行时动态" : "静态模板"}
-            </span>
-          </div>
-          {l.raw && (
-            <details className="cc-sec">
-              <summary>完整模板（外置 prompts/system.md · 编辑重启生效）</summary>
-              <pre>{l.raw}</pre>
-            </details>
-          )}
-          {l.sections?.map((sec, i) => (
-            <details key={i} className="cc-sec">
-              <summary>{sec.title}</summary>
-              <pre>{sec.body}</pre>
-            </details>
-          ))}
-          {l.note && <div className="cc-note">{l.note}</div>}
-        </div>
-      ))}
-
-      <h3 className="cc-h">工具提示词</h3>
-      <div className="cc-tools">
-        {prompts?.tool_prompts.map((t) => (
-          <div key={t.tool} className="cc-tool">
-            <code>{t.tool}</code> {t.desc}
-          </div>
-        ))}
-      </div>
 
       <h3 className="cc-h">回退链</h3>
       <div className="cc-group">
@@ -656,31 +648,46 @@ function ConsoleCenter() {
         )}
       </div>
 
-      <h3 className="cc-h">行为参数</h3>
+      <h3 className="cc-h">行为参数（可编辑）</h3>
       <div className="cc-group">
-        <div>Agent 最大迭代：{cfg.behavior.agent_max_iterations}</div>
-        <div>当前销售（分级输出）：{cfg.behavior.default_user}</div>
-        <div>LLM 全局超时：{cfg.behavior.llm_timeout_sec}s</div>
+        <label>
+          Agent 最大迭代
+          <input
+            type="number"
+            value={behavior.agent_max_iterations}
+            onChange={(e) =>
+              setBehavior({ ...behavior, agent_max_iterations: parseInt(e.target.value) || 15 })
+            }
+          />
+        </label>
+        <label>
+          当前销售（分级输出）
+          <input
+            value={behavior.default_user}
+            placeholder="如：小明（中级）"
+            onChange={(e) => setBehavior({ ...behavior, default_user: e.target.value })}
+          />
+        </label>
+        <label>
+          LLM 全局超时（秒）
+          <input
+            type="number"
+            value={behavior.llm_timeout_sec}
+            onChange={(e) =>
+              setBehavior({ ...behavior, llm_timeout_sec: parseInt(e.target.value) || 120 })
+            }
+          />
+        </label>
       </div>
+      <button className="btn sm" disabled={savingBehavior} onClick={saveBehavior}>
+        {savingBehavior ? "保存中…" : "保存行为参数（热生效）"}
+      </button>
 
-      <h3 className="cc-h">数据位置</h3>
+      <h3 className="cc-h">数据位置（只读——迁移需停服）</h3>
       <div className="cc-group mono">
         <div>数据根：{cfg.data.data_dir}</div>
         <div>Wiki：{cfg.data.wiki_dir}</div>
         <div>历史库：{cfg.data.history_db}</div>
-      </div>
-
-      <h3 className="cc-h">记忆统计</h3>
-      <div className="cc-stats">
-        {mem &&
-          Object.entries(mem.stats).map(([typ, s]) => (
-            <div key={typ} className="cc-stat">
-              <div className="cc-stat-type">{typ}</div>
-              <div className="cc-stat-nums">
-                {s.total} 条 · {s.verified} 已验证 · {s.pending} 待审
-              </div>
-            </div>
-          ))}
       </div>
     </>
   );

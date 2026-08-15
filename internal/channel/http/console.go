@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"customer-demand-agent/internal/agent"
 	"customer-demand-agent/internal/taskbg"
 )
 
@@ -33,7 +32,7 @@ func (s *Server) handleConsoleConfig(w http.ResponseWriter, r *http.Request) {
 		"router": map[string]any{"default": cfg.Router.Default, "routes": cfg.Router.Routes, "fallback": fallback},
 		"data":   map[string]any{"data_dir": cfg.DataDir, "wiki_dir": cfg.WikiDir, "history_db": cfg.HistoryDB},
 		"behavior": map[string]any{
-			"agent_max_iterations": agent.MaxIterations,
+			"agent_max_iterations": s.store.Get().AgentMaxIterations,
 			"default_user":         cfg.DefaultUser,
 			"llm_timeout_sec":      cfg.LLMTimeoutSec,
 		},

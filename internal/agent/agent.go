@@ -23,8 +23,8 @@ import (
 	"customer-demand-agent/internal/model"
 )
 
-// MaxIterations 防止工具调用死循环。
-const MaxIterations = 15
+// DefaultMaxIterations 防止工具调用死循环（默认；可经 SetMaxIterations 覆盖）。
+const DefaultMaxIterations = 15
 
 // Trace 记录一次 Agent 运行的调用轨迹（供前端展示与回放）。
 type Trace struct {
@@ -89,7 +89,8 @@ type Agent struct {
 	saveCP       func(sessionID string, cp *domain.Checkpoint)        // checkpoint 持久化回调（断点续传）
 	loadCP       func(sessionID string) ([]*domain.Checkpoint, error) // checkpoint 读取回调（断点续传）
 	customerOf   func(sessionID string) string
-	bindCustomer func(sessionID, customer string) error                                 // 客户绑定 Agent 自主化（2026-08-15）                                          // 会话关联客户名（跨会话客户上下文）
+	bindCustomer func(sessionID, customer string) error                                 // 客户绑定 Agent 自主化（2026-08-15）
+	maxIters     int                                                                    // 单轮最大工具循环（console-config 可配置；0=默认 15）
 	histSearch   func(sessionID, query string, limit int) ([]history.MessageHit, error) // 历史检索（P1 history_search 工具）
 }
 
@@ -106,6 +107,16 @@ func (a *Agent) SetCheckpointSink(fn func(sessionID string, cp *domain.Checkpoin
 // SetCheckpointSource 设置 checkpoint 读取回调（断点续传）。
 func (a *Agent) SetCheckpointSource(fn func(sessionID string) ([]*domain.Checkpoint, error)) {
 	a.loadCP = fn
+}
+
+// SetMaxIterations 设置单轮最大工具循环数（≤0 恢复默认）。
+func (a *Agent) SetMaxIterations(n int) { a.maxIters = n }
+
+func (a *Agent) maxIter() int {
+	if a.maxIters > 0 {
+		return a.maxIters
+	}
+	return DefaultMaxIterations
 }
 
 // SetCustomerBinder 设置会话→客户绑定写回调（session_bind_customer 工具用）。
@@ -222,7 +233,7 @@ func (a *Agent) Message(ctx context.Context, sessionID, text string, emit func(E
 func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trace *Trace, emit func(Event), st *turnState) (string, error) {
 	toolDefs := append(a.tools.Definitions(), analysisSubmitDef(), missingAnswerDef(), historySearchDef(), askUserDef(), bindCustomerDef())
 
-	for iter := 0; iter < MaxIterations; iter++ {
+	for iter := 0; iter < a.maxIter(); iter++ {
 		emitEvent(emit, Event{Type: EventRound, Round: iter + 1})
 		req := &llm.ChatRequest{
 			Messages: msgList,
@@ -258,7 +269,7 @@ func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trac
 			})
 		}
 	}
-	return "", fmt.Errorf("超过最大迭代次数 %d，可能存在工具调用死循环", MaxIterations)
+	return "", fmt.Errorf("超过最大迭代次数 %d，可能存在工具调用死循环", a.maxIter())
 }
 
 // executeTool 执行单次工具调用，记录轨迹。

@@ -25,6 +25,13 @@ func NewRegistry(timeout time.Duration) *Registry {
 }
 
 // Register 注册或更新一个模型配置。
+// SetTimeout 更新全局超时（console-config 热生效：后续 ToLLMConfig 用新值）。
+func (r *Registry) SetTimeout(d time.Duration) {
+	r.mu.Lock()
+	r.timeout = d
+	r.mu.Unlock()
+}
+
 func (r *Registry) Register(m ModelConfig) error {
 	if m.Name == "" {
 		return fmt.Errorf("模型 name 不能为空")

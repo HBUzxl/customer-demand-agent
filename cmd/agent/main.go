@@ -97,6 +97,7 @@ func main() {
 
 	// ── Agent 核心：自主循环 ────────────────────────────────
 	ag := agent.New(modelMgr, toolRegistry, asm, sessions)
+	ag.SetMaxIterations(cfg.AgentMaxIterations) // console-config：行为参数可配置
 	// 断点续传：checkpoint 持久化到 SQLite，重启后恢复
 	ag.SetCheckpointSink(func(sessionID string, cp *domain.Checkpoint) {
 		_ = hist.AppendCheckpoint(sessionID, cp)

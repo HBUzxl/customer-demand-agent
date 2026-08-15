@@ -30,5 +30,6 @@
       "backoff_base_ms": 200,
       "chain": []
     }
-  }
+  },
+  "agent_max_iterations": 15
 }

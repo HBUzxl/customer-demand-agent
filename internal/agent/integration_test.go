@@ -692,3 +692,22 @@ func TestAgentBindCustomer(t *testing.T) {
 		t.Fatalf("绑定回调应收到 (bind-s1, 某跨境电商): %v", bound)
 	}
 }
+
+// TestAgentMaxIterationsConfigurable console-config：maxIter 可配置——
+// 设为 2 时工具循环第 3 次前被截断（报超过迭代上限）。
+func TestAgentMaxIterationsConfigurable(t *testing.T) {
+	// 每步都返回 tool_call（无限循环脚本）
+	tc := func(i int) string {
+		return `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_` + fmt.Sprint(i) + `","type":"function","function":{"name":"memory_search","arguments":"{\"query\":\"x\",\"type\":\"product\"}"}}]}}]}`
+	}
+	steps := make([]step, 0, 10)
+	for i := 0; i < 10; i++ {
+		steps = append(steps, step{toolCallJSON: tc(i)})
+	}
+	ag, _, _ := newTestAgent(t, steps)
+	ag.SetMaxIterations(2)
+	_, _, _, err := ag.Message(context.Background(), "iter-s1", "触发循环", nil)
+	if err == nil || !strings.Contains(err.Error(), "超过最大迭代次数 2") {
+		t.Fatalf("应报超过迭代上限 2: %v", err)
+	}
+}

@@ -41,10 +41,14 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// configPutReq is the PUT /api/config body (full replace of models + router).
+// configPutReq is the PUT /api/config body (full replace of models + router;
+// behavior 字段可选——指针不传不动，console-config 三态化)。
 type configPutReq struct {
-	Models []model.ModelConfig `json:"models"`
-	Router *model.RouterConfig `json:"router"`
+	Models            []model.ModelConfig `json:"models"`
+	Router            *model.RouterConfig `json:"router"`
+	DefaultUser       *string             `json:"default_user,omitempty"`
+	LLMTimeoutSec     *int                `json:"llm_timeout_sec,omitempty"`
+	AgentMaxIterations *int               `json:"agent_max_iterations,omitempty"`
 }
 
 // handleConfigPut: PUT /api/config
@@ -90,6 +94,18 @@ func (s *Server) handleConfigPut(w http.ResponseWriter, r *http.Request) {
 		cfg.Models = merged
 		if req.Router != nil {
 			cfg.Router = *req.Router
+		}
+		// console-config：行为参数可选合并（热生效——Agent/Registry 即时重配）
+		if req.DefaultUser != nil {
+			cfg.DefaultUser = *req.DefaultUser
+		}
+		if req.LLMTimeoutSec != nil && *req.LLMTimeoutSec > 0 {
+			cfg.LLMTimeoutSec = *req.LLMTimeoutSec
+			s.registry.SetTimeout(time.Duration(*req.LLMTimeoutSec) * time.Second)
+		}
+		if req.AgentMaxIterations != nil && *req.AgentMaxIterations > 0 {
+			cfg.AgentMaxIterations = *req.AgentMaxIterations
+			s.agent.SetMaxIterations(*req.AgentMaxIterations)
 		}
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "回写配置文件: %v", err)

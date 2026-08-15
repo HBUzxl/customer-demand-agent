@@ -21,14 +21,15 @@ const DefaultPath = "./config.json"
 
 // Config 是整个服务的运行时配置（config.json 的结构）。
 type Config struct {
-	Server        ServerCfg           `json:"server"`
-	DataDir       string              `json:"data_dir"` // 数据根（P9：wiki/历史库的父目录；env CDA_DATA_DIR 优先）
-	WikiDir       string              `json:"wiki_dir"`
-	HistoryDB     string              `json:"history_db"`
-	DefaultUser   string              `json:"default_user"`    // 当前使用者（销售），影响分级输出
-	LLMTimeoutSec int                 `json:"llm_timeout_sec"` // 全局 LLM 调用超时（非模型属性）
-	Models        []model.ModelConfig `json:"models"`
-	Router        model.RouterConfig  `json:"router"`
+	Server             ServerCfg           `json:"server"`
+	DataDir            string              `json:"data_dir"` // 数据根（P9：wiki/历史库的父目录；env CDA_DATA_DIR 优先）
+	WikiDir            string              `json:"wiki_dir"`
+	HistoryDB          string              `json:"history_db"`
+	DefaultUser        string              `json:"default_user"`         // 当前使用者（销售），影响分级输出
+	LLMTimeoutSec      int                 `json:"llm_timeout_sec"`      // 全局 LLM 调用超时（非模型属性）
+	AgentMaxIterations int                 `json:"agent_max_iterations"` // Agent 单轮最大工具循环数（console-config：可配置化，默认 15）
+	Models             []model.ModelConfig `json:"models"`
+	Router             model.RouterConfig  `json:"router"`
 }
 
 // ServerCfg 是服务监听与前端托管配置。
@@ -178,6 +179,9 @@ func applyDefaults(cfg *Config) {
 	}
 	_ = os.MkdirAll(filepath.Dir(cfg.HistoryDB), 0o755)
 	_ = os.MkdirAll(cfg.WikiDir, 0o755)
+	if cfg.AgentMaxIterations <= 0 {
+		cfg.AgentMaxIterations = 15
+	}
 	if cfg.DefaultUser == "" {
 		cfg.DefaultUser = "张三"
 	}
