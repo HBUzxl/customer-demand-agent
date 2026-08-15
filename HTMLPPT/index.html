@@ -225,7 +225,7 @@
     </div>
   </div>
   <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
-  <div class="notes">记忆系统是分层的，三层各司其职，这页讲清楚。<br><br>第一层<b>长期记忆</b>，文件型 Wiki，存「懂的知识」——产品能力、威胁类型、合规要求，确定性关键词检索，中文做了 bigram 分词。<br><br>第二层<b>短期记忆</b>，Checkpoint 链，存「当前在想什么」——每轮对话一个结构化快照，保留最近一次有效分析，聊天轮不会挤掉分析上下文。<br><br>第三层<b>历史记录</b>，SQLite，存「聊过什么」——每条消息、每次工具调用、每个 checkpoint 全持久化，可回放审计。<br><br>一句话记：<b>查证走 Wiki，回溯走 checkpoint，翻旧账走 history</b>。</div>
+  <div class="notes">记忆系统是分层的，三层各司其职，这页讲清楚。<br><br>第一层<b>长期记忆</b>，文件型 Wiki，存「懂的知识」——产品能力、威胁类型、合规要求，确定性关键词检索，中文做了 bigram 分词。<br><br>第二层<b>短期记忆</b>，Checkpoint 链，存「当前在想什么」——每轮对话一个结构化快照（统一概念，无纯聊天/分析之分）；LastAnalysis 反向回溯保留最近一次有效分析。<br><br>第三层<b>历史记录</b>，SQLite，存「聊过什么」——每条消息、每次工具调用、每个 checkpoint 全持久化，可回放审计。<br><br>一句话记：<b>查证走 Wiki，回溯走 checkpoint，翻旧账走 history</b>。</div>
 </section>
 
 <!-- ============ 11. Part 2 分隔 ============ -->
