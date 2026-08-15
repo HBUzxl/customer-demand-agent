@@ -47,7 +47,7 @@ func main() {
 	// ── 长期记忆：Wiki 适配器（启动时全量加载）──────────────
 	// P9 数据根：首次启动播种（数据根 wiki 为空时从项目种子 ./wiki 复制——
 	// Docker 挂空卷即得种子知识；种子更新后由人工重放）+ 旧 ./data 迁移提示。
-	seedWiki(cfg.DataDir, cfg.WikiDir)
+	seedWiki(cfg.DataDir, cfg.WikiDir, cfg.WikiDir == "./data/wiki" && cfg.HistoryDB == "./data/history.db")
 	wikiStore := longterm.NewWikiStore(cfg.WikiDir)
 	if err := wikiStore.Load(); err != nil {
 		log.Printf("[warn] 加载 Wiki 知识库失败（继续启动，知识库为空）: %v", err)
@@ -141,7 +141,7 @@ func main() {
 			entries := collectLintEntries(wikiStore)
 			findings := taskbg.RunLint(taskbg.LintInput{Entries: entries})
 			if len(findings) == 0 {
-				t.Result = "全库健康，无发现"
+				runner.SetResult(t, "全库健康，无发现")
 				return nil
 			}
 			var sb strings.Builder
@@ -262,22 +262,34 @@ func withFrontend(apiHandler http.Handler, dist string) http.Handler {
 }
 
 // seedWiki 播种：数据根 wiki 目录为空且项目种子 ./wiki 存在时复制之。
-// 旧项目内 ./data（历史遗留位置）存在而数据根为空时打印迁移指引（不自动搬，
-// 避免误吞用户数据——人工 mv 一次即可）。
-func seedWiki(dataDir, wikiDir string) {
+// P9 迁移：项目内旧 ./data 存在且数据根为空时自动搬入（history.db + wiki/
+// 全量 copy，原位不删——回退只差一次 rm）。幂等：数据根已有数据则跳过。
+func seedWiki(dataDir, wikiDir string, explicitLegacy bool) {
+	if dataDir != "./data" {
+		if _, err := os.Stat("./data/history.db"); err == nil {
+			// 数据根尚未初始化（wiki 空 + 目标 history.db 不存在）才搬
+			_, histErr := os.Stat(filepath.Join(dataDir, "history.db"))
+			wikiEmpty := true
+			if entries, err := os.ReadDir(wikiDir); err == nil && len(entries) > 0 {
+				wikiEmpty = false
+			}
+			if os.IsNotExist(histErr) && wikiEmpty {
+				if err := copyDir("./data", dataDir); err != nil {
+					log.Printf("[warn] 旧数据迁移失败（继续用种子）: %v", err)
+				} else {
+					log.Printf("[ok] 已迁移旧数据：./data → %s（原位保留可回退）", dataDir)
+				}
+			}
+		}
+	}
 	if entries, err := os.ReadDir(wikiDir); err == nil && len(entries) > 0 {
-		return // 已有运行副本
+		return // 已有运行副本（迁移带入或此前播种）
 	}
 	if _, err := os.Stat("./wiki"); err == nil {
 		if err := copyDir("./wiki", wikiDir); err != nil {
 			log.Printf("[warn] 播种知识库失败: %v", err)
 		} else {
 			log.Printf("[ok] 已播种知识库：./wiki → %s（首次启动）", wikiDir)
-		}
-	}
-	if dataDir != "./data" {
-		if _, err := os.Stat("./data/history.db"); err == nil {
-			log.Printf("[warn] 检测到项目内旧数据 ./data —— 迁移：cp -r ./data/* %s/（或设 CDA_DATA_DIR=./data 继续用旧位置）", dataDir)
 		}
 	}
 }
@@ -304,10 +316,23 @@ func copyDir(src, dst string) error {
 // extractObserves 从条目正文提取观察注记（### 观察 [...] 段）。
 func extractObserves(content string) []string {
 	var out []string
-	for _, para := range strings.Split(content, "\n\n") {
-		if strings.HasPrefix(strings.TrimSpace(para), "### 观察") {
-			out = append(out, strings.TrimSpace(para))
+	paras := strings.Split(content, "\n\n")
+	for i, para := range paras {
+		if !strings.HasPrefix(strings.TrimSpace(para), "### 观察") {
+			continue
 		}
+		// 标题段本身 + 后续紧邻的列表/正文段（到下一个标题或结尾）
+		var b strings.Builder
+		b.WriteString(strings.TrimSpace(para))
+		for j := i + 1; j < len(paras); j++ {
+			p := strings.TrimSpace(paras[j])
+			if p == "" || strings.HasPrefix(p, "#") {
+				break
+			}
+			b.WriteString("\n\n")
+			b.WriteString(p)
+		}
+		out = append(out, b.String())
 	}
 	return out
 }

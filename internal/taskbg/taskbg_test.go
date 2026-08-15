@@ -99,6 +99,28 @@ func TestRunLint(t *testing.T) {
 	}
 }
 
+// TestRunLintOverlap P5 第四检查：同类型正文高度重叠（矛盾候选）。
+func TestRunLintOverlap(t *testing.T) {
+	dup1 := "客户电商网站大促期间遭遇大规模CC攻击，需要Web应用防火墙进行流量清洗和速率限制防护部署"
+	dup2 := "客户电商网站大促期间遭遇大规模CC攻击，需要Web应用防火墙进行流量清洗和速率限制防护"
+	other := "政务官网被挂马，需要网页防篡改与文件完整性监控，涉及等保三级合规要求"
+	in := LintInput{Entries: []LintEntry{
+		{Type: "threat", Title: "重叠A", Tags: []string{"x"}, Summary: "s", Content: dup1},
+		{Type: "threat", Title: "重叠B", Tags: []string{"x"}, Summary: "s", Content: dup2},
+		{Type: "threat", Title: "无关", Tags: []string{"x"}, Summary: "s", Content: other},
+	}}
+	finds := RunLint(in)
+	var overlap int
+	for _, f := range finds {
+		if f.Kind == "overlap" {
+			overlap++
+		}
+	}
+	if overlap == 0 {
+		t.Fatalf("重叠检测应命中 重叠A/重叠B: %+v", finds)
+	}
+}
+
 func TestRunnerPanicMarkedFailed(t *testing.T) {
 	r := NewRunner(func(ctx context.Context, task *Task) error {
 		panic("boom")

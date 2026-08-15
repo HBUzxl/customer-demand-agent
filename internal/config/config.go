@@ -192,13 +192,10 @@ func applyDefaults(cfg *Config) {
 	}
 }
 
-// xdgDataDir 数据根默认：XDG_DATA_HOME 或 ~/.local/share；两种回退——
-// ① 项目内存在旧 ./data/history.db（历史部署就地兼容，不搬家不打扰）；
-// ② 无 HOME 环境（测试/CI）。
+// xdgDataDir 数据根默认：XDG_DATA_HOME 或 ~/.local/share。
+// P9 迁移语义：老 ./data 不再决定数据根（由 main.seedWiki 自动搬入数据根）。
+// 唯一回退：无 HOME 环境（测试/CI）用 ./data。
 func xdgDataDir() string {
-	if _, err := os.Stat("./data/history.db"); err == nil {
-		return "./data" // 旧部署：继续用原位置
-	}
 	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
 		return filepath.Join(x, "customer-demand-agent")
 	}

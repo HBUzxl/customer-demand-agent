@@ -7,7 +7,7 @@ import (
 
 // LintFinding 是一条 Lint 发现（审核建议——不直接改，人审后处理）。
 type LintFinding struct {
-	Kind    string `json:"kind"`    // orphan / incomplete / duplicate-alias
+	Kind    string `json:"kind"`    // orphan / incomplete / duplicate-alias / overlap
 	Type    string `json:"type"`    // 记忆类型
 	Title   string `json:"title"`   // 条目
 	Message string `json:"message"` // 说明+建议
@@ -33,6 +33,9 @@ type LintEntry struct {
 // ①孤儿：无 tags/keywords/aliases 的条目（检索几乎到不了）
 // ②残缺：summary 或 content 为空
 // ③别名冲突：同一类型内两个条目共用了别名
+// ④重叠/矛盾候选：同类型内两个条目正文 bigram Jaccard > 0.6（描述高度
+//
+//	重叠——疑似重复定义或事实矛盾，人工裁决合并/区分）
 func RunLint(in LintInput) []LintFinding {
 	var out []LintFinding
 	aliasOwner := map[string]string{} // "type/alias" → title
@@ -61,6 +64,8 @@ func RunLint(in LintInput) []LintFinding {
 			}
 		}
 	}
+	// ④重叠/矛盾候选（同类型正文 Jaccard > 0.6）
+	out = append(out, findOverlap(in.Entries)...)
 	return out
 }
 
@@ -68,4 +73,67 @@ func RunLint(in LintInput) []LintFinding {
 func BuildTitlePrompt(firstUserText string) string {
 	return "给下面这段客户对话起一个简短的会话标题（8-14 字，概括客户/场景/诉求，不带引号）：\n" +
 		firstUserText + "\n\n只输出标题本身。"
+}
+
+// cjkBigrams 提取 CJK bigram 集合（重叠检测的确定性签名）。
+func cjkBigrams(s string) map[string]struct{} {
+	rs := []rune(s)
+	out := map[string]struct{}{}
+	for i := 0; i+1 < len(rs); i++ {
+		if isCJK(rs[i]) && isCJK(rs[i+1]) {
+			out[string(rs[i:i+2])] = struct{}{}
+		}
+	}
+	return out
+}
+
+func isCJK(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0x3400 && r <= 0x4DBF)
+}
+
+// jaccard 集合相似度。
+func jaccard(a, b map[string]struct{}) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	inter := 0
+	for k := range a {
+		if _, ok := b[k]; ok {
+			inter++
+		}
+	}
+	union := len(a) + len(b) - inter
+	if union == 0 {
+		return 0
+	}
+	return float64(inter) / float64(union)
+}
+
+// findOverlap 同类型条目两两 bigram Jaccard > 0.6 报重叠（矛盾候选）。
+func findOverlap(entries []LintEntry) []LintFinding {
+	var out []LintFinding
+	byType := map[string][]LintEntry{}
+	for _, e := range entries {
+		if len(e.Content) >= 20 { // 太短的不参与（噪声）
+			byType[e.Type] = append(byType[e.Type], e)
+		}
+	}
+	for _, es := range byType {
+		sigs := make([]map[string]struct{}, len(es))
+		for i, e := range es {
+			sigs[i] = cjkBigrams(e.Content)
+		}
+		for i := 0; i < len(es); i++ {
+			for j := i + 1; j < len(es); j++ {
+				if sim := jaccard(sigs[i], sigs[j]); sim > 0.6 {
+					out = append(out, LintFinding{
+						Kind: "overlap", Type: es[i].Type,
+						Title:   es[i].Title,
+						Message: fmt.Sprintf("与「%s」正文重叠度 %.0f%%——疑似重复定义或事实矛盾，建议人工裁决合并或区分", es[j].Title, sim*100),
+					})
+				}
+			}
+		}
+	}
+	return out
 }

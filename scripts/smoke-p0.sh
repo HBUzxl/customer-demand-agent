@@ -15,7 +15,7 @@ SID="smoke-p0-$(date +%s)"
 PASS=0; FAIL=0
 ok()   { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 fail() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
-DB="data/history.db"
+DB="${CDA_HISTORY_DB:-data/history.db}"
 
 # 1. 真实需求轮（带客户名）——F0：202 创建 Run，订阅流收集事件至完成
 $CURL -s -H 'Content-Type: application/json' -H 'X-Tenant-ID: default' \

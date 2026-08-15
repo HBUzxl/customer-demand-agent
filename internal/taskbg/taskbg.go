@@ -119,16 +119,17 @@ func (r *Runner) Result(t *Task) string {
 	return t.Result
 }
 
-// List 返回任务列表（倒序：最新在前）。
-func (r *Runner) List(limit int) []*Task {
+// List 返回任务列表快照（倒序：最新在前）。返回 Task 拷贝——外部
+// 读字段不与 worker 写竞态。
+func (r *Runner) List(limit int) []Task {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if limit <= 0 || limit > len(r.tasks) {
 		limit = len(r.tasks)
 	}
-	out := make([]*Task, limit)
+	out := make([]Task, limit)
 	for i := 0; i < limit; i++ {
-		out[i] = r.tasks[len(r.tasks)-1-i]
+		out[i] = *r.tasks[len(r.tasks)-1-i]
 	}
 	return out
 }

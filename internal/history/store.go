@@ -26,9 +26,61 @@ import (
 
 // Store 是 SQLite 历史记录存储。
 type Store struct {
-	mu           sync.Mutex
-	db           *sql.DB
-	hasTenantCol bool // 老库 sessions.tenant_id 列存在（de-tenancy 前建的库）
+	mu sync.Mutex
+	db *sql.DB
+}
+
+// hasTenantColumn 探测 sessions 表是否还有 de-tenancy 前的 tenant_id 列。
+func hasTenantColumn(db *sql.DB) bool {
+	rows, err := db.Query(`PRAGMA table_info(sessions)`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull int
+		var dflt any
+		var pk int
+		if rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk) == nil && name == "tenant_id" {
+			return true
+		}
+	}
+	return false
+}
+
+// dropTenantColumn 用 12 步法安全去列（SQLite 无 ALTER DROP COLUMN 老版本；
+// modernc/sqlite 支持？保守走重建）：新表无列 → copy 指定列 → drop → rename。
+func dropTenantColumn(db *sql.DB) error {
+	if _, err := db.Exec(`BEGIN`); err != nil {
+		return err
+	}
+	rollback := func() { _, _ = db.Exec(`ROLLBACK`) }
+	stmts := []string{
+		`CREATE TABLE sessions_new (
+    session_id TEXT PRIMARY KEY,
+    title      TEXT,
+    customer   TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+)`,
+		`INSERT INTO sessions_new(session_id, title, customer, created_at, updated_at)
+			SELECT session_id, title, customer, created_at, updated_at FROM sessions`,
+		`DROP TABLE sessions`,
+		`ALTER TABLE sessions_new RENAME TO sessions`,
+	}
+	for _, q := range stmts {
+		if _, err := db.Exec(q); err != nil {
+			rollback()
+			return err
+		}
+	}
+	if _, err := db.Exec(`COMMIT`); err != nil {
+		rollback()
+		return err
+	}
+	return nil
 }
 
 // schema 是建表 DDL。
@@ -101,20 +153,14 @@ func Open(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("建表: %w", err)
 	}
 	// 轻量迁移：老库的 tool_calls 没有 message_id 列（回放归属边界，2026-08-14）。
-	// de-tenancy：探测老库 tenant_id 列（存在则 INSERT 需带默认值）
-	var hasTenantCol bool
-	if rows, err := db.Query(`PRAGMA table_info(sessions)`); err == nil {
-		for rows.Next() {
-			var cid int
-			var name, ctype string
-			var notNull int
-			var dflt any
-			var pk int
-			if rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk) == nil && name == "tenant_id" {
-				hasTenantCol = true
-			}
+	// de-tenancy（目标契约：tenant_id 列保留但代码不读写）：老库若带
+	// NOT NULL 无默认的 tenant_id 列，一次性表重建去掉该列（数据原样 copy，
+	// 幂等——重建后列消失不再触发）。
+	if hasTenantColumn(db) {
+		if err := dropTenantColumn(db); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("老库去 tenant_id 列迁移: %w", err)
 		}
-		rows.Close()
 	}
 	if _, err := db.Exec(`ALTER TABLE tool_calls ADD COLUMN message_id INTEGER`); err != nil {
 		// column already exists → 忽略；其它错误才致命
@@ -123,7 +169,7 @@ func Open(dbPath string) (*Store, error) {
 			return nil, fmt.Errorf("迁移 tool_calls.message_id: %w", err)
 		}
 	}
-	return &Store{db: db, hasTenantCol: hasTenantCol}, nil
+	return &Store{db: db}, nil
 }
 
 // Close 关闭数据库。
@@ -148,15 +194,8 @@ func (s *Store) EnsureSession(sessionID, title, customer string) error {
 		return err
 	case errors.Is(err, sql.ErrNoRows):
 		// 不存在：插入（tenant_id 列保留写默认值——单租户，de-tenancy）
-		var err error
-		if s.hasTenantCol {
-			// 老库：NOT NULL 列仍在，写默认值（读写路径其余完全不涉及 tenant）
-			_, err = s.db.Exec(`INSERT INTO sessions(session_id, tenant_id, title, customer, created_at, updated_at)
-				VALUES(?,?,?,?,?,?)`, sessionID, "default", title, customer, now, now)
-		} else {
-			_, err = s.db.Exec(`INSERT INTO sessions(session_id, title, customer, created_at, updated_at)
-				VALUES(?,?,?,?,?)`, sessionID, title, customer, now, now)
-		}
+		_, err := s.db.Exec(`INSERT INTO sessions(session_id, title, customer, created_at, updated_at)
+			VALUES(?,?,?,?,?)`, sessionID, title, customer, now, now)
 		return err
 	default:
 		return err

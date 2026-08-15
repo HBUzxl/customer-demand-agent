@@ -9,7 +9,7 @@
 - ✅ 长期记忆 Wiki 适配器（6 产品 + 6 威胁 + 3 合规 + 3 行业 + 示例画像种子）
 - ✅ 短期记忆 Checkpoint 链（initial/followup/reanalysis + notes）
 - ✅ 6 个记忆 FC 工具 + 权限矩阵 + 待审核机制
-- ✅ SQLite 历史持久化（会话/消息/工具调用轨迹）+ 多租户隔离
+- ✅ SQLite 历史持久化（会话/消息/工具调用轨迹）+ ~~多租户隔离~~（ADR-011 已废止，de-tenancy 落地）
 - ✅ Channel 抽象 + HTTP REST API + 钓鱼口子预留
 - ✅ React+Vite+TS 前端（6 页面：分析/会话列表/详情/记忆/审核/设置）
 - ✅ 24 个单测+集成测试（含 mock LLM 全链路）+ E2E 冒烟脚本（10 项）
@@ -33,10 +33,10 @@
 - ✅ ADR-008：自研轻量 Agent 底座
 - ✅ ADR-009：顶层是自主 Agent，不是 workflow
 - ✅ ADR-010：历史记录持久化到 SQLite
-- ✅ ADR-011：多租户隔离（一期只区分，不做权限）
+- ✅ ADR-011：~~多租户隔离~~ → **已废止**（2026-08-14 裁决单租户，见 de-tenancy plan）
 - ✅ Memory Function Calling 工具设计（6 工具 + 权限矩阵）
 - 定义 `memory/longterm` 接口
-- 定义 `memory/shortterm` 接口（Checkpoint 链 + Notes）
+- 定义 `memory/shortterm` 接口（Checkpoint 链；~~Notes~~ 已删——observe 覆盖职责）
 - 定义 `memory/assembler` 接口
 - 定义 `memory/tools` 接口（6 个 Function Calling）
 - 定义 `llm/client` 接口
@@ -64,7 +64,7 @@
 
 - Checkpoint 结构体 + 三种类型（initial / followup / reanalysis）
 - Checkpoint 链管理器（创建 / 引用 / 遍历）
-- Notes 便签机制（Agent 零散观察 → checkpoint 消费）
+- ~~Notes 便签机制~~（已删：memory_observe 覆盖该职责，P2 裁决）
 
 ### LLM Client
 

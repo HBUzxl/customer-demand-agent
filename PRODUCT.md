@@ -22,12 +22,12 @@ web
 
 - 主流程：粘贴文本 → 流式看 Agent 思考/调工具/生成结论 → 追问 → 开新对话
 - 知识维护：6 类记忆（产品/威胁/合规/行业/客户/使用者），AI 自主写入打"待审核"标记，人工在审核队列批准
-- 多租户：多个销售共用一套，按 tenant 隔离会话/历史/使用者画像（一期无鉴权，手动选租户）
+- 单租户内部工具（多租户已砍除——ADR-011 废止；会话/历史/使用者画像不再有租户维度）
 - 部署形态：本地 Go 后端 + React 前端，未来对接钉钉机器人（已留 Channel 口子）
 
 ## Capabilities and Constraints
 
-自主 Agent 循环（LLM + function calling）、长期 Wiki 记忆（确定性检索）、短期 Checkpoint 链、6 个记忆 FC 工具 + 权限矩阵 + 待审核机制、模型管理（注册/路由/回退）、SQLite 历史持久化、多租户隔离、Channel 抽象（HTTP + 钉钉 stub）、SSE 全轨迹流式（思考/工具/内容）。
+自主 Agent 循环（LLM + function calling）、长期 Wiki 记忆（确定性检索）、短期 Checkpoint 链、6 个记忆 FC 工具 + 权限矩阵 + 待审核机制、模型管理（注册/路由/回退）、SQLite 历史持久化、后台任务域（固化/Lint/标题）、Channel 抽象（HTTP + 钉钉 stub）、SSE 全轨迹流式（思考/工具/内容）。
 
 约束：OpenAI 兼容网关（当前用 baizhi 网关 deepseek-v4-pro）；不做 RAG；产品记忆 AI 只读；一期无登录鉴权。
 
