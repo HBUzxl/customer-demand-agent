@@ -54,6 +54,10 @@ export default function AppLayout() {
 
   function toggle() {
     const c = !collapsed;
+    if (c) {
+      setSessionQuery("");
+      setSearchHits(null);
+    }
     setCollapsed(c);
     localStorage.setItem("sidebar", c ? "collapsed" : "expanded");
   }
@@ -138,6 +142,21 @@ export default function AppLayout() {
           {!collapsed && <span className="lbl">新建对话</span>}
         </button>
 
+        {collapsed && (
+          <div className="conv-dots">
+            {recent.slice(0, 8).map((s) => (
+              <button
+                key={s.session_id}
+                className={`conv-dot${location.pathname === `/analyze/${s.session_id}` ? " on" : ""}`}
+                title={`${s.title || "未命名对话"}${s.customer ? ` · ${s.customer}` : ""}${s.running ? " · 运行中" : ""}`}
+                onClick={() => navigate(`/analyze/${s.session_id}`)}
+              >
+                {(s.title || "?").slice(0, 1)}
+                {s.running && <i className="run-dot" />}
+              </button>
+            ))}
+          </div>
+        )}
         {!collapsed && (
           <div className="conv-list">
             <div className="conv-head">

@@ -75,8 +75,20 @@ func main() {
 	// ── 模型管理：从配置文件加载注册表 + 路由 ───────────────
 	registry := model.NewRegistry(time.Duration(cfg.LLMTimeoutSec) * time.Second)
 	for _, m := range cfg.Models {
+		if !m.IsEnabled() {
+			log.Printf("[ok] 模型 %s 已停用（enabled=false，跳过注册）", m.Name)
+			continue
+		}
 		if err := registry.Register(m); err != nil {
 			log.Printf("[warn] 注册模型 %s 失败: %v", m.Name, err)
+		}
+	}
+	// fallback 链引用停用模型 → 启动 warn
+	for _, name := range cfg.Router.Fallback.Chain {
+		for _, m := range cfg.Models {
+			if m.Name == name && !m.IsEnabled() {
+				log.Printf("[warn] 回退链包含停用模型 %s（该跳将失败，考虑移除）", name)
+			}
 		}
 	}
 	router := cfg.Router

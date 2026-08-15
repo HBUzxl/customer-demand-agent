@@ -49,6 +49,11 @@ export interface ModelConfig {
   model: string;
   temperature: number;
   max_tokens: number;
+  context_window?: number; // 最大上下文 token（可选）
+  timeout_sec?: number; // 单次调用超时（可选；缺省取全局 LLMTimeoutSec）
+  max_retries?: number; // 重试次数（可选；缺省取全局 fallback）
+  enabled?: boolean; // false=禁用（路由时跳过）
+  remark?: string; // 备注
 }
 
 export interface RouterConfig {

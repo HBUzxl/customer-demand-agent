@@ -2428,3 +2428,58 @@ table input[type="checkbox"] {
   background: color-mix(in srgb, var(--green, #3ba55d) 14%, transparent);
   color: var(--green, #3ba55d);
 }
+
+/* 收缩态会话头像列 */
+.conv-dots {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  flex: 1;
+  overflow-y: auto;
+}
+.conv-dot {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.conv-dot:hover,
+.conv-dot.on {
+  border-color: var(--accent, #4a7dff);
+  background: color-mix(in srgb, var(--accent, #4a7dff) 14%, var(--surface-2));
+}
+.conv-dot .run-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+}
+
+/* 模型卡高级折叠区 */
+.mc-advanced {
+  grid-column: 1 / -1;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.mc-advanced summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-faint);
+  user-select: none;
+}
+.mc-advanced .mgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}

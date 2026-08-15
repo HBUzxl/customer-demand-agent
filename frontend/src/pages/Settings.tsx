@@ -29,8 +29,11 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [fetchOptions, setFetchOptions] = useState<Record<number, string[]>>({});
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
+  // fetchModels 下拉弹窗：idx + 该模型返回的可选列表
+  const [fetchPicker, setFetchPicker] = useState<{ idx: number; models: string[] } | null>(null);
 
   useEffect(() => {
     configGet()
@@ -83,7 +86,7 @@ export default function Settings() {
     }
   }
 
-  // 自动获取模型列表
+  // 自动获取模型列表——结果用 ConfirmDialog 模态下拉展示，避免原生 prompt 手抄全量列表。
   async function fetchModels(m: ModelConfig, idx: number) {
     setError("");
     setFetching(true);
@@ -98,12 +101,7 @@ export default function Settings() {
         setError("网关未返回模型列表");
         return;
       }
-      // 用 prompt 让用户选，或直接下拉；这里用原生 select 弹窗简化
-      const pick = window.prompt(
-        "可用模型：\n" + r.models.join("\n") + "\n\n输入要使用的模型名（可复制粘贴）：",
-        m.model,
-      );
-      if (pick) updateModel(idx, { model: pick.trim() });
+      setFetchPicker({ idx, models: r.models });
     } catch (e) {
       setError("获取模型失败：" + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -172,6 +170,7 @@ export default function Settings() {
                     }
                     onTest={() => testModel(m)}
                     onFetch={() => fetchModels(m, i)}
+                    fetchOptions={fetchOptions[i]}
                   />
                 ))}
                 <button
@@ -321,6 +320,41 @@ export default function Settings() {
             </>
           )}
 
+          {/* 获取模型下拉（fetchPicker 状态下在顶部绘制：复用 ConfirmDialog 布局但装载 select）*/}
+          {fetchPicker && (
+            <div className="cd-mask" onClick={() => setFetchPicker(null)} role="presentation">
+              <div className="cd-box" onClick={(e) => e.stopPropagation()} role="alertdialog">
+                <div className="cd-title">选择模型 ID</div>
+                <div className="cd-body">
+                  <select
+                    autoFocus
+                    size={Math.min(fetchPicker.models.length, 10)}
+                    defaultValue={cfg?.models[fetchPicker.idx]?.model || ""}
+                    onChange={(e) => {
+                      updateModel(fetchPicker.idx, { model: e.target.value });
+                      setFetchPicker(null);
+                    }}
+                    style={{ width: "100%", fontFamily: "var(--mono)" }}
+                  >
+                    {fetchPicker.models.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-faint)" }}>
+                    从网关返回 {fetchPicker.models.length} 个模型。点遮罩或选 Esc 取消。
+                  </div>
+                </div>
+                <div className="cd-btns">
+                  <button className="btn ghost sm" onClick={() => setFetchPicker(null)}>
+                    取消
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {cat === "console" && <ConsoleCenter />}
 
           {cat === "about" && (
@@ -357,6 +391,7 @@ function ModelCard({
   onFetch,
   testing,
   fetching,
+  fetchOptions,
 }: {
   m: ModelConfig;
   onPatch: (p: Partial<ModelConfig>) => void;
@@ -365,6 +400,7 @@ function ModelCard({
   onFetch: () => void;
   testing: boolean;
   fetching: boolean;
+  fetchOptions?: string[];
 }) {
   return (
     <div className="model-card">
@@ -448,6 +484,54 @@ function ModelCard({
             onChange={(e) => onPatch({ max_tokens: parseInt(e.target.value) })}
           />
         </div>
+        <details className="mc-advanced">
+          <summary>高级设置（可选）</summary>
+          <div className="mgrid">
+            <div>
+              <label>最大上下文（token）</label>
+              <input
+                type="number"
+                value={m.context_window || ""}
+                placeholder="未配置"
+                onChange={(e) => onPatch({ context_window: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+            <div>
+              <label>超时（秒，0=全局）</label>
+              <input
+                type="number"
+                value={m.timeout_sec || ""}
+                placeholder="走全局"
+                onChange={(e) => onPatch({ timeout_sec: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+            <div>
+              <label>重试次数（0=全局）</label>
+              <input
+                type="number"
+                value={m.max_retries || ""}
+                placeholder="走全局"
+                onChange={(e) => onPatch({ max_retries: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+            <div>
+              <label>备注</label>
+              <input
+                value={m.remark || ""}
+                placeholder="如：DeepSeek 官方-便宜"
+                onChange={(e) => onPatch({ remark: e.target.value })}
+              />
+            </div>
+            <div>
+              <label>启用</label>
+              <input
+                type="checkbox"
+                checked={m.enabled !== false}
+                onChange={(e) => onPatch({ enabled: e.target.checked })}
+              />
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   );
@@ -464,6 +548,11 @@ interface ConsoleData {
     max_tokens: number;
     protocol: string;
     has_key: boolean;
+    context_window?: number;
+    timeout_sec?: number;
+    max_retries?: number;
+    enabled?: boolean;
+    remark?: string;
   }[];
   router: {
     default: string;

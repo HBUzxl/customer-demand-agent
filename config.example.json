@@ -15,7 +15,11 @@
       "model": "deepseek-chat",
       "temperature": 0.3,
       "max_tokens": 4096,
-      "timeout_sec": 60
+      "timeout_sec": 60,
+      "context_window": 128000,
+      "max_retries": 0,
+      "remark": "",
+      "enabled": true
     }
   ],
   "router": {
