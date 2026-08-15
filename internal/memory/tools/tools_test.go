@@ -209,3 +209,33 @@ func TestEnsureObserveNeedsReviewFlag(t *testing.T) {
 		t.Fatalf("observe 新建 threat 应 needs_review:true，got %s", out)
 	}
 }
+
+// TestEnsureExistingHint F2 防重复建条目：customer 名互相包含时 result 带
+// existing_hint 警告（续写指引）。
+func TestEnsureExistingHint(t *testing.T) {
+	dir := t.TempDir()
+	wiki := longterm.NewWikiStore(dir)
+	if err := wiki.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := wiki.UpsertEntry(&longterm.Entry{Type: domain.MemoryCustomer, Title: "某跨境电商平台", Content: "已有画像", Status: longterm.StatusVerified}); err != nil {
+		t.Fatal(err)
+	}
+	reg := NewRegistry(wiki)
+	// 新建互相包含的变体名 → hint
+	out, err := reg.Execute("memory_ensure", json.RawMessage(`{"type":"customer","title":"某跨境电商","content":"新画像"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "existing_hint") || !strings.Contains(out, "某跨境电商平台") {
+		t.Fatalf("应带 existing_hint: %s", out)
+	}
+	// 同名更新 → 无 hint
+	out2, err := reg.Execute("memory_ensure", json.RawMessage(`{"type":"customer","title":"某跨境电商平台","content":"更新"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out2, "existing_hint") {
+		t.Fatalf("同名更新不应有 hint: %s", out2)
+	}
+}

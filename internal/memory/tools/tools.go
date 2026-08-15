@@ -117,6 +117,28 @@ func (r *Registry) execEnsure(args json.RawMessage) (string, error) {
 	if needsReview(mt) {
 		status = longterm.StatusPendingReview
 	}
+	// F2 防重复建条目（wiki-hygiene）：customer 类型 ensure 时，若客户名与
+	// 已有条目互相包含（如「某跨境电商」vs「某跨境电商平台」），提示续写
+	// 而非静默新建第 N 个变体。仍执行写入（Agent 可改名续写），但 result 带警告。
+	var existingHint string
+	if mt == domain.MemoryCustomer && r.store != nil {
+		isNew := true
+		for _, ex := range r.store.ListEntry("customer", 0, 200) {
+			if ex.Title == a.Title {
+				isNew = false // 同名=更新语义，正常
+				break
+			}
+		}
+		// 新建且客户名与已有条目互相包含 → 续写提示（防 N 变体）
+		if isNew {
+			for _, ex := range r.store.ListEntry("customer", 0, 200) {
+				if strings.Contains(ex.Title, a.Title) || strings.Contains(a.Title, ex.Title) {
+					existingHint = fmt.Sprintf(`,"existing_hint":"客户记忆已有「%s」，若为同一客户请续写该条目（title 用它）而非新建变体"`, ex.Title)
+					break
+				}
+			}
+		}
+	}
 	e := &longterm.Entry{
 		Type:    mt,
 		Title:   a.Title,
@@ -135,8 +157,8 @@ func (r *Registry) execEnsure(args json.RawMessage) (string, error) {
 		note = "已记录（待审核，降权使用）"
 	}
 	// F4：needs_review+条目标识给前端渲染对话内审批卡片
-	return fmt.Sprintf(`{"status":"ok","message":"%s","type":"%s","title":"%s","needs_review":%t}`,
-		note, a.Type, a.Title, needsReview), nil
+	return fmt.Sprintf(`{"status":"ok","message":"%s","type":"%s","title":"%s","needs_review":%t%s}`,
+		note, a.Type, a.Title, needsReview, existingHint), nil
 }
 
 // ── memory_observe ────────────────────────────────────────────
