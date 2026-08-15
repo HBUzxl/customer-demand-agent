@@ -190,11 +190,12 @@ func (s *Store) AppendCheckpoint(sessionID string, cp *domain.Checkpoint) error 
 	}
 	// P3 链滚动归档：超软上限时删最老的 followup（保留 initial/reanalysis 骨架；
 	// 与内存 Manager.compactChainLocked 同规则，防 restore 后链无界增长）。
+	// 注意 MAX(0, COUNT-上限)：SQLite 的 LIMIT 负数=无限制，会把 followup 全删。
 	_, err = s.db.Exec(`DELETE FROM checkpoints WHERE rowid IN (
 		SELECT rowid FROM checkpoints WHERE session_id=? AND cp_type='followup'
 		ORDER BY id ASC LIMIT (
-			SELECT COUNT(*) FROM checkpoints WHERE session_id=?
-		) - ?)`, sessionID, sessionID, chainSoftLimitSQLite)
+			SELECT MAX(0, (SELECT COUNT(*) FROM checkpoints WHERE session_id=?) - ?)))`,
+		sessionID, sessionID, chainSoftLimitSQLite)
 	return err
 }
 
