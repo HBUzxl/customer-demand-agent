@@ -13,8 +13,8 @@
 |----|----|---------|
 | 后端 | Go（net/http 标准库，无 Web 框架） | `go 1.26`（见 go.mod） |
 | 前端 | React + Vite + TypeScript | react 18 / vite 5 / ts 5 |
-| 存储 | SQLite（modernc.org/sqlite，纯 Go） | `data/history.db` |
-| 知识 | 文件型 Wiki（Markdown/JSON 页面） | `wiki/`（种子）→ `data/wiki/`（运行副本） |
+| 存储 | SQLite（modernc.org/sqlite，纯 Go） | 数据根 `history.db`（P9：`CDA_DATA_DIR` > config > XDG 默认） |
+| 知识 | 文件型 Wiki（Markdown/JSON 页面） | `wiki/`（种子）→ 数据根 `wiki/`（运行副本，首次播种） |
 | LLM | OpenAI 兼容网关（deepseek / 通义 / 自建网关） | 配置在 config.json |
 
 **关键：自研轻量 Agent 底座，不引入 Agent 框架**（ADR-008）。核心循环 < 500 行。

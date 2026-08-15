@@ -137,7 +137,7 @@ internal/
   llm/  model/  agent/  history/  review/
   channel/{http,dingtalk}/
 frontend/           React + Vite + TS（5 页面）
-wiki/               种子知识库（提交版，首次运行复制到 data/wiki/）
+wiki/               种子知识库（提交版，首次运行播种到数据根 wiki）
 scripts/            run.sh / e2e.sh
 docs/plantree/      设计文档与 ADR（ADR-001 ~ ADR-012）
 ```

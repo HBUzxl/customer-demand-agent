@@ -31,7 +31,7 @@ Session (session_id, created_at)  # tenant_id 列保留但代码不读写（de-t
 - **审计**：Agent 为什么这么判断？查它的工具调用记录
 - **断点续传**：会话中断后从 checkpoint 恢复
 
-### 存储方案（de-tenancy 后已不再按 tenant 隔离；现状 schema 见 `internal/history/store.go` 与 `data/wiki/`）
+### 存储方案（de-tenancy 后已不再按 tenant 隔离；现状 schema 见 `internal/history/store.go`，DB 位于数据根）
 
 <details><summary>废止前的设计存档（点击展开）</summary>
 
