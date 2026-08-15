@@ -127,7 +127,7 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 | 项 | 基线 | 处理 |
 |----|------|------|
 | golangci-lint | **0 issue**（原 24：errcheck/staticcheck/unused 全清，4 个死函数 joinID/toOutbound/jsonEncode/newID 已删） | CI 阻塞门禁 |
-| govulncheck | **0 漏洞** | CI 门禁（阻塞） |
+| govulncheck | **0 漏洞**（需 go1.26.6+ 工具链——1.26.5 标准库有 4 个已修复漏洞，GOTOOLCHAIN=go1.26.6 跑；国内 GOPROXY=goproxy.cn） | CI 门禁（阻塞） |
 | npm audit | 4 漏洞（1 high：vite→esbuild；3 moderate：react-router） | react-router 可 `npm audit fix`；vite 升 8 是 breaking，**需用户决策**。CI 暂 informational |
 | eslint | **0 errors**（原 42→0：`no-explicit-any` 全替类型化、Math.random→useId、img node 不透传；剩 ~13 warnings：react-refresh 路由/工具文件结构性 + exhaustive-deps 标准 load 模式） | CI 门禁（lint）；warnings 不阻塞 |
 | prettier | **全部合规**（`npm run format` 已采纳） | CI 门禁（format:check） |
