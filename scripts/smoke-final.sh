@@ -24,7 +24,7 @@ $CURL -s -o /dev/null -X DELETE "$BASE/api/sessions/$SID"
 # ── F4：固定条目走完 needs_review→approve 全链（200 硬断言）+ Agent 事件冒烟 ──
 SID2="sf-rv-$(date +%s)"
 $CURL -s -H "Content-Type: application/json" \
-  -d "{\"text\":\"记住一个新趋势：最近金融客户特别关注AI大模型的数据安全合规，请记录到行业记忆\",\"session_id\":\"$SID2\"}" \
+  -d "{\"text\":\"请用 memory_observe 把这个新趋势记到行业记忆（industry）：最近金融客户特别关注AI大模型的数据安全合规，银行问过训练数据出境问题。直接调用工具记录，不要只口头说记了。\",\"session_id\":\"$SID2\"}" \
   "$BASE/api/message" > /tmp/sf_rv.json
 $CURL -s -N --max-time 150 "$BASE/api/sessions/$SID2/stream?since=0" > /tmp/sf_rv_stream.txt 2>/dev/null
 RV_HIT=$(grep -oE '\\?"needs_review\\?":\\?true' /tmp/sf_rv_stream.txt | head -1)
