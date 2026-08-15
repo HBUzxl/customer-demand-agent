@@ -230,10 +230,11 @@
 
 <!-- ============ 11. Part 2 分隔 ============ -->
 <!-- ============ 12. plan tree 全景 ============ -->
-<section class="slide" data-title="plan tree 全景">
+<section class="slide" data-title="plan tree 全景" style="padding-top:40px;padding-bottom:40px">
   <p class="kicker">plan tree</p>
   <h2 class="h2">17 个 plan 全景</h2>
-  <table class="mt-s compact">
+  <div class="note-box" style="margin:8px 0 4px;padding:6px 12px;font-size:12px"><b>口径：</b>「Done」= 开发任务完成标记，个别 plan（checkpoint-tree）正文有规划期残留，实际完成度以「未实现」部分为准。</div>
+  <table class="compact">
     <tr><th>plan</th><th>状态</th><th>一句话范围</th></tr>
     <tr><td class="mono">customer-demand-agent</td><td><span class="badge done">Landed</span></td><td>一期全栈 + 安全加固 + 基线清零</td></tr>
     <tr><td class="mono">agent-autonomy-refactor</td><td><span class="badge done">Done</span></td><td>自主化四 Phase（ADR-013/014/015/016 落地）</td></tr>
@@ -253,7 +254,6 @@
     <tr><td class="mono">session-management</td><td><span class="badge done">Done</span></td><td>弹窗 + 批量删除 + 内容搜索 + 客户绑定</td></tr>
     <tr><td class="mono">de-tenancy</td><td><span class="badge done">Done</span></td><td>移除多租户（ADR-011 废止）</td></tr>
   </table>
-  <div class="note-box"><b>口径说明：</b>①「Done」是开发任务的完成标记，不等同于「方案正文零残留」——个别 plan（如 checkpoint-tree）正文仍有规划期文案，实际完成度以本 PPT 第三部分「未实现」为准；②「代码已落地」与「plan 标 Done」是两个概念，本 PPT 的功能页描述代码真实状态。</div>
   <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这页把 plan tree 里的 17 个 plan 一次性列全，每个带状态和一句话范围。<br><br>绝大多数是 Done 或 Landed——一期全栈、自主化重构、记忆二期、会话增强、审核门禁、配置中心、观测台、会话管理、记忆管理等等。<br><br>这里我要<b>诚实说明一个状态差</b>：checkpoint-tree 这个 plan 虽然标了 Done，但它承诺的「版本树完整版」——checkpoint 链真正分叉、git-graph 式的父子树可视化、任意节点回到——<b>实际只做完了消息分支，checkpoint 链分叉还没做完</b>。这个我在第三部分会展开。<br><br>先记住：17 个 plan 基本都落地了，只有 checkpoint-tree 有欠账。</div>
 </section>
@@ -384,7 +384,7 @@
       <h3>对话内审批</h3>
       <div class="terminal mt-s">
         <div class="bar">输入框上方 · sticky 弹条</div>
-        <pre>Agent 请求写入 [行业]「金融AI合规」  [批准] [拒绝]</pre>
+        <pre>Agent 请求写入 [行业]「示例条目」 [批准][拒绝]</pre>
       </div>
       <p class="mt-s">批准即对 Agent 生效，拒绝即删。/review 独立页面已删除——对话内是唯一入口。</p>
     </div>
@@ -610,7 +610,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev   <span class="cmt"># 
       <span class="mono-tag">Docker</span>
       <h4>镜像无状态</h4>
       <p>multi-stage 构建（golang:1.26-alpine → alpine runtime）。</p>
-      <p class="mt-s"><span class="mono">ENV CDA_DATA_DIR=/var/lib/cda</span> + <span class="mono">VOLUME /var/lib/cda</span>——数据挂卷，镜像可随便重建。</p>
+      <p class="mt-s"><span class="mono">ENV CDA_DATA_DIR=/var/lib/cda</span> + <span class="mono">VOLUME /var/lib/cda</span>，数据挂卷、镜像无状态。</p>
     </div>
     <div class="card">
       <span class="mono-tag">数据根三级优先</span>

@@ -49,12 +49,12 @@
 /* 代码/终端 */
 .tpl-cda .terminal{background:var(--text-1);color:#e6edf3;border:1px solid var(--border-strong);overflow:hidden;font-family:var(--font-mono);font-size:14px;line-height:1.6}
 .tpl-cda .terminal .bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(0,0,0,.35);border-bottom:1px solid rgba(255,255,255,.1);font-size:11px;color:#8b949e}
-.tpl-cda .terminal pre{margin:0;padding:20px 22px;color:#e6edf3;overflow:auto;max-height:400px}
+.tpl-cda .terminal pre{margin:0;padding:20px 22px;color:#e6edf3;overflow:auto;max-height:400px;white-space:pre-wrap;word-break:break-word}
 .tpl-cda .kw{color:#ff7b72}.tpl-cda .fn{color:#d2a8ff}.tpl-cda .str{color:#a5d6ff}.tpl-cda .cmt{color:#8b949e;font-style:italic}
 /* 图例/流程 */
 .tpl-cda .flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:var(--font-mono);font-size:14px}
 .tpl-cda .flow .node{border:1px solid var(--border-strong);padding:8px 14px;background:#fff;font-weight:700;color:var(--text-1)}
 .tpl-cda .flow .arrow{color:var(--accent-2);font-weight:700}
 .tpl-cda .num-chip{font-family:var(--font-mono);color:var(--accent-2);font-weight:700}
-.tpl-cda table.compact th,.tpl-cda table.compact td{padding:5px 10px;font-size:12px}
-.tpl-cda table.compact td.mono{font-size:11px}
+.tpl-cda table.compact th,.tpl-cda table.compact td{padding:3px 10px;font-size:11px;line-height:1.3}
+.tpl-cda table.compact td.mono{font-size:10px}
