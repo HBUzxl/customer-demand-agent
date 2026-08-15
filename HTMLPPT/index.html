@@ -21,7 +21,7 @@
     <div class="av">长</div>
     <div style="text-align:left"><b>长亭科技 · 售前支持</b><span>自主 Agent · Go + React · 2026-08</span></div>
   </div>
-  <div class="deck-footer"><span class="mono">#自主Agent #需求分析 #长亭产品</span><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="mono">#自主Agent #需求分析 #长亭产品</span><span class="slide-number" data-total="34"></span></div>
   <div class="notes">开场一句话：这是给组内人看的项目全景，从理念到部署，讲清楚这个项目是什么、怎么做的、现在到哪了、接下来还要做什么。</div>
 </section>
 
@@ -36,7 +36,7 @@
     <div class="agenda-row"><span class="num">04</span><span class="t">使用与部署 —— 怎么跑起来</span><span class="d">配置 / run.sh / Docker</span></div>
     <div class="agenda-row"><span class="num">05</span><span class="t">配套内容 —— 质量与工程</span><span class="d">CI 门禁 / 测试 / 规范</span></div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">五部分结构，组内同学可以按关心程度跳着看。研发看架构和功能，想部署的看第四部分，想了解进度的看第三部分。</div>
 </section>
 
@@ -45,7 +45,7 @@
   <p class="kicker">PART 01</p>
   <h2 class="h2" style="font-size:72px">理念与规划</h2>
   <p class="lede mt-m">为什么做 · 核心判断 · 架构决策 · 规划方法</p>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">第一大部分，讲清楚这个项目的出发点。核心是一句话：这是自主 Agent，不是固定流程的工具。</div>
 </section>
 
@@ -67,7 +67,7 @@
     </div>
   </div>
   <div class="note-box"><b>区别于传统工具：</b>不是「固定四步模板」——发一句"你好"它就正常聊天，发真实需求它才调分析工具。判断权在 Agent，不在流程。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">强调"自主"这个词。传统做法是固定 workflow：需求理解→产品匹配→可行性，四步走死。我们推翻了这个。</div>
 </section>
 
@@ -94,7 +94,7 @@
       <div class="note-box"><b>所有能力都是工具调用。</b>LLM 自己挑用什么、什么时候用。强制约束（如"必须给可行性判断"）写在 system prompt，不靠流程。</div>
     </div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这是整个项目最重要的一条决策（ADR-009）。后面所有功能都建立在这个判断上：业务能力工具化，而不是固定输出格式。</div>
 </section>
 
@@ -111,7 +111,7 @@
     <tr><td><b>LLM</b></td><td>OpenAI 兼容网关（DeepSeek/通义/自建）</td><td>配置在 config.json，任意兼容网关可换</td></tr>
     <tr><td><b>Agent 底座</b></td><td>自研轻量循环（&lt;500 行）</td><td>不引 Pi SDK/langchaingo，核心价值自己做（ADR-008）</td></tr>
   </table>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">技术栈的每个选择都有 ADR 背书。特别注意"自研底座"：核心循环不到 500 行，不引入任何 Agent 框架——记忆、模型管理、审核都是自己的核心价值，框架给不了。</div>
 </section>
 
@@ -137,7 +137,7 @@
     <tr><td>模型管理</td><td class="mono">internal/model</td><td>注册/路由/回退/重试</td></tr>
   </table>
   <div class="note-box"><b>硬约束：</b><span class="mono">internal/domain</span> 是叶子包（共享类型，禁止反向依赖）；新渠道 = 新增 channel adapter，不动 agent 核心。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">深模块纪律：按领域边界组织，依赖单向。channel 依赖 agent，agent 不依赖 channel——为未来钉钉留了口子。</div>
 </section>
 
@@ -159,7 +159,7 @@
       <p class="mt-s">例：ADR-009（自主 Agent 非 workflow）、ADR-002（Wiki 不做 RAG）、ADR-008（自研底座）。</p>
     </div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这个项目的决策都沉淀在 plan tree 里。好处是：新同学接手不用猜"当时怎么想的"，直接读 ADR。这也是为什么 PPT 能这么详细——素材都在。</div>
 </section>
 
@@ -181,11 +181,26 @@
     <div class="card"><span class="mono-tag">ADR-011</span><h4>多租户 <span class="bad">废止</span></h4><p>单租户内部工具，已去 tenant。</p></div>
     <div class="card"><span class="mono-tag">ADR-012</span><h4>Channel 抽象</h4><p>HTTP 一期，钉钉留口子。</p></div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">十二条决策一页看完。重点三条：009 自主 Agent、002 不做 RAG、008 自研底座——决定了整个项目的形状。</div>
 </section>
 
 <!-- ============ 10. 记忆三层 ============ -->
+<!-- ============ 10. ADR-013~016 ============ -->
+<section class="slide" data-title="ADR-013~016 自主化重构">
+  <p class="kicker">decisions 2/2</p>
+  <h2 class="h2">ADR-013 ~ 016：自主化重构</h2>
+  <div class="cols-3 mt-l">
+    <div class="card"><span class="mono-tag">ADR-013</span><h4>业务能力工具化</h4><p>分析结果是 <span class="mono">analysis_submit</span> 工具，不是固定输出格式。Agent 自主判断意图，schema 即契约。否掉「纯 prompt 自主」「意图分类前置」。</p></div>
+    <div class="card"><span class="mono-tag">ADR-014</span><h4>统一对话入口</h4><p>/api/analyze + /api/chat 合并为 <span class="mono">POST /api/message</span>，旧入口薄 shim。不做老数据兼容（用户裁决）。</p></div>
+    <div class="card"><span class="mono-tag">ADR-015</span><h4>前台/后台域划分</h4><p>前台（与 Agent 对话）记忆成套全程在线——聊天轮次也要查证/记录；后台（独立任务）无记忆依赖，一次性 LLM 调用。</p></div>
+    <div class="card"><span class="mono-tag">ADR-016</span><h4>System Prompt 分层 v2</h4><p>L0 静态模板 / L1 使用者画像 / L2 会话状态 / L3a 产品目录索引 注入；L3b 其余知识全走工具检索（全量注入已废）。</p></div>
+  </div>
+  <div class="note-box"><b>意义：</b>这四条把「自主 Agent」从口号变成机制——工具化、单入口、域划分、分层注入，共同构成 Agent 的行为契约。</div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
+  <div class="notes">ADR-013~016 是二期（agent 自主化重构）落地的四条，比 001~012 更贴近运行时行为。013 工具化、014 单入口、015 前后台划分、016 prompt 分层。</div>
+</section>
+
 <section class="slide" data-title="记忆系统三层">
   <p class="kicker">memory</p>
   <h2 class="h2">三层记忆系统</h2>
@@ -209,16 +224,45 @@
       <p class="mt-s">与短期记忆区分：checkpoint 是工作记忆（内存），history 是持久记录（磁盘）。</p>
     </div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">三层各司其职：Wiki 是"懂的知识"，checkpoint 是"当前在想什么"，SQLite 是"聊过什么"。Agent 查证走 Wiki，回溯走 checkpoint，翻旧账走 history。</div>
 </section>
 
 <!-- ============ 11. Part 2 分隔 ============ -->
+<!-- ============ 12. plan tree 全景 ============ -->
+<section class="slide" data-title="plan tree 全景">
+  <p class="kicker">plan tree</p>
+  <h2 class="h2">17 个 plan 全景</h2>
+  <table class="mt-s compact">
+    <tr><th>plan</th><th>状态</th><th>一句话范围</th></tr>
+    <tr><td class="mono">customer-demand-agent</td><td><span class="badge done">Landed</span></td><td>一期全栈 + 安全加固 + 基线清零</td></tr>
+    <tr><td class="mono">agent-autonomy-refactor</td><td><span class="badge done">Done</span></td><td>自主化四 Phase（ADR-013/014/015/016 落地）</td></tr>
+    <tr><td class="mono">memory-v2</td><td><span class="badge done">Done</span></td><td>记忆系统二期 P0-P11 全落地</td></tr>
+    <tr><td class="mono">conversation-ux</td><td><span class="badge done">Done</span></td><td>F0 Run 任务模型 + F3/F4/G/H 系列</td></tr>
+    <tr><td class="mono">console</td><td><span class="badge done">Done</span></td><td>C1 配置中心 / C2 观测台 / C3 prompt 外置</td></tr>
+    <tr><td class="mono">frontend</td><td><span class="badge done">Done</span></td><td>前端工作台 IA 蓝图</td></tr>
+    <tr><td class="mono">review-gating</td><td><span class="badge done">Done</span></td><td>审核改写入门禁 + 对话内审批</td></tr>
+    <tr><td class="mono">checkpoint-tree</td><td><span class="badge done">Done</span></td><td>消息分支已落地；版本树完整版未完成（见 Part 3）</td></tr>
+    <tr><td class="mono">wiki-hygiene</td><td><span class="badge done">Done</span></td><td>脏数据清理 + 防重复建条目</td></tr>
+    <tr><td class="mono">ui-copy-cleanup</td><td><span class="badge done">Done</span></td><td>UI 文案三类废话清扫</td></tr>
+    <tr><td class="mono">verify-close</td><td><span class="badge done">Done</span></td><td>终态验证（verify-all 一键门禁）</td></tr>
+    <tr><td class="mono">memory-search-ia</td><td><span class="badge done">Done</span></td><td>搜索语义显性化 + 入口/文章分类</td></tr>
+    <tr><td class="mono">console-config</td><td><span class="badge done">Done</span></td><td>配置中心三态化</td></tr>
+    <tr><td class="mono">sidebar-models-ux</td><td><span class="badge done">Done</span></td><td>侧栏收缩态 + 模型配置面 + 下拉</td></tr>
+    <tr><td class="mono">memory-management</td><td><span class="badge done">Done</span></td><td>计数修正 + 正文 + 多选批量</td></tr>
+    <tr><td class="mono">session-management</td><td><span class="badge done">Done</span></td><td>弹窗 + 批量删除 + 内容搜索 + 客户绑定</td></tr>
+    <tr><td class="mono">de-tenancy</td><td><span class="badge done">Done</span></td><td>移除多租户（ADR-011 废止）</td></tr>
+  </table>
+  <div class="note-box"><b>说明：</b>plan tree 是「为什么做 + 怎么做 + 怎么验证」的权威记录；每个 plan 都有独立 README 沉淀方案与验证结果。</div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
+  <div class="notes">17 个 plan 逐一列出。注意 checkpoint-tree 标记 Done 但版本树完整版实际未完成——这是当前最需要向组内说明白的状态差。</div>
+</section>
+
 <section class="slide center tc" data-title="Part 2 已实现功能">
   <p class="kicker">PART 02</p>
   <h2 class="h2" style="font-size:72px">已实现功能</h2>
   <p class="lede mt-m">现在能干什么 —— 每项功能的意义</p>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">第二大部分，10 类已实现功能。每项都讲「是什么 + 为什么有意义」。</div>
 </section>
 
@@ -249,7 +293,7 @@
     </div>
   </div>
   <div class="note-box"><b>意义：</b>摆脱固定四步模板——「你好」不再吐出需求分析 JSON，判断「这是不是真实需求」的权在 Agent。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这是 ADR-009 的落地。分析不再是固定输出格式，而是一个工具——Agent 判断需要时才调。</div>
 </section>
 
@@ -277,7 +321,7 @@
     </div>
   </div>
   <div class="note-box"><b>意义：</b>前端即时响应 + 流式体验；刷新页面不丢任务（断点续传），多轮对话各自隔离不串台。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">F0 Run 任务模型经过了 12 轮审计打磨——事件归属、游标、断连、取消，都是踩过坑的。</div>
 </section>
 
@@ -295,7 +339,7 @@
     <tr><td class="mono">memory_delete</td><td>删除条目</td><td class="bad">❌</td><td class="bad">❌</td><td>✅</td><td class="bad">❌</td></tr>
   </table>
   <div class="note-box"><b>意义：</b>Agent 能查证事实、记录线索、维护记忆——不是裸 LLM。权限矩阵保证「产品知识只人工维护」这条红线不被 AI 突破。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">权限矩阵是 ADR-005 的核心：产品记忆是人工维护的确定性最高知识，AI 绝对不能写不能删。</div>
 </section>
 
@@ -318,7 +362,7 @@
     </div>
   </div>
   <div class="note-box"><b>意义：</b>检索命中率是记忆系统的命根子——中文不分词会漏检，事实不归档会错用过期结论。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这两块是二期打磨的重点：分词解决了"搜不到"，时效解决了"搜到错的"。历史查询接口 /api/memory/{type}/{title}/history 能看版本链。</div>
 </section>
 
@@ -346,7 +390,7 @@
     </div>
   </div>
   <div class="note-box"><b>意义：</b>「我通过之后内容才进记忆库」——审核是门禁不是事后标记。AI 写知识，人拍板生效。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这块是用户明确要求的：之前 pending 内容「边等审核边被检索」，等于没审。改成门禁后，AI 写的东西人不批准就进不了库。</div>
 </section>
 
@@ -368,7 +412,8 @@
       <p class="mt-s">答案回来用 missing_answer 记录进 checkpoint，不重复问同一件事。</p>
     </div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="note-box"><b>意义：</b>客户身份、信息追问都在对话流内闭环——不跳页、不填表，Agent 自己问、自己绑。</div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这两个都是「对话流内闭环」的体现：客户绑定、信息追问，全在对话里完成，不跳到别的页面。</div>
 </section>
 
@@ -393,7 +438,8 @@
       <p>Lint 五检查（孤儿/残缺/别名冲突/重叠/该建未建），不调 LLM 快且稳。会话标题首轮完成后自动 LLM 概括。</p>
     </div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="note-box"><b>意义：</b>观察沉淀成知识（固化）、知识体检（Lint）、会话命名（标题）——这些后台活不占前台记忆，各司其职。</div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">ADR-015 划的界：前台（与 Agent 对话）记忆成套全程在线；后台（独立任务）无记忆依赖。固化就是把观察沉淀成知识，走人审。</div>
 </section>
 
@@ -416,7 +462,8 @@
       <p class="mt-s">prompt 模板外置 <span class="mono">prompts/system.md</span>，编辑重启生效 + 版本快照。</p>
     </div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="note-box"><b>意义：</b>后端配置与运行不再黑盒——能配的在前端配，能看的在前端看，改完热生效。</div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">用户原话「后端是前端的控制台，不是黑盒」。配置中心从"只读展示"改成"三态"——该开放的开放、该藏的藏。</div>
 </section>
 
@@ -435,7 +482,7 @@
     </div>
   </div>
   <div class="note-box"><b>意义：</b>管理类界面全支持多选；删除有确认、有回退感；找历史会话能搜到内容。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">会话管理是用户真实使用中提的需求：想批量删、想搜内容、想编辑重发开分支——都落地了。</div>
 </section>
 
@@ -451,7 +498,8 @@
     <div class="card"><h4>流式反馈</h4><p>思考过程自动展开、脉冲动画、busy 态按钮——点击即反馈。</p></div>
     <div class="card"><h4>UI 文案去废话</h4><p>删三类废话：解释机制 / 内部行话（ADR-xxx）/ 自证说明。</p></div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="note-box"><b>意义：</b>这些是「把用户当人」的细节——按钮有反馈、折叠态能干活、文案不啰嗦、不跳原生弹窗。</div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这些是"把用户当人"的细节：按钮点击有反馈、折叠态能干活、文案不啰嗦。</div>
 </section>
 
@@ -460,7 +508,7 @@
   <p class="kicker">PART 03</p>
   <h2 class="h2" style="font-size:72px">未实现 / 已知问题</h2>
   <p class="lede mt-m">还差什么 —— 如实交代</p>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">第三部分，诚实交代没做完的和明确延期的。不夸大。</div>
 </section>
 
@@ -487,7 +535,7 @@
     </div>
   </div>
   <div class="note-box"><b>定位：</b>这是下一步的重点，计划单独开 goal 专做（checkpoint 链→树 + 完整 git-graph 版本树 + 任意节点回到）。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这是最诚实的部分：消息分支做完了，但 checkpoint 链真正分叉 + 完整版本树可视化是明确未完成的，别误会。</div>
 </section>
 
@@ -505,7 +553,7 @@
     <tr><td>RAG（语义检索）</td><td>ADR-002 明确 deferred，等非结构化数据积累再评估</td></tr>
     <tr><td>prompt 模板编辑态</td><td>只有外置文件编辑重启生效，前端版本化编辑未做</td></tr>
   </table>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这些是当初明确排到后面的。钉钉是最可能下一个接的（架构已留口子）。</div>
 </section>
 
@@ -518,7 +566,7 @@
     <div class="card"><span class="mono-tag">依赖升级待决策</span><h4>vite 6→8 breaking</h4><p>npm audit 1 high（vite→esbuild），升级是 breaking change 需用户决策。</p></div>
     <div class="card"><span class="mono-tag">govulncheck 需工具链</span><h4>go1.26.6+</h4><p>go1.26.5 标准库有 4 个已修复漏洞，需 GOTOOLCHAIN=go1.26.6。</p></div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这些不是功能缺失，是工程层面的已知边界。前端测试是最大的一块欠账。</div>
 </section>
 
@@ -527,7 +575,7 @@
   <p class="kicker">PART 04</p>
   <h2 class="h2" style="font-size:72px">使用与部署</h2>
   <p class="lede mt-m">怎么跑起来</p>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">第四部分，从零跑起来只需三步。</div>
 </section>
 
@@ -549,7 +597,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev   <span class="cmt"># 
 <span class="cmt"># 或：npm run build 后由后端托管 dist，打开 :8080</span></pre>
   </div>
   <div class="note-box"><b>验证：</b><span class="mono">./scripts/e2e.sh</span> 跑 29 项 API 断言（无需 LLM）。</div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">配置集中在 config.json 一个文件：api_key、模型列表、路由、回退策略。支持任意 OpenAI 兼容网关。</div>
 </section>
 
@@ -571,7 +619,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev   <span class="cmt"># 
       <p class="mt-s">wiki 种子首次启动播种到数据根；老 ./data 自动迁入、原位保留可回退。</p>
     </div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">数据位置的三级优先 + 迁移设计，保证部署不丢数据、不脏环境。</div>
 </section>
 
@@ -580,7 +628,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev   <span class="cmt"># 
   <p class="kicker">PART 05</p>
   <h2 class="h2" style="font-size:72px">配套内容</h2>
   <p class="lede mt-m">质量与工程</p>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">第五部分，质量和工程保障。</div>
 </section>
 
@@ -608,7 +656,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev   <span class="cmt"># 
       </div>
     </div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">质量门禁全绿是底线。mock LLM 让集成测试脱离真实 key，CI 可跑。</div>
 </section>
 
@@ -624,7 +672,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev   <span class="cmt"># 
     <div class="card"><h4>配置约定</h4><p>业务配置走 config.json（不用环境变量），api_key 绝不提交。</p></div>
     <div class="card"><h4>多租户</h4><p>已废止（单租户），X-Tenant-ID 接受但忽略。</p></div>
   </div>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">工程规范是 AGENTS.md 里沉淀的硬约束，新代码沿用。</div>
 </section>
 
@@ -639,7 +687,7 @@ cd frontend &amp;&amp; npm install &amp;&amp; npm run dev   <span class="cmt"># 
     <div class="card"><span class="mono-tag">下一步</span><p>checkpoint 版本树完整版 · 钉钉对接</p></div>
   </div>
   <p class="mt-l mono" style="color:var(--text-3)">文档：docs/plantree/ · 代码：internal/ · 问题欢迎提</p>
-  <div class="deck-footer"><span class="slide-number" data-total="32"></span></div>
+  <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">收尾。强调自主 Agent 这个核心，以及下一步的两件事。</div>
 </section>
 

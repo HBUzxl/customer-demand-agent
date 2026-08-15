@@ -56,3 +56,5 @@
 .tpl-cda .flow .node{border:1px solid var(--border-strong);padding:8px 14px;background:#fff;font-weight:700;color:var(--text-1)}
 .tpl-cda .flow .arrow{color:var(--accent-2);font-weight:700}
 .tpl-cda .num-chip{font-family:var(--font-mono);color:var(--accent-2);font-weight:700}
+.tpl-cda table.compact th,.tpl-cda table.compact td{padding:5px 10px;font-size:12px}
+.tpl-cda table.compact td.mono{font-size:11px}
