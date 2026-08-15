@@ -18,6 +18,7 @@ import (
 	"customer-demand-agent/internal/memory/longterm"
 	"customer-demand-agent/internal/model"
 	"customer-demand-agent/internal/review"
+	"customer-demand-agent/internal/taskbg"
 )
 
 // Server wires all subsystems behind an HTTP REST API.
@@ -29,16 +30,17 @@ type Server struct {
 	history   *history.Store
 	modelMgr  *model.Manager
 	registry  *model.Registry
-	runs      *RunManager // F0：服务端 Run 任务（执行与连接解耦）
+	runs      *RunManager    // F0：服务端 Run 任务（执行与连接解耦）
+	tasks     *taskbg.Runner // P11：后台任务（观测台消费）
 }
 
 // New creates the HTTP server with all dependencies injected.
 func New(store *config.Store, ag *agent.Agent, rv *review.Service, wiki *longterm.WikiStore,
-	hist *history.Store, mm *model.Manager, reg *model.Registry) *Server {
+	hist *history.Store, mm *model.Manager, reg *model.Registry, tasks *taskbg.Runner) *Server {
 	return &Server{
 		store: store, agent: ag, review: rv, storeWiki: wiki,
 		history: hist, modelMgr: mm, registry: reg,
-		runs: NewRunManager(),
+		runs: NewRunManager(), tasks: tasks,
 	}
 }
 
@@ -74,6 +76,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/models", s.handleListModels)
 
 	// 会话历史
+	mux.HandleFunc("GET /api/tasks", s.handleTasksList)
+	mux.HandleFunc("POST /api/tasks/consolidate", s.handleTaskConsolidate)
+
 	mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionGet)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.handleSessionDelete)

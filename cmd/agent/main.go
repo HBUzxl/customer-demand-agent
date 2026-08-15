@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -28,6 +29,7 @@ import (
 	"customer-demand-agent/internal/memory/tools"
 	"customer-demand-agent/internal/model"
 	"customer-demand-agent/internal/review"
+	"customer-demand-agent/internal/taskbg"
 )
 
 func main() {
@@ -99,7 +101,45 @@ func main() {
 	reviewSvc := review.New(wikiStore)
 
 	// ── HTTP Channel（配置回写由 store 持久化）─────────────
-	server := httpapi.New(store, ag, reviewSvc, wikiStore, hist, modelMgr, registry)
+	// ── 后台任务域（TaskBackground，ADR-015/P11）：无记忆依赖的一次性调用 ──
+	runner := taskbg.NewRunner(func(ctx context.Context, t *taskbg.Task) error {
+		switch t.Type {
+		case taskbg.TaskConsolidate:
+			// 固化：Detail 是 "type/title"——读条目正文中的观察注记 → LLM 抽结构 → pending 覆盖
+			parts := strings.SplitN(t.Detail, "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("detail 应为 type/title: %s", t.Detail)
+			}
+			e, err := wikiStore.GetEntry(parts[0], parts[1])
+			if err != nil {
+				return fmt.Errorf("条目不存在: %w", err)
+			}
+			observes := extractObserves(e.Content)
+			if len(observes) == 0 {
+				return fmt.Errorf("该条目无观察注记可固化")
+			}
+			prompt := taskbg.BuildConsolidatePrompt(taskbg.ConsolidateInput{Type: parts[0], Title: parts[1], Observes: observes})
+			msgs := []domain.Message{{Role: domain.RoleUser, Content: prompt}}
+			resp, err := modelMgr.Chat(ctx, model.TaskAnalysis, &llm.ChatRequest{Messages: msgs})
+			if err != nil {
+				return fmt.Errorf("LLM 固化: %w", err)
+			}
+			summary, tags, content, err := taskbg.ParseConsolidateOutput(resp.Message.Content)
+			if err != nil {
+				return err
+			}
+			fm := "---\ntype: " + parts[0] + "\nstatus: pending_review\nsummary: " + summary + "\ntags: [" + strings.Join(tags, ", ") + "]\n---\n" + content
+			if err := wikiStore.UpsertEntry(&longterm.Entry{Type: domain.MemoryType(parts[0]), Title: parts[1], Content: fm, Summary: summary, Tags: tags, Status: longterm.StatusPendingReview}); err != nil {
+				return err
+			}
+			t.Result = "已固化 " + parts[1] + "（待审核）"
+			return nil
+		default:
+			return fmt.Errorf("未知任务类型: %s", t.Type)
+		}
+	})
+
+	server := httpapi.New(store, ag, reviewSvc, wikiStore, hist, modelMgr, registry, runner)
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,
@@ -210,4 +250,15 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(target, data, 0o644)
 	})
+}
+
+// extractObserves 从条目正文提取观察注记（### 观察 [...] 段）。
+func extractObserves(content string) []string {
+	var out []string
+	for _, para := range strings.Split(content, "\n\n") {
+		if strings.HasPrefix(strings.TrimSpace(para), "### 观察") {
+			out = append(out, strings.TrimSpace(para))
+		}
+	}
+	return out
 }

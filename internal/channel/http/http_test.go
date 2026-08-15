@@ -64,7 +64,7 @@ func setupServer(t *testing.T) (*httptest.Server, *longterm.WikiStore) {
 	ag := agent.New(mgr, toolReg, asm, sessions)
 	rv := review.New(store)
 
-	srv := httpapi.New(cfgStore, ag, rv, store, hist, mgr, registry)
+	srv := httpapi.New(cfgStore, ag, rv, store, hist, mgr, registry, nil)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts, store

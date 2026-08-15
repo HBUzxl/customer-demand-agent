@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"customer-demand-agent/internal/history"
+	"customer-demand-agent/internal/taskbg"
 	"strings"
 	"syscall"
 	"time"
@@ -433,4 +434,35 @@ func normalizeOrigin(u *url.URL) string {
 		}
 	}
 	return scheme + "://" + host + ":" + port
+}
+
+// handleTasksList: GET /api/tasks —— 后台任务列表（观测台）。
+func (s *Server) handleTasksList(w http.ResponseWriter, r *http.Request) {
+	if s.tasks == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": s.tasks.List(50)})
+}
+
+// handleTaskConsolidate: POST /api/tasks/consolidate {type,title} —— 手动触发固化。
+func (s *Server) handleTaskConsolidate(w http.ResponseWriter, r *http.Request) {
+	if s.tasks == nil {
+		writeError(w, http.StatusServiceUnavailable, "后台任务未启用")
+		return
+	}
+	var req struct {
+		Type  string `json:"type"`
+		Title string `json:"title"`
+	}
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "解析请求体: %v", err)
+		return
+	}
+	if req.Type == "" || req.Title == "" {
+		writeError(w, http.StatusBadRequest, "type/title 不能为空")
+		return
+	}
+	t := s.tasks.Submit(fmt.Sprintf("cons-%d", time.Now().UnixNano()), taskbg.TaskConsolidate, req.Type+"/"+req.Title)
+	writeJSON(w, http.StatusAccepted, t)
 }

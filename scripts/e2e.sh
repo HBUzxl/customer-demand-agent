@@ -116,6 +116,14 @@ DT_CODE=$(posttcode other /api/analyze '{"session_id":"e2e-sec","text":"x"}')
 [ "$DT_CODE" != "403" ] && ok "de-tenancy：不同租户头同会话不再被拒（${DT_CODE}，202/409 均为正常）" || fail "de-tenancy 跨头仍 403（租户隔离未砍净）"
 [ "$(deleteAs whoever /api/sessions/e2e-sec)" = "200" ] && ok "清理 e2e-sec session" || fail "清理 e2e-sec"
 
+echo "-- 6.5 后台任务（P11）--"
+[ "$(get /api/tasks)" = "200" ] && ok "GET /api/tasks（任务列表）" || fail "tasks list"
+TASKCODE=$("$CURL" -s -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" -d '{"type":"threat","title":"不存在条目"}' "$BASE/api/tasks/consolidate")
+[ "$TASKCODE" = "202" ] && ok "POST /api/tasks/consolidate（202 提交）" || fail "consolidate 提交（got ${TASKCODE}）"
+sleep 1
+TASKS=$("$CURL" -s "$BASE/api/tasks")
+echo "$TASKS" | grep -q '"type":"consolidate"' && ok "任务出现在列表" || fail "任务列表无记录"
+
 echo "-- 7. 清理测试数据 --"
 [ "$(delete /api/sessions/e2e-msg)" = "200" ] && ok "清理 e2e-msg session" || fail "清理 e2e-msg"
 [ "$(delete /api/sessions/e2e-an)" = "200" ] && ok "清理 e2e-an session" || fail "清理 e2e-an"
