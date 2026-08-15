@@ -71,7 +71,7 @@ function buildRows(d: SessionDetail): Row[] {
         rows.push({
           kind: "checkpoint",
           id: cps[cpIdx].id,
-          time: cps[cpIdx].created_at,
+          time: new Date(cps[cpIdx].created_at).toLocaleTimeString("zh-CN", { hour12: false }),
           cp: cps[cpIdx],
         });
         cpIdx++;
@@ -101,7 +101,7 @@ function buildRows(d: SessionDetail): Row[] {
         rows.push({
           kind: "checkpoint",
           id: cps[cpIdx].id,
-          time: cps[cpIdx].created_at,
+          time: new Date(cps[cpIdx].created_at).toLocaleTimeString("zh-CN", { hour12: false }),
           cp: cps[cpIdx],
         });
         cpIdx++;

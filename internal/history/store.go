@@ -500,7 +500,7 @@ func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
 			det.Checkpoints = append(det.Checkpoints, CheckpointRec{
 				ID: cpID, Type: cpType, HasAnalysis: cp.Analysis != nil,
 				Question: truncateStr(cp.Question, 60), Answer: truncateStr(cp.Answer, 60),
-				CreatedAt: createdAt.Format("15:04:05"),
+				CreatedAt: createdAt.UTC().Format(time.RFC3339Nano), // ISO——前端本地化（与消息一致；直传 HH:MM:SS 会把 UTC 当本地显示）
 			})
 		}
 	}
