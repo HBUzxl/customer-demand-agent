@@ -1,0 +1,58 @@
+/* 客户需求分析智能体 — 项目介绍 PPT（工程蓝图风，配 engineering-whiteprint 主题） */
+.tpl-cda{
+  font-family:'Inter','Noto Sans SC',sans-serif;
+}
+.tpl-cda .slide{padding:64px 88px;background:#fff;color:var(--text-1)}
+.tpl-cda .slide::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:repeating-linear-gradient(0deg,rgba(10,30,70,.05) 0 1px,transparent 1px 44px),
+  repeating-linear-gradient(90deg,rgba(10,30,70,.05) 0 1px,transparent 1px 44px)}
+.tpl-cda .slide>*{position:relative;z-index:1}
+.tpl-cda .h1{font-size:64px;line-height:1.05;font-weight:800;letter-spacing:-.02em;color:var(--text-1)}
+.tpl-cda .h2{font-size:42px;font-weight:800;letter-spacing:-.01em;color:var(--text-1)}
+.tpl-cda h3{font-size:22px;font-weight:700;color:var(--text-1);margin:0}
+.tpl-cda .kicker{color:var(--accent-2);font-family:var(--font-mono);font-size:13px;font-weight:700;letter-spacing:.14em}
+.tpl-cda .kicker::before{content:"» "}
+.tpl-cda .lede{color:var(--text-2);font-size:20px;line-height:1.5}
+.tpl-cda .mono{font-family:var(--font-mono)}
+.tpl-cda .agenda-row{display:flex;align-items:baseline;gap:20px;padding:14px 0;border-bottom:1px solid var(--border);font-family:var(--font-mono)}
+.tpl-cda .agenda-row .num{color:var(--accent-2);flex:none;width:44px;font-weight:700}
+.tpl-cda .agenda-row .t{color:var(--text-1);font-size:20px;flex:1;font-family:'Inter','Noto Sans SC',sans-serif;font-weight:600}
+.tpl-cda .agenda-row .d{color:var(--text-3);font-size:12px}
+.tpl-cda .speaker{display:flex;align-items:center;gap:14px;margin-top:26px}
+.tpl-cda .speaker .av{width:52px;height:52px;border-radius:0;background:var(--grad);font-family:var(--font-mono);font-weight:800;font-size:20px;color:#fff;display:flex;align-items:center;justify-content:center}
+.tpl-cda .speaker b{display:block;color:var(--text-1);font-size:16px}
+.tpl-cda .speaker span{color:var(--text-3);font-size:12px;font-family:var(--font-mono)}
+/* 卡片网格 */
+.tpl-cda .card{border:1px solid var(--border-strong);border-radius:0;box-shadow:none;background:rgba(255,255,255,.92);padding:20px 22px}
+.tpl-cda .card h4{margin:0 0 8px;font-size:16px;font-weight:700;color:var(--text-1)}
+.tpl-cda .card p{margin:0;font-size:14px;line-height:1.6;color:var(--text-2)}
+.tpl-cda .card .mono-tag{display:inline-block;font-family:var(--font-mono);font-size:11px;color:var(--accent-2);border:1px solid var(--border-strong);padding:1px 7px;margin-bottom:10px}
+/* 意义/说明块 */
+.tpl-cda .note-box{border-left:4px solid var(--accent-2);background:var(--bg-soft);padding:12px 16px;font-size:14px;color:var(--text-2);line-height:1.6;margin-top:14px}
+.tpl-cda .note-box b{color:var(--text-1)}
+/* 表格 */
+.tpl-cda table{width:100%;border-collapse:collapse;font-size:14px}
+.tpl-cda th{background:var(--bg-soft);color:var(--text-1);font-weight:700;text-align:left;padding:10px 12px;border:1px solid var(--border-strong);font-family:var(--font-mono);font-size:12px}
+.tpl-cda td{padding:9px 12px;border:1px solid var(--border);color:var(--text-2);vertical-align:top}
+.tpl-cda td b{color:var(--text-1)}
+.tpl-cda .ok{color:var(--good);font-weight:700}
+.tpl-cda .bad{color:var(--bad);font-weight:700}
+.tpl-cda .warn{color:var(--warn);font-weight:700}
+/* 状态徽章 */
+.tpl-cda .badge{display:inline-block;font-family:var(--font-mono);font-size:11px;padding:2px 9px;border:1px solid var(--border-strong);font-weight:700}
+.tpl-cda .badge.done{color:var(--good);border-color:var(--good);background:rgba(26,106,58,.08)}
+.tpl-cda .badge.pending{color:var(--warn);border-color:var(--warn);background:rgba(196,122,16,.08)}
+.tpl-cda .badge.defer{color:var(--text-3);border-color:var(--border)}
+/* 双栏布局 */
+.tpl-cda .cols{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.tpl-cda .cols-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+/* 代码/终端 */
+.tpl-cda .terminal{background:var(--text-1);color:#e6edf3;border:1px solid var(--border-strong);overflow:hidden;font-family:var(--font-mono);font-size:14px;line-height:1.6}
+.tpl-cda .terminal .bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(0,0,0,.35);border-bottom:1px solid rgba(255,255,255,.1);font-size:11px;color:#8b949e}
+.tpl-cda .terminal pre{margin:0;padding:20px 22px;color:#e6edf3;overflow:auto;max-height:400px}
+.tpl-cda .kw{color:#ff7b72}.tpl-cda .fn{color:#d2a8ff}.tpl-cda .str{color:#a5d6ff}.tpl-cda .cmt{color:#8b949e;font-style:italic}
+/* 图例/流程 */
+.tpl-cda .flow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:var(--font-mono);font-size:14px}
+.tpl-cda .flow .node{border:1px solid var(--border-strong);padding:8px 14px;background:#fff;font-weight:700;color:var(--text-1)}
+.tpl-cda .flow .arrow{color:var(--accent-2);font-weight:700}
+.tpl-cda .num-chip{font-family:var(--font-mono);color:var(--accent-2);font-weight:700}
