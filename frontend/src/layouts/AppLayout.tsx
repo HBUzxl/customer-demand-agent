@@ -24,11 +24,6 @@ const Ico = ({ d, size = 18 }: { d: string; size?: number }) => (
 
 const secondaryNav = [
   { to: "/memory", label: "记忆库", icon: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01" },
-  {
-    to: "/review",
-    label: "审核队列",
-    icon: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4",
-  },
   { to: "/settings", label: "设置", icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" },
 ];
 
@@ -185,16 +180,14 @@ export default function AppLayout() {
                 onKeyDown={(e) => e.key === "Enter" && navigate(`/analyze/${s.session_id}`)}
                 title={s.title || s.session_id}
               >
-                <span className="conv-title">
+                <span className="conv-title">{s.title || "未命名对话"}</span>
+                {s.snippet && <span className="conv-snippet">{s.snippet}</span>}
+                <span className="conv-time">
                   {s.customer && (
                     <i className="conv-cust" title={s.customer}>
                       {s.customer.slice(0, 6)}
                     </i>
                   )}
-                  {s.title || "未命名对话"}
-                </span>
-                {s.snippet && <span className="conv-snippet">{s.snippet}</span>}
-                <span className="conv-time">
                   {s.running ? <i className="run-dot" title="运行中" /> : null}
                   {relTime(s.updated_at)}
                 </span>

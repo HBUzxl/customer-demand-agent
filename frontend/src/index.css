@@ -2404,7 +2404,7 @@ table input[type="checkbox"] {
   padding: 0 2px 6px;
 }
 
-/* 搜索结果元信息 + 类型徽章 */
+/* 搜索结果元信息 */
 .search-meta {
   font-size: 12px;
   color: var(--text-faint);
@@ -2542,4 +2542,26 @@ table input[type="checkbox"] {
   border-color: #7c6bd9;
   color: #7c6bd9;
   background: color-mix(in srgb, #7c6bd9 10%, transparent);
+}
+
+/* 多选复选框：hover/选中才浮现（平时不占视觉） */
+.doc-card input[type="checkbox"] {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.doc-card:hover input[type="checkbox"],
+.doc-card.sel input[type="checkbox"] {
+  opacity: 1;
+}
+
+/* 表格多选：行 hover/选中才浮现 */
+table input[type="checkbox"] {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+tr:hover input[type="checkbox"],
+tr.sel input[type="checkbox"],
+th input[type="checkbox"],
+.batch-bar input[type="checkbox"] {
+  opacity: 1;
 }

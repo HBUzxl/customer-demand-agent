@@ -9,7 +9,6 @@ const Replay = lazy(() => import("./pages/Replay"));
 const MemoryList = lazy(() => import("./pages/MemoryList"));
 const MemoryEditor = lazy(() => import("./pages/MemoryEditor"));
 const MemoryDetail = lazy(() => import("./pages/MemoryDetail"));
-const Review = lazy(() => import("./pages/Review"));
 const Observe = lazy(() => import("./pages/Observe"));
 const Settings = lazy(() => import("./pages/Settings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -38,7 +37,6 @@ const withSuspense = (
  *   /memory               记忆库列表
  *   /memory/new           新建记忆
  *   /memory/:type/:title  查看 / 编辑单条记忆
- *   /review               审核队列
  *   /settings             设置
  *   *                     404
  */
@@ -61,7 +59,6 @@ export const router = createBrowserRouter([
           { path: ":type/:title", element: withSuspense(MemoryDetail) },
         ],
       },
-      { path: "review", element: withSuspense(Review) },
       { path: "observe", element: withSuspense(Observe) },
       { path: "settings", element: withSuspense(Settings) },
       { path: "*", element: withSuspense(NotFound) },

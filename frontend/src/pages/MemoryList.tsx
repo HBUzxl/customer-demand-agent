@@ -158,7 +158,6 @@ export default function MemoryList() {
             >
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <span className="dc-title" style={{ fontSize: 15 }}>
-                  <span className="kind-badge kb-entry">入口</span>
                   {p.title}
                 </span>
                 {docCount(p.title) > 0 && (
