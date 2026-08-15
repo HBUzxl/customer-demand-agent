@@ -373,7 +373,10 @@ export default function Conversation() {
     setActiveRun(null);
   }
 
-  async function send(text: string) {
+  // 编辑重发的分支续写标记（截断返回 branch_id 存这里，下一条 send 带上）
+  const pendingBranchRef = useRef<string | null>(null);
+
+  async function send(text: string, branch?: string) {
     const content = text.trim();
     if (!content || loading) return;
     setError("");
@@ -381,7 +384,9 @@ export default function Conversation() {
     setInput("");
     setLoading(true);
     try {
-      const handle = await submitMessage(content, sessionId || undefined);
+      const effBranch = branch || pendingBranchRef.current || currentBranch || undefined;
+      pendingBranchRef.current = null;
+      const handle = await submitMessage(content, sessionId || undefined, undefined, effBranch);
       setSessionId(handle.session_id);
       setActiveRun({ sid: handle.session_id, rid: handle.run_id });
       if (!routeSid && handle.session_id)
@@ -393,18 +398,18 @@ export default function Conversation() {
     }
   }
 
-  // F1：编辑重发——截断该 user 消息及其之后，把原文填回输入框
+  // F1：编辑重发——截断该 user 消息及其之后（分叉出分支），原文填回输入框；
+  // 分叉后的下一条消息写入该分支（checkpoint-tree：编辑重发=开分支续写）
   async function editResend(msg: ChatMsg) {
     if (loading) return;
     try {
       if (!msg.seq) {
-        // 本地新消息（无持久化 seq）：直接本地移除
         setMessages((m) => m.filter((x) => x.id !== msg.id));
         setInput(msg.text);
         return;
       }
-      await truncateMessages(sessionId, msg.seq); // 真实持久化 seq（≠数据库 id）
-      // 本地重放：删掉该条及之后
+      const r = await truncateMessages(sessionId, msg.seq); // 真实持久化 seq（≠数据库 id）
+      pendingBranchRef.current = r.branch_id || null; // 分支续写标记
       const idx = messages.findIndex((m) => m.id === msg.id);
       if (idx >= 0) setMessages((m) => m.slice(0, idx));
       setInput(msg.text);

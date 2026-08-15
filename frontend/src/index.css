@@ -2572,3 +2572,39 @@ th input[type="checkbox"],
   font-size: 11px;
   margin-left: 8px;
 }
+
+/* 版本树（分支关系可视化） */
+.branch-tree {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 2px;
+  font-family: var(--mono, monospace);
+}
+.bt-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-faint);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.bt-node:hover,
+.bt-node.active {
+  color: #7c6bd9;
+  background: color-mix(in srgb, #7c6bd9 10%, transparent);
+}
+.bt-glyph {
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+.bt-fork {
+  font-size: 10px;
+  color: var(--text-faint);
+  opacity: 0.6;
+}

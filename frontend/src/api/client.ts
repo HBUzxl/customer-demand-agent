@@ -42,11 +42,17 @@ export async function submitMessage(
   text: string,
   sessionId: string | undefined,
   customer?: string,
+  branch?: string,
 ): Promise<RunHandle> {
   const res = await fetch(BASE + "/message", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, session_id: sessionId, customer: customer || undefined }),
+    body: JSON.stringify({
+      text,
+      session_id: sessionId,
+      customer: customer || undefined,
+      branch: branch || undefined,
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -100,7 +106,10 @@ export async function cancelRun(sessionId: string, runId: string): Promise<void>
 }
 
 // truncateMessages 删除会话中 seq 及之后的消息（编辑重发用）。
-export async function truncateMessages(sessionId: string, seq: number): Promise<void> {
+export async function truncateMessages(
+  sessionId: string,
+  seq: number,
+): Promise<{ branch_id: string }> {
   const res = await fetch(`${BASE}/sessions/${sessionId}/messages/after?seq=${seq}`, {
     method: "DELETE",
   });
@@ -108,6 +117,7 @@ export async function truncateMessages(sessionId: string, seq: number): Promise<
     const body = await res.json().catch(() => ({ error: "" }));
     throw new ApiError(body.error || `HTTP ${res.status}`, res.status);
   }
+  return res.json();
 }
 
 // sessionRunning 查询会话是否有活跃 Run（侧栏运行指示/切回恢复用）。

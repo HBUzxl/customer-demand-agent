@@ -304,20 +304,27 @@ export default function Replay() {
         </div>
       </div>
       {data && (data.branches?.length ?? 0) > 1 && (
-        <div className="branch-switch">
-          <span className="faint mono">分支</span>
-          {data.branches.map((b) => (
-            <button
-              key={b}
-              className={`chip ${b === currentBranch ? "active" : ""}`}
-              onClick={() => setCurrentBranch(b)}
-            >
-              {b === "main" ? "主线" : b}
-            </button>
-          ))}
+        <div className="branch-tree">
+          <span className="faint mono">版本树</span>
+          {data.branches.map((b) => {
+            const m = b.match(/^b(\d+)-/);
+            const isMain = b === "main";
+            return (
+              <button
+                key={b}
+                className={`bt-node ${b === currentBranch ? "active" : ""}`}
+                onClick={() => setCurrentBranch(b)}
+                title={isMain ? "主线（初始对话路径）" : `分叉自第 ${m ? m[1] : "?"} 条消息之后`}
+              >
+                <span className="bt-glyph">{isMain ? "─" : "├─"}</span>
+                <span>{isMain ? "主线" : b}</span>
+                {!isMain && m && <span className="bt-fork">分叉自第 {m[1]} 条</span>}
+              </button>
+            );
+          })}
           {currentBranch && (
             <button className="chip" onClick={() => setCurrentBranch("")}>
-              全部
+              显示全部
             </button>
           )}
         </div>
