@@ -2201,3 +2201,32 @@ details > summary {
   color: #7c6bd9;
   background: color-mix(in srgb, #7c6bd9 12%, transparent);
 }
+
+/* G6 会话搜索 */
+.conv-search {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+  margin: 4px 0 6px;
+  width: 100%;
+}
+.conv-search:focus {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+/* H2 意图标记 */
+.r-trigger {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 2px 0 10px;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 10px;
+}
+.r-trigger b {
+  color: var(--green);
+  font-weight: 600;
+}

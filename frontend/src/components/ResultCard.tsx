@@ -14,6 +14,9 @@ const confClass = (c: number) => (c >= 0.85 ? "g" : c >= 0.5 ? "b" : c >= 0.3 ? 
 export default function ResultCard({ r }: { r: AnalysisResult }) {
   return (
     <div className="result">
+      <div className="r-trigger">
+        Agent 判定本轮为<b>真实客户需求</b>，已提交结构化分析（可展开系统提示词行查看判定上下文）
+      </div>
       <div className="r-block">
         <h4>需求理解</h4>
         <MarkdownView>{r.demand_analysis}</MarkdownView>

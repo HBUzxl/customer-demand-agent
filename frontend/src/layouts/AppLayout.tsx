@@ -45,6 +45,7 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [recent, setRecent] = useState<RecentSession[]>([]);
+  const [sessionQuery, setSessionQuery] = useState(""); // G6 会话搜索
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar") === "collapsed");
 
   function toggle() {
@@ -122,35 +123,50 @@ export default function AppLayout() {
                 全部
               </NavLink>
             </div>
+            {!collapsed && (
+              <input
+                className="conv-search"
+                placeholder="搜索会话…"
+                value={sessionQuery}
+                onChange={(e) => setSessionQuery(e.target.value)}
+              />
+            )}
             {recent.length === 0 && <div className="conv-empty">暂无对话</div>}
-            {recent.map((s) => (
-              <div
-                key={s.session_id}
-                className="conv-item"
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(`/analyze/${s.session_id}`)}
-                onKeyDown={(e) => e.key === "Enter" && navigate(`/analyze/${s.session_id}`)}
-                title={s.title || s.session_id}
-              >
-                <span className="conv-title">{s.title || "未命名对话"}</span>
-                <span className="conv-time">
-                  {s.running ? <i className="run-dot" title="运行中" /> : null}
-                  {relTime(s.updated_at)}
-                </span>
-                <button
-                  className="conv-del"
-                  title="删除对话"
-                  aria-label={`删除对话 ${s.title || s.session_id}`}
-                  onClick={(e) => deleteSession(e, s.session_id)}
+            {recent
+              .filter(
+                (s) =>
+                  !sessionQuery.trim() ||
+                  (s.title || "").toLowerCase().includes(sessionQuery.toLowerCase()) ||
+                  s.session_id.includes(sessionQuery),
+              )
+              .map((s) => (
+                <div
+                  key={s.session_id}
+                  className="conv-item"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/analyze/${s.session_id}`)}
+                  onKeyDown={(e) => e.key === "Enter" && navigate(`/analyze/${s.session_id}`)}
+                  title={s.title || s.session_id}
                 >
-                  <Ico
-                    d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6h14M10 11v6M14 11v6"
-                    size={14}
-                  />
-                </button>
-              </div>
-            ))}
+                  <span className="conv-title">{s.title || "未命名对话"}</span>
+                  <span className="conv-time">
+                    {s.running ? <i className="run-dot" title="运行中" /> : null}
+                    {relTime(s.updated_at)}
+                  </span>
+                  <button
+                    className="conv-del"
+                    title="删除对话"
+                    aria-label={`删除对话 ${s.title || s.session_id}`}
+                    onClick={(e) => deleteSession(e, s.session_id)}
+                  >
+                    <Ico
+                      d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6h14M10 11v6M14 11v6"
+                      size={14}
+                    />
+                  </button>
+                </div>
+              ))}
           </div>
         )}
 

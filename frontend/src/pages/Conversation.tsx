@@ -92,7 +92,10 @@ export default function Conversation() {
   const { sessionId: routeSid } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => {
+    // G2 草稿：进入时恢复该会话的草稿（新建会话无草稿）
+    return "";
+  });
   const [loading, setLoading] = useState(false); // 本视图内订阅进行中
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState(routeSid || "");
@@ -178,8 +181,39 @@ export default function Conversation() {
   useEffect(() => () => unsubRef.current?.(), []);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+    if (loading) {
+      // 流式中：跟随滚底
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      return;
+    }
+    // G8 静止态：恢复该会话的记忆位置（无记忆则滚底）
+    const memo = scrollMemoRef.current.get(sessionId);
+    if (memo !== undefined && messages.length < 30) {
+      scrollRef.current?.scrollTo({ top: memo });
+    } else {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    }
+  }, [messages, loading]);
+
+  // G2 草稿持久化：输入变化即存（key 含会话）；发送后清
+  useEffect(() => {
+    const key = sessionId ? `draft-${sessionId}` : "draft-new";
+    if (input) localStorage.setItem(key, input);
+    else localStorage.removeItem(key);
+  }, [input, sessionId]);
+  // 进入会话时恢复草稿
+  useEffect(() => {
+    const key = sessionId ? `draft-${sessionId}` : "draft-new";
+    const saved = localStorage.getItem(key);
+    if (saved) setInput(saved);
+    return () => {
+      localStorage.setItem(key, input);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // G8 滚动位置：离开会话前记录，回来恢复（新消息少于 3 条时才恢复，避免打断流式）
+  const scrollMemoRef = useRef<Map<string, number>>(new Map());
 
   function patchLast(patch: (m: ChatMsg) => void) {
     setMessages((ms) => {
@@ -443,6 +477,12 @@ export default function Conversation() {
     </button>
   );
 
+  function onScroll() {
+    if (scrollRef.current && sessionId) {
+      scrollMemoRef.current.set(sessionId, scrollRef.current.scrollTop);
+    }
+  }
+
   // ── 空状态：欢迎语 + 输入框 + 示例，垂直居中 ──
   if (isEmpty) {
     return (
@@ -473,7 +513,7 @@ export default function Conversation() {
   // ── 对话中：消息流 + 底部输入 ──
   return (
     <div className="chat">
-      <div className="chat-scroll" ref={scrollRef}>
+      <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         <div className="chat-inner">
           {messages.map((m) =>
             m.role === "user" ? (
