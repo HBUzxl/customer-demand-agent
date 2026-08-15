@@ -31,4 +31,4 @@ checkpoint（轻量 followup：Question/Answer 照记，Analysis 空），保证
 ## 不变的部分
 
 - Checkpoint 链结构、Restore、断点续传、SQLite 持久化——全不动
-- 多租户作用域（本轮已加固）——不动
+- ~~多租户作用域（本轮已加固）~~——已随 de-tenancy 移除（2026-08-14，单租户）

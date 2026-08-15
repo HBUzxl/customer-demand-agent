@@ -17,7 +17,7 @@
 ### 记录什么
 
 ```text
-Session (tenant_id, session_id, created_at)
+Session (session_id, created_at)  # tenant_id 列保留但代码不读写（de-tenancy）
 ├── Message       每条消息：role / content / timestamp
 ├── ToolCall      每次工具调用：tool_name / params / result / timestamp
 ├── Checkpoint    每个 checkpoint 快照（同步落一份到磁盘）
@@ -26,7 +26,7 @@ Session (tenant_id, session_id, created_at)
 
 ### 用途
 
-- **会话列表页**：看历史会话，按时间/客户/tenant 检索
+- **会话列表页**：看历史会话，按时间/客户检索（tenant 维度已废止）
 - **会话详情页**：回放对话 + 工具调用轨迹 + checkpoint 快照
 - **审计**：Agent 为什么这么判断？查它的工具调用记录
 - **断点续传**：会话中断后从 checkpoint 恢复

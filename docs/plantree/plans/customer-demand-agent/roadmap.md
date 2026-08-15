@@ -135,8 +135,8 @@
 - 竞品话术生成
 - 登录认证（账号/SSO/钉钉）
 - 权限体系（RBAC）
-- 配额（每 tenant 限制）
-- Docker 化部署
-- CI/CD
-- 单元测试 / 集成测试
+- ~~配额（每 tenant 限制）~~（tenant 已废止）
+- ~~Docker 化部署~~（已落地：Dockerfile + VOLUME /var/lib/cda，见 P9）
+- ~~CI/CD~~（已落地：.github/workflows/ci.yml 全门禁）
+- ~~单元测试 / 集成测试~~（已落地：11 包测试 + mock LLM 全链路 + e2e/smoke×4）
 - RAG（非结构化语义检索）——明确不做，等积累了足够的历史对话和案例数据后再评估

@@ -6,7 +6,7 @@
 响应：SSE 流（与现在完全一致的事件类型）。
 
 handler 逻辑 = 现 handleAnalyze 去掉"分析"假设：
-tenant 解析 → sessionID → EnsureSession（跨租户校验）→ AppendMessage(user) →
+sessionID → EnsureSession → AppendMessage(user) →（tenant 解析/跨租户校验已随 de-tenancy 移除）
 SSE 头 → agent.Message(...) → 持久化 assistant 输出 + trace。
 
 ## 旧端点 shim
@@ -26,7 +26,7 @@ SSE 头 → agent.Message(...) → 持久化 assistant 输出 + trace。
 
 ## agent 侧接口变化
 
-`AnalyzeStream` / `ChatStream` 合并为 `Message(ctx, tenantID, sessionID, text, emit)`：
+`AnalyzeStream` / `ChatStream` 合并为 `Message(ctx, sessionID, text, emit)`（de-tenancy 后无 tenantID）：
 
 - 内部仍是同一个自主循环（runStreaming）
 - DetermineOp 保留，但输出只用于 checkpoint 类型选择

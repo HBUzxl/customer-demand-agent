@@ -39,8 +39,8 @@
   退避参数）
 - **运行参数**：MaxIterations、检索权重、聚合上限、超时等常量归拢成
   一张表（只读起步）
-- **数据与租户**：wiki_dir/history_db/tenant/default_user + 记忆统计
-  （各类型条目数：产品 8/威胁 7/...）
+- **数据位置**：data_dir/wiki_dir/history_db/default_user + 记忆统计
+  （各类型条目数：产品 8/威胁 7/...；已落地——tenant 维度随 de-tenancy 移除）
 
 ### C2 运行时可观测 ✅ 已落地（LogRing+SSE tail+LLM 审计+/observe 页+侧栏入口）
 
