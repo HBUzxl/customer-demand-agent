@@ -1,22 +1,19 @@
-# task ↔ commit 映射（goal mst4eup8-iu47um，16 task）
+# task ↔ commit 映射（goal msu4rm2p-vyd39h 二期，13 task）
 
-| task | commit | 说明 |
+| task | 功能 commit | 追修 commit |
 |---|---|---|
-| de-tenancy | 901def9 | 四层去 tenant（协议/Agent/存储/HTTP/config/test/e2e） |
-| p2-p3 | 4e4278b + fbd3426 | P2 Notes 全链删除 / P3 链滚动归档（+e55b276 LIMIT 修复） |
-| p9 | 4a7046f | CDA_DATA_DIR 三级+XDG 默认+播种+Docker（+c360ec6 真迁移+seed_test） |
-| p6 | 4ce2c23 | 时效三字段+覆盖归档（+6bd3b3b 历史链+cb28ba9 typedSubdir/parsePage 修复+API 层测试） |
-| f3-ask-user | 4578530 | 工具+SSE+选项卡+测试 |
-| f4-inline-review | 92b259d | needs_review+审批卡（+6bd3b3b 忽略+回放态；+794b307/1ecd5db smoke 硬化） |
-| p11-pipeline | c877c35 | taskbg 包+固化管线（+6bd3b3b 串行/race；+3d8325e 真链路 e2e；+c360ec6 extractObserves 修复） |
-| p5-lint | a64c50a | RunLint 三检查（+c360ec6 overlap；+a631019 missing-entry） |
-| g4-title | aca7e08 | Run 完成回调+BuildTitlePrompt+真实冒烟 |
-| c1-config-center | 9e8180c | 四只读 API+Settings 配置中心 tab |
-| c2-observe | aa40ffe + 58690e6 | LogRing/SSE tail/LLM 审计/observe 页（+修复：具名返回值） |
-| c3-prompt-external | cc7627e + a9defd1 | 外置模板+快照（+修复：外置正文真实生效+template_raw 渲染） |
-| p4-checkpoint-viz | c55f86a | SessionDetail.Checkpoints+Replay 行 |
-| g-frontend-misc | e18baeb | G2/G6/G8/H2 |
-| smoke-final | a3f26ff | 脚本入库（+多轮硬化 794b307/1ecd5db/cf1a55a/ac870aa） |
-| verify-close | 5816cd7 + 2aa2963 + 17f4b1a | plan-tree 终态+AGENTS/README |
+| ui-shared | 3bd2c2b（ConfirmDialog 五处替换+CopyBtn 四处） | cbac944（原生弹窗二次扫描）+ 5addb0b（Settings 残留 prompt/alert 清零） |
+| session-batch | 583c233（History 复选框+批量删） | cbac944（hover 浮现+全选并入批量条） |
+| session-search | 34608f1（SearchSessions+API+侧栏接入） | 5addb0b（History 页搜索入口补） |
+| customer-bind | b4b9c44（bind 工具+chip 删） | cbac944（徽章挪时间旁）+ 5addb0b（过时文案删） |
+| memory-batch | 4ef7de0（计数+正文+六类型批量） | — |
+| memory-search-ia | 61b9475（搜索语义） | cbac944（入口/文档徽章删——用户裁决）+ 5addb0b（「全部」tab 过滤器） |
+| wiki-hygiene | 79d2dc2（清理+existing_hint+指引） | 5addb0b（审批条重叠提示 overlap_titles） |
+| sidebar-models-ux | b0c2293（收缩态+五字段+下拉） | 5addb0b（死代码清） |
+| review-gating | dcc0641（门禁+审批条+ADR-005） | cbac944（/review 页面彻底删——用户裁决） |
+| console-config | 1433aae（三态+热生效） | 5addb0b（回退链可编辑） |
+| checkpoint-tree | 34b030c（链→树+软分叉+分支过滤） | fccf75d（smoke-f0 断言）+ 5addb0b（Conversation 分支切换+PrevID 父指针语义） |
+| ui-copy-cleanup | 59c834c（三类清扫+终扫断言） | 5addb0b（lint unused 清理连带） |
+| verify-close | 8cdc157（plan-tree 九 Done） | 5addb0b + 本 commit |
 
-审计修复 commit（goal 要求的「全套门禁绿」维持轮）：6bd3b3b / c360ec6 / cb28ba9+692c2cd / a9defd1+1ecd5db / ac870aa / cf1a55a / b0ccd17 / 17f4b1a
+审计修复轮：fccf75d / 5addb0b（七项）/ 本轮（lint warnings unused 清零+baseline 门禁文档同步+四脚本留证）

@@ -288,8 +288,6 @@ export default function Replay() {
 
   const rows = buildRows(data);
   const toolTotal = (data.tool_calls || []).length;
-  const branches = data.branches || ["main"];
-  const showBranchSwitch = branches.length > 1;
 
   return (
     <div className="page">

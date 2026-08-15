@@ -132,6 +132,11 @@ export default function MemoryForm({
           />
         </div>
       </div>
+      {formErr && (
+        <div className="error" style={{ marginTop: 8 }}>
+          ! {formErr}
+        </div>
+      )}
       <div className="row">
         <button className="btn" onClick={submit} disabled={submitting}>
           {submitting ? "保存中…" : "保存"}

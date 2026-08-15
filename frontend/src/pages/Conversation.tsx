@@ -208,7 +208,7 @@ export default function Conversation() {
     } else {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
     }
-  }, [messages, loading]);
+  }, [messages, loading, sessionId]);
 
   // G2 草稿持久化：输入变化即存（key 含会话）；发送后清
   useEffect(() => {

@@ -29,7 +29,6 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [fetching, setFetching] = useState(false);
-  const [fetchOptions, setFetchOptions] = useState<Record<number, string[]>>({});
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   // fetchModels 下拉弹窗：idx + 该模型返回的可选列表
@@ -170,7 +169,6 @@ export default function Settings() {
                     }
                     onTest={() => testModel(m)}
                     onFetch={() => fetchModels(m, i)}
-                    fetchOptions={fetchOptions[i]}
                   />
                 ))}
                 <button
@@ -531,7 +529,6 @@ function ModelCard({
   onFetch,
   testing,
   fetching,
-  fetchOptions,
 }: {
   m: ModelConfig;
   onPatch: (p: Partial<ModelConfig>) => void;
@@ -540,7 +537,6 @@ function ModelCard({
   onFetch: () => void;
   testing: boolean;
   fetching: boolean;
-  fetchOptions?: string[];
 }) {
   return (
     <div className="model-card">
@@ -703,30 +699,11 @@ interface ConsoleData {
   behavior: { agent_max_iterations: number; default_user: string; llm_timeout_sec: number };
 }
 
-interface PromptLayers {
-  template_raw: string;
-  layers: {
-    id: string;
-    name: string;
-    dynamic: boolean;
-    note?: string;
-    raw?: string;
-    sections?: { title: string; body: string }[];
-  }[];
-  tool_prompts: { tool: string; desc: string }[];
-}
-
-interface MemStats {
-  stats: Record<string, { total: number; verified: number; pending: number }>;
-}
-
 function ConsoleCenter() {
   const [cfg, setCfg] = useState<ConsoleData | null>(null);
   const [behavior, setBehavior] = useState<ConsoleData["behavior"] | null>(null);
   const [savingBehavior, setSavingBehavior] = useState(false);
   const [saveErr, setSaveErr] = useState("");
-  const [prompts, setPrompts] = useState<PromptLayers | null>(null);
-  const [mem, setMem] = useState<MemStats | null>(null);
   useEffect(() => {
     fetch("/api/console/config")
       .then((r) => r.json())
@@ -734,14 +711,6 @@ function ConsoleCenter() {
         setCfg(d);
         setBehavior(d.behavior);
       })
-      .catch(() => {});
-    fetch("/api/console/prompts")
-      .then((r) => r.json())
-      .then(setPrompts)
-      .catch(() => {});
-    fetch("/api/console/memory")
-      .then((r) => r.json())
-      .then(setMem)
       .catch(() => {});
   }, []);
   async function saveBehavior() {

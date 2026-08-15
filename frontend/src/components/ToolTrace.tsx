@@ -227,7 +227,7 @@ function ReviewCard({ type, title }: { type: string; title: string }) {
   );
 }
 
-function ToolStep({ trace, index, last }: { trace: ToolTrace; index: number; last: boolean }) {
+function ToolStep({ trace, last }: { trace: ToolTrace; last: boolean }) {
   const meta = TOOL_META[trace.tool] || {
     label: trace.tool,
     icon: "M12 2v6m0 12v-6M2 12h6m12 0h-6",
@@ -295,7 +295,7 @@ export default function ToolTimeline({ tools }: { tools: ToolTrace[] }) {
   return (
     <div className="tt">
       {tools.map((t, i) => (
-        <ToolStep key={i} trace={t} index={i} last={i === tools.length - 1} />
+        <ToolStep key={i} trace={t} last={i === tools.length - 1} />
       ))}
     </div>
   );
