@@ -84,10 +84,10 @@ Trace.SystemPrompt 改为聚合全部 system 消息（模板+动态注入均落�
 让 Agent 能查 SQLite 里的原始对话轨迹（messages + tool_calls），当
 checkpoint 注入的摘要不够用时回捞细节。
 
-**落地证据**：history.Store.SearchMessages（tenant 隔离 JOIN + 会话
-范围可选 + LIKE + limit 封顶）+ TestSearchMessages（4 断言组）；
-agent 层 history_search 业务工具（SetHistorySearcher 回调 + turnState
-带 tenant/session）；TestAgentHistorySearch 集成（跨会话命中后基于
+**落地证据**：history.Store.SearchMessages（会话范围可选 + LIKE +
+limit 封顶；de-tenancy 后已无租户维度）+ TestSearchMessages（4 断言
+组）；agent 层 history_search 业务工具（SetHistorySearcher 回调 +
+turnState 带会话）；TestAgentHistorySearch 集成（跨会话命中后基于
 历史回答）；prompt 指引「回溯细节 → history_search」；main.go 接线。
 语义对应 MiMo 的 history 工具；也是"跨会话客户上下文"缺口的另一半：
 画像给"是什么"，history 给"聊过什么"。

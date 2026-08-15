@@ -2,7 +2,7 @@
 # smoke-final.sh —— 一期收尾新功能的真实冒烟（需 :8080 运行 + 真实 api_key）
 # 覆盖：F3 ask_user 选项卡（SSE 事件）/ F4 内联审核（needs_review→approve）/
 #       观测台（任务列表+LLM 审计非空）/ C3 外置 prompt 生效
-set -uo pipefail
+set -euo pipefail
 BASE="${BASE:-http://localhost:8080}"
 CURL="/usr/bin/curl"
 PASS=0; FAIL=0
@@ -16,9 +16,9 @@ for attempt in 1 2 3; do
   $CURL -s -H "Content-Type: application/json" \
     -d "{\"text\":\"客户要做安全建设，预算和部署环境都还没定，你必须先用 ask_user 工具向我提问这两个信息，拿到答案后才能继续分析。\",\"session_id\":\"$SID\"}" \
     "$BASE/api/message" > /tmp/sf_ask.json
-  RID=$(sed 's/.*"run_id":"\([^"]*\)".*/\1/' /tmp/sf_ask.json)
-  STREAM=$($CURL -s -N --max-time 120 "$BASE/api/sessions/$SID/stream?since=0" 2>/dev/null)
-  echo "$STREAM" | grep -q '"type":"ask_user"' && ASK_HIT=1
+  RID=$(sed 's/.*"run_id":"\([^"]*\)".*/\1/' /tmp/sf_ask.json || true)
+  STREAM=$($CURL -s -N --max-time 120 "$BASE/api/sessions/$SID/stream?since=0" 2>/dev/null || true)
+  if echo "$STREAM" | grep -q '"type":"ask_user"'; then ASK_HIT=1; fi
   $CURL -s -o /dev/null -X POST "$BASE/api/sessions/$SID/runs/$RID/cancel"
   $CURL -s -o /dev/null -X DELETE "$BASE/api/sessions/$SID"
   [ -n "$ASK_HIT" ] && break
@@ -34,8 +34,8 @@ for attempt in 1 2 3; do
   $CURL -s -H "Content-Type: application/json" \
     -d "{\"text\":\"请用 memory_observe 把这个新趋势记到行业记忆（industry）：最近金融客户特别关注AI大模型的数据安全合规，银行问过训练数据出境问题。直接调用工具记录，不要只口头说记了。\",\"session_id\":\"$SID2\"}" \
     "$BASE/api/message" > /tmp/sf_rv.json
-  $CURL -s -N --max-time 150 "$BASE/api/sessions/$SID2/stream?since=0" > /tmp/sf_rv_stream.txt 2>/dev/null
-  RV_HIT=$(grep -oE '\\?"needs_review\\?":\\?true' /tmp/sf_rv_stream.txt | head -1)
+  { $CURL -s -N --max-time 150 "$BASE/api/sessions/$SID2/stream?since=0" > /tmp/sf_rv_stream.txt 2>/dev/null || true; }
+  RV_HIT=$(grep -oE '\\?"needs_review\\?":\\?true' /tmp/sf_rv_stream.txt | head -1 || true)
   $CURL -s -o /dev/null -X DELETE "$BASE/api/sessions/$SID2"
   [ -n "$RV_HIT" ] && break
   echo "  [retry] F4 第 $attempt 次未触发工具调用，重试…"
@@ -56,7 +56,7 @@ TASKS=$($CURL -s "$BASE/api/tasks")
 echo "$TASKS" | grep -q '"type"' && ok "观测台：任务列表有记录" || fail "观测台任务列表空"
 AUDIT=$($CURL -s "$BASE/api/console/llm-audit")
 echo "$AUDIT" | grep -q '"model"' && ok "观测台：LLM 审计非空" || fail "LLM 审计空"
-LOGS=$($CURL -s -N --max-time 2 "$BASE/api/console/logs" 2>/dev/null | head -c 200)
+LOGS=$($CURL -s -N --max-time 2 "$BASE/api/console/logs" 2>/dev/null | head -c 200 || true)
 echo "$LOGS" | grep -q 'data:' && ok "观测台：日志 tail 出流" || fail "日志 tail"
 
 # ── C3：外置 prompt 生效 ──

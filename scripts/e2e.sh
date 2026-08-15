@@ -8,7 +8,7 @@
 # 覆盖：健康检查 / 配置 / 记忆检索 / 记忆写入+审核流 / 会话历史
 # 注意：/api/analyze 需要 LLM_API_KEY，否则返回 502（见 README）。
 
-set -uo pipefail
+set -euo pipefail
 
 BASE="${BASE:-http://localhost:8080}"
 TENANT="${TENANT_ID:-default}"
@@ -67,7 +67,7 @@ echo "-- 5. 会话历史 --"
 MRESP=$("$CURL" -s -H "X-Tenant-ID: ${TENANT}" -H "Content-Type: application/json" -d '{"text":"你好","session_id":"e2e-msg"}' "$BASE/api/message" 2>/dev/null)
 echo "$MRESP" | grep -q '"run_id"' && ok "POST /api/message（202+run_id，F0）" || fail "POST /api/message（got ${MRESP}）"
 # 订阅流：replay 应有 session 事件（Run 在后台跑，与请求连接无关）
-STREAM=$("$CURL" -s -N --max-time 2 "$BASE/api/sessions/e2e-msg/stream?since=0" 2>/dev/null | head -c 400)
+STREAM=$("$CURL" -s -N --max-time 2 "$BASE/api/sessions/e2e-msg/stream?since=0" 2>/dev/null | head -c 400 || true)
 echo "$STREAM" | grep -q '"type":"session"' && ok "GET /stream replay（session 事件）" || fail "stream replay（got ${STREAM:0:80}）"
 # 取消该 Run（让会话可复用/清理）
 RID=$(echo "$MRESP" | sed 's/.*"run_id":"\([^"]*\)".*/\1/')

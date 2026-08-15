@@ -8,7 +8,7 @@
 #   3. 体积断言：寒暄轮 system prompt < 2000 字符（全量注入时代 ≥3300）
 #
 # 用法：./scripts/smoke-p0.sh   （默认 BASE=http://localhost:8080）
-set -uo pipefail
+set -euo pipefail
 BASE="${BASE:-http://localhost:8080}"
 CURL="/usr/bin/curl"
 SID="smoke-p0-$(date +%s)"
@@ -32,15 +32,15 @@ for attempt in 1 2; do
   $CURL -s -H "Content-Type: application/json" -H "X-Tenant-ID: default" \
     -d "{\"text\":\"$DEMAND_TEXT\",\"session_id\":\"$SID\",\"customer\":\"冒烟测试电商\"}" \
     "$BASE/api/message" > /tmp/smoke_p0_run.json
-  RID=$(sed 's/.*"run_id":"\([^"]*\)".*/\1/' /tmp/smoke_p0_run.json)
+  RID=$(sed 's/.*"run_id":"\([^"]*\)".*/\1/' /tmp/smoke_p0_run.json || true)
   $CURL -s -N --max-time 180 "$BASE/api/sessions/$SID/stream?since=0" > /tmp/smoke_p0_sse.txt 2>&1
-  grep -q '"tool":"analysis_submit"' /tmp/smoke_p0_sse.txt && SUBMIT_HIT=1
+  if grep -q '"tool":"analysis_submit"' /tmp/smoke_p0_sse.txt; then SUBMIT_HIT=1; fi
   [ -n "$SUBMIT_HIT" ] && break
   echo "  [retry] analysis_submit 第 $attempt 次未触发，重试…"
   $CURL -s -o /dev/null -X DELETE "$BASE/api/sessions/$SID"
 done
-[ -n "$RID" ] && ok "202+run_id（F0）" || fail "无 run_id（$(cat /tmp/smoke_p0_run.json)）"
-[ -n "$SUBMIT_HIT" ] && ok "analysis_submit 出现（工具轨迹正常）" || fail "analysis_submit 未出现（两次尝试）"
+if [ -n "$RID" ]; then ok "202+run_id（F0）"; else fail "无 run_id（$(cat /tmp/smoke_p0_run.json)）"; fi
+if [ -n "$SUBMIT_HIT" ]; then ok "analysis_submit 出现（工具轨迹正常）"; else fail "analysis_submit 未出现（两次尝试）"; fi
 
 # 2. 寒暄轮（F0：创建 Run + 订阅收尾；新会话——system prompt 断言按会话查）
 SID2="smoke-p0-hi-$(date +%s)"
@@ -78,12 +78,14 @@ sys.exit(1 if fails else 0)
 PY
 PYRC=$?
 cat /tmp/sp0_sub.txt
-SUBPASS=$(grep -c '\[PASS\]' /tmp/sp0_sub.txt 2>/dev/null || echo 0)
-SUBFAIL=$(grep -c '\[FAIL\]' /tmp/sp0_sub.txt 2>/dev/null || echo 0)
-PASS=$((PASS+SUBPASS))
-FAIL=$((FAIL+SUBFAIL))
+SUBPASS=$(grep -c '\[PASS\]' /tmp/sp0_sub.txt || true)
+SUBFAIL=$(grep -c '\[FAIL\]' /tmp/sp0_sub.txt || true)
+PASS=$((PASS+${SUBPASS:-0}))
+FAIL=$((FAIL+${SUBFAIL:-0}))
+# python 段退出码独立传播（tee 已去掉——文件输出+cat 回显不改变 $?）
+if [ "$PYRC" -ne 0 ]; then exit 1; fi
 
 # 清理
-$CURL -s -o /dev/null -X DELETE "$BASE/api/sessions/$SID" -H 'X-Tenant-ID: default'
+$CURL -s -o /dev/null -X DELETE "$BASE/api/sessions/$SID" -H 'X-Tenant-ID: default' || true
 echo "=== smoke-p0: ${PASS} passed, ${FAIL} failed ==="
 [ "$FAIL" -eq 0 ]

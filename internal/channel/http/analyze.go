@@ -206,7 +206,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSessionRunning 会话是否有活跃 Run（前端运行指示/切回恢复用）。
-// 租户校验：只返回本租户会话的运行态（跨租户 404）。
+// 返回会话运行态（不存在/已结束 → false）。
 func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	if _, err := s.history.GetSession(sessionID); err != nil {
@@ -220,7 +220,7 @@ func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRunCancel 显式取消会话的活跃 Run（唯一停止途径）。
-// 租户校验：只能取消本租户会话的 Run（跨租户 404）。
+// 取消会话 Run（不存在或已结束 → 404）。
 func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	runID := r.PathValue("run_id")
@@ -239,7 +239,7 @@ func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 // 删除 seq 之后的消息 + 关联 tool_calls + 全部 checkpoints（F1）。
 func (s *Server) handleMessagesTruncate(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	// 先租户归属校验（防跨租户探测运行态），再检查运行状态
+	// 会话存在性校验，再检查运行状态
 	if _, err := s.history.GetSession(sessionID); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return

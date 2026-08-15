@@ -228,7 +228,7 @@ func (s *Store) EnsureSession(sessionID, title, customer string) error {
 			now, title, title, customer, customer, sessionID)
 		return err
 	case errors.Is(err, sql.ErrNoRows):
-		// 不存在：插入（tenant_id 列保留写默认值——单租户，de-tenancy）
+		// 不存在：插入（INSERT 不涉及 tenant_id 列——DDL DEFAULT 自动填，de-tenancy）
 		_, err := s.db.Exec(`INSERT INTO sessions(session_id, title, customer, created_at, updated_at)
 			VALUES(?,?,?,?,?)`, sessionID, title, customer, now, now)
 		return err
@@ -301,7 +301,7 @@ func (s *Store) AppendCheckpoint(sessionID string, cp *domain.Checkpoint) error 
 const chainSoftLimitSQLite = 50
 
 // ListCheckpoints 读回某会话的 checkpoint 链（按创建顺序，用于断点续传）。
-// 跨租户：JOIN sessions 校验归属，非本租户会话返回空（读不到对方 checkpoint）。
+// 按会话读回 checkpoint 链（de-tenancy 后无租户维度）。
 func (s *Store) ListCheckpoints(sessionID string) ([]*domain.Checkpoint, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -516,7 +516,7 @@ func truncateStr(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-// DeleteSession 删除某会话及其全部轨迹（校验 tenant）。
+// DeleteSession 删除某会话及其全部轨迹。
 func (s *Store) DeleteSession(sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -524,7 +524,7 @@ func (s *Store) DeleteSession(sessionID string) error {
 	if err != nil {
 		return err
 	}
-	// 先校验 tenant 归属
+	// 会话存在性校验
 	var cnt int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE session_id=?`, sessionID).Scan(&cnt); err != nil {
 		_ = tx.Rollback()
@@ -568,7 +568,7 @@ func encodeJSON(v any) (string, error) {
 
 // TruncateAfter 删除会话中 seq >= after 的消息及其关联 tool_calls，
 // 并清空该会话全部 checkpoints（F1 编辑重发：截断后重发）。
-// 返回删除的消息条数。校验 tenant 归属。
+// 返回删除的消息条数。
 func (s *Store) TruncateAfter(sessionID string, after int) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
