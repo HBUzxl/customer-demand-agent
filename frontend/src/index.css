@@ -2565,3 +2565,10 @@ th input[type="checkbox"],
 .batch-bar input[type="checkbox"] {
   opacity: 1;
 }
+
+.rs-overlap {
+  font-style: normal;
+  color: var(--red, #d64545);
+  font-size: 11px;
+  margin-left: 8px;
+}

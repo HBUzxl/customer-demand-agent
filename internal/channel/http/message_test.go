@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+
+	"customer-demand-agent/internal/domain"
+	"customer-demand-agent/internal/memory/longterm"
 	"strconv"
 	"strings"
 	"testing"
@@ -523,5 +526,43 @@ func TestCancel404VsServerError(t *testing.T) {
 	resp2.Body.Close()
 	if resp2.StatusCode != http.StatusNotFound {
 		t.Errorf("已结束 Run 的 cancel 应 404，got %d", resp2.StatusCode)
+	}
+}
+
+// TestReviewPendingOverlap wiki-hygiene F3：待审列表含重叠提示——
+// 与同类型已验证条目内容高度重叠 → overlap_titles。
+func TestReviewPendingOverlap(t *testing.T) {
+	ts, wiki := setupServer(t)
+	defer ts.Close()
+	// 已验证条目
+	if err := wiki.UpsertEntry(&longterm.Entry{Type: domain.MemoryIndustry, Title: "已验证行业观察", Content: "金融行业客户普遍关注大模型数据出境与生成内容合规问题，银行与券商均有诉求", Status: longterm.StatusVerified}); err != nil {
+		t.Fatal(err)
+	}
+	// 高度重叠的待审条目
+	if err := wiki.UpsertEntry(&longterm.Entry{Type: domain.MemoryIndustry, Title: "待审重叠条目", Content: "金融行业客户普遍关注大模型数据出境与生成内容合规问题，银行与券商均有类似诉求", Status: longterm.StatusPendingReview}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.Get(ts.URL + "/api/review/pending")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out struct {
+		Items []struct {
+			Title         string   `json:"title"`
+			OverlapTitles []string `json:"overlap_titles"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, it := range out.Items {
+		if it.Title == "待审重叠条目" && len(it.OverlapTitles) > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("重叠待审条目应带 overlap_titles: %+v", out.Items)
 	}
 }

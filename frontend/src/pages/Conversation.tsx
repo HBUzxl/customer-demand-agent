@@ -96,7 +96,11 @@ export default function Conversation() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [sessionCustomer, setSessionCustomer] = useState("");
-  const [pendingReviews, setPendingReviews] = useState<{ type: string; title: string }[]>([]);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [currentBranch, setCurrentBranch] = useState("");
+  const [pendingReviews, setPendingReviews] = useState<
+    { type: string; title: string; overlap_titles?: string[] }[]
+  >([]);
   const [input, setInput] = useState(() => {
     // G2 草稿：进入时恢复该会话的草稿（新建会话无草稿）
     return "";
@@ -126,6 +130,8 @@ export default function Conversation() {
       setMessages([]);
       setSessionId("");
       setSessionCustomer("");
+      setBranches([]);
+      setCurrentBranch("");
       setActiveRun(null);
       return;
     }
@@ -138,6 +144,12 @@ export default function Conversation() {
         setMessages(reconstruct(d.messages || [], d.tool_calls || []));
         setSessionId(routeSid);
         setSessionCustomer(d.session?.customer || "");
+        setBranches(d.branches || []);
+        // 分支过滤视图：currentBranch 非空时按分支重拉
+        if (currentBranch) {
+          const fb = await sessionGet(routeSid, currentBranch);
+          if (!cancelled) setMessages(reconstruct(fb.messages || [], fb.tool_calls || []));
+        }
         // F0 切回恢复（竞态安全）：
         // a) running=true 且二次确认仍在跑 → 续订（带 rid 过滤）；
         // b) 查询窗口内 Run 完成（true→false）→ 重拉详情补最终答案；
@@ -500,10 +512,6 @@ export default function Conversation() {
             粘贴客户沟通原文，或直接描述场景。我会理解需求、匹配长亭产品、判断可行性——也可以直接跟我聊。
           </p>
           <div className="composer-wrap">{composer}</div>
-          <div className="empty-aux">
-            {custChip}
-            <span className="empty-hint">先关联客户，首轮分析即可结合其画像</span>
-          </div>
           <div className="examples-grid">
             {EXAMPLES.map((ex, i) => (
               <button key={i} className="ex-card" onClick={() => send(ex.d)}>
@@ -563,6 +571,31 @@ export default function Conversation() {
           <div className="chat-hint">
             {sessionId ? `会话 ${sessionId.slice(5, 17)}` : "新会话"} · 回车发送
             {custChip}
+            {branches.length > 1 &&
+              branches.map((b) => (
+                <button
+                  key={b}
+                  className={`chip ${b === currentBranch ? "active" : ""}`}
+                  style={{
+                    fontSize: 10,
+                    padding: "1px 8px",
+                    cursor: "pointer",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    background:
+                      b === currentBranch
+                        ? "color-mix(in srgb, #7c6bd9 12%, transparent)"
+                        : "transparent",
+                    color: b === currentBranch ? "#7c6bd9" : "var(--text-faint)",
+                  }}
+                  onClick={() => {
+                    setCurrentBranch(b === currentBranch ? "" : b);
+                  }}
+                  title={b === "main" ? "主线对话" : b}
+                >
+                  {b === "main" ? "主线" : b}
+                </button>
+              ))}
           </div>
         </div>
       </div>

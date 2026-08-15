@@ -34,7 +34,7 @@ type Checkpoint struct {
 	ID        string          `json:"id"`
 	Type      CheckpointType  `json:"type"`
 	PrevID    string          `json:"prev_id,omitempty"`
-	BranchID  string          `json:"branch_id,omitempty"` // 所属分支（checkpoint-tree：main=主线，b{seq}-* = 编辑重发产生的分支）
+	BranchID  string          `json:"branch_id,omitempty"` // 所属分支（checkpoint-tree：main=主线，b{seq}-* = 编辑重发产生的兄弟分支；PrevID 即树结构的父节点指针）
 	Document  string          `json:"document,omitempty"`  // 原始客户文本（initial/reanalysis）
 	Analysis  *AnalysisResult `json:"analysis,omitempty"`  // 结构化分析结果
 	Question  string          `json:"question,omitempty"`  // 追问内容（followup）

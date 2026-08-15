@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { Link } from "react-router-dom";
-import { sessionsList, sessionDelete } from "../api/client";
+import { sessionsList, sessionDelete, sessionsSearch } from "../api/client";
 import type { SessionListItem } from "../types";
 
 export default function History() {
@@ -9,9 +9,13 @@ export default function History() {
   const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [hits, setHits] = useState<SessionListItem[] | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
-  const allSelected = items.length > 0 && selected.size === items.length;
+  const view = hits ?? items;
+  const allSelected = view.length > 0 && selected.size === view.length;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -30,6 +34,22 @@ export default function History() {
     load();
   }, []);
 
+  // 内容搜索（标题+消息正文，防抖 300ms；空=回退全量列表）
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setHits(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const t = setTimeout(async () => {
+      const r = await sessionsSearch(q, 30);
+      setHits(r.map((x) => ({ ...x, created_at: x.updated_at })));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
   async function handleDelete(id: string) {
     setConfirmTarget(id);
   }
@@ -42,7 +62,7 @@ export default function History() {
     });
   }
   function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(items.map((i) => i.session_id)));
+    setSelected(allSelected ? new Set() : new Set(view.map((i) => i.session_id)));
   }
   async function doBatchDelete() {
     setBatchBusy(true);
@@ -88,6 +108,13 @@ export default function History() {
         </div>
       </div>
       <div className="page-sub">列出全部历史对话。可继续追问或回放完整轨迹。</div>
+      <input
+        className="tab-search"
+        placeholder="搜索标题与对话内容…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        style={{ marginBottom: 12 }}
+      />
 
       {selected.size > 0 && (
         <div className="batch-bar">
@@ -103,12 +130,12 @@ export default function History() {
 
       {loading && <div className="loading">加载中…</div>}
       {error && <div className="error">! {error}</div>}
-      {!loading && items.length === 0 && (
+      {!loading && !searching && items.length === 0 && (
         <div className="panel">
           <div className="empty">暂无对话记录</div>
         </div>
       )}
-      {items.length > 0 && (
+      {(hits ?? items).length > 0 && (
         <div className="panel flush">
           <table>
             <thead>
@@ -128,7 +155,7 @@ export default function History() {
               </tr>
             </thead>
             <tbody>
-              {items.map((s) => (
+              {(hits ?? items).map((s) => (
                 <tr key={s.session_id} className={selected.has(s.session_id) ? "sel" : ""}>
                   <td>
                     <input

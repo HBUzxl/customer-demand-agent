@@ -175,28 +175,97 @@ export default function Settings() {
                 ))}
                 <button
                   className="btn ghost sm"
-                  onClick={() => {
-                    const name = prompt("新模型名称：");
-                    if (name)
-                      setCfg({
-                        ...cfg,
-                        models: [
-                          ...cfg.models,
-                          {
-                            name,
-                            endpoint: "",
-                            api_key: "",
-                            protocol: "openai-chat",
-                            model: "",
-                            temperature: 0.3,
-                            max_tokens: 4096,
-                          },
-                        ],
-                      });
-                  }}
+                  onClick={() =>
+                    setCfg({
+                      ...cfg,
+                      models: [
+                        ...cfg.models,
+                        {
+                          name: `模型 ${cfg.models.length + 1}`,
+                          endpoint: "",
+                          api_key: "",
+                          protocol: "openai-chat",
+                          model: "",
+                          temperature: 0.3,
+                          max_tokens: 4096,
+                        },
+                      ],
+                    })
+                  }
                 >
                   + 添加模型
                 </button>
+              </div>
+              <div className="s-group">
+                <div className="s-gtitle">回退链（失败后依次尝试）</div>
+                {(cfg.router.fallback.chain ?? []).map((name, idx) => (
+                  <div className="s-row" key={idx}>
+                    <div className="s-name mono" style={{ fontSize: 12 }}>
+                      {idx + 1}.
+                    </div>
+                    <div className="s-ctrl">
+                      <select
+                        value={name}
+                        style={{ minWidth: 160 }}
+                        onChange={(e) => {
+                          const chain = [...(cfg.router.fallback.chain ?? [])];
+                          chain[idx] = e.target.value;
+                          setCfg({
+                            ...cfg,
+                            router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
+                          });
+                        }}
+                      >
+                        {cfg.models.map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn ghost sm"
+                        title="移除该跳"
+                        onClick={() => {
+                          const chain = (cfg.router.fallback.chain ?? []).filter(
+                            (_, j) => j !== idx,
+                          );
+                          setCfg({
+                            ...cfg,
+                            router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
+                          });
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="s-row">
+                  <div className="s-name" />
+                  <div className="s-ctrl">
+                    <select
+                      value=""
+                      style={{ minWidth: 160 }}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        const chain = [...(cfg.router.fallback.chain ?? []), e.target.value];
+                        setCfg({
+                          ...cfg,
+                          router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
+                        });
+                      }}
+                    >
+                      <option value="">+ 添加回退模型…</option>
+                      {cfg.models
+                        .filter((m) => !(cfg.router.fallback.chain ?? []).includes(m.name))
+                        .map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
               </div>
               <div style={{ marginTop: 18 }}>
                 <button className="btn primary" disabled={saving} onClick={() => save(cfg)}>
@@ -309,6 +378,77 @@ export default function Settings() {
                         })
                       }
                     />
+                  </div>
+                </div>
+              </div>
+              <div className="s-group">
+                <div className="s-gtitle">回退链（失败后依次尝试）</div>
+                {(cfg.router.fallback.chain ?? []).map((name, idx) => (
+                  <div className="s-row" key={idx}>
+                    <div className="s-name mono" style={{ fontSize: 12 }}>
+                      {idx + 1}.
+                    </div>
+                    <div className="s-ctrl">
+                      <select
+                        value={name}
+                        style={{ minWidth: 160 }}
+                        onChange={(e) => {
+                          const chain = [...(cfg.router.fallback.chain ?? [])];
+                          chain[idx] = e.target.value;
+                          setCfg({
+                            ...cfg,
+                            router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
+                          });
+                        }}
+                      >
+                        {cfg.models.map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn ghost sm"
+                        title="移除该跳"
+                        onClick={() => {
+                          const chain = (cfg.router.fallback.chain ?? []).filter(
+                            (_, j) => j !== idx,
+                          );
+                          setCfg({
+                            ...cfg,
+                            router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
+                          });
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="s-row">
+                  <div className="s-name" />
+                  <div className="s-ctrl">
+                    <select
+                      value=""
+                      style={{ minWidth: 160 }}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        const chain = [...(cfg.router.fallback.chain ?? []), e.target.value];
+                        setCfg({
+                          ...cfg,
+                          router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
+                        });
+                      }}
+                    >
+                      <option value="">+ 添加回退模型…</option>
+                      {cfg.models
+                        .filter((m) => !(cfg.router.fallback.chain ?? []).includes(m.name))
+                        .map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -584,6 +724,7 @@ function ConsoleCenter() {
   const [cfg, setCfg] = useState<ConsoleData | null>(null);
   const [behavior, setBehavior] = useState<ConsoleData["behavior"] | null>(null);
   const [savingBehavior, setSavingBehavior] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
   const [prompts, setPrompts] = useState<PromptLayers | null>(null);
   const [mem, setMem] = useState<MemStats | null>(null);
   useEffect(() => {
@@ -618,7 +759,7 @@ function ConsoleCenter() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      setSaveErr(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingBehavior(false);
     }
@@ -679,9 +820,12 @@ function ConsoleCenter() {
           />
         </label>
       </div>
-      <button className="btn sm" disabled={savingBehavior} onClick={saveBehavior}>
-        {savingBehavior ? "保存中…" : "保存（立即生效，无需重启）"}
-      </button>
+      <div className="row" style={{ gap: 10 }}>
+        <button className="btn sm" disabled={savingBehavior} onClick={saveBehavior}>
+          {savingBehavior ? "保存中…" : "保存（立即生效，无需重启）"}
+        </button>
+        {saveErr && <span style={{ color: "var(--red)", fontSize: 12 }}>{saveErr}</span>}
+      </div>
 
       <h3 className="cc-h">数据位置（只读——迁移需停服）</h3>
       <div className="cc-group mono">

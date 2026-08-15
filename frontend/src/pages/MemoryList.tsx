@@ -5,6 +5,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import type { MemoryEntry } from "../types";
 
 const TYPES = [
+  { id: "", label: "全部" },
   { id: "product", label: "产品" },
   { id: "threat", label: "威胁" },
   { id: "compliance", label: "合规" },
@@ -102,13 +103,12 @@ export default function MemoryList() {
       </div>
 
       <div className="tab-bar">
-        {TYPES.map((t) => (
+        {TYPES.filter((t) => t.id !== "" || searching).map((t) => (
           <button
-            key={t.id}
+            key={t.id || "all"}
             className={`tab ${type === t.id ? "active" : ""}`}
             onClick={() => {
               setType(t.id);
-              setQuery("");
             }}
           >
             {t.label}
