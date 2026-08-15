@@ -93,10 +93,10 @@
 - 会话列表 / 会话详情 / 回放
 - 断点续传（从 checkpoint 恢复）
 
-### 多租户
+### ~~多租户~~（已废止——ADR-011 废止 2026-08-14，de-tenancy 落地）
 
-- tenant_id 贯穿 session / history / 使用者画像
-- 一期只隔离，无 RBAC
+- ~~tenant_id 贯穿 session / history / 使用者画像~~（已移除）
+- ~~一期只隔离，无 RBAC~~（单租户内部工具；列保留但代码不读写）
 
 ### 审核系统（Review）
 

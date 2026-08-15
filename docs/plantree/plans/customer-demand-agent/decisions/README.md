@@ -234,7 +234,7 @@
 > 见 [[plans/de-tenancy/README.md|de-tenancy plan]]：四层去 tenant 已落地；
 > sessions.tenant_id 列保留（恒带 NOT NULL DEFAULT，代码不读不写）。
 
-<details><summary>历史原文（已不生效）</summary>
+<details><summary>历史原文（已不生效——仅存档，勿按此理解现状）</summary>
 
 ## ADR-011：多租户隔离（一期只区分，不做权限）
 

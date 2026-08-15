@@ -18,7 +18,7 @@
   chain）在 config 但前端未展示
 - 行为参数（MaxIterations=15、检索字段权重、Answered 聚合上限 20、
   prompt 各注入段的 token 上限）散落代码常量
-- 数据位置（wiki_dir/history_db/default_tenant/default_user/
+- 数据位置（wiki_dir/history_db/data_dir/default_user/
   llm_timeout_sec）前端不可见（联动 P9 数据根）
 - **零后台任务视图**：当前后端无任何常驻后台任务（唯一 goroutine 是
   优雅关闭）——但 F0 Run、G4 标题生成、P5 Lint、P7 Dream 都在路上，

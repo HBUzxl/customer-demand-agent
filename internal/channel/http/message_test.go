@@ -104,8 +104,10 @@ func TestRunCancelExplicit(t *testing.T) {
 		t.Fatalf("cancel: %v", err)
 	}
 	cresp.Body.Close()
-	if cresp.StatusCode != http.StatusOK {
-		t.Fatalf("cancel 应 200，got %d", cresp.StatusCode)
+	// LLM 不可达时 Run 可能快速失败结束（cancel 时已 done → 404 合法终态，
+	// F0 语义：404=Run 不存在或已结束）。200=显式取消成功。两者皆过，500 才是错。
+	if cresp.StatusCode != http.StatusOK && cresp.StatusCode != http.StatusNotFound {
+		t.Fatalf("cancel 应 200 或 404（已结束），got %d", cresp.StatusCode)
 	}
 	// 等待 Run goroutine 退出 → 再发消息应可 202（409 解除）
 	deadline := time.Now().Add(5 * time.Second)
