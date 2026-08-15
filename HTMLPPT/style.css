@@ -58,3 +58,5 @@
 .tpl-cda .num-chip{font-family:var(--font-mono);color:var(--accent-2);font-weight:700}
 .tpl-cda table.compact th,.tpl-cda table.compact td{padding:3px 10px;font-size:11px;line-height:1.3}
 .tpl-cda table.compact td.mono{font-size:10px}
+.tpl-cda .slide[data-center]{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.tpl-cda .slide[data-center] .cols{margin-left:auto;margin-right:auto}
