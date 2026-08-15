@@ -15,7 +15,8 @@
 | [[plans/review-gating/README.md\|审核机制重构：写入即审批]] | Shaping | 用户裁决：审核改写入门禁（pending 对 Agent 不可见，批准即生效）+ 审批交互改对话内权限式弹条（去跳页，/review 降级积压总览）+ ADR-005 语义修订；现状已核实（pending 立即可检索/注入 prompt/降权未实现——审核≠门禁） | 2026-08-15 用户裁决（「按理说我通过之后才进记忆库」「直接在输入框上面弹个东西」） | 方案已定可开工（F1 门禁/F2 弹条/F3 ADR 修订） |
 | [[plans/checkpoint-tree/README.md\|Checkpoint 语义重构：对话版本树]] | Shaping | 用户裁决三层：①概念统一「与 Agent 的对话」（每轮必有 checkpoint，废弃纯聊天轻量说法）②checkpoint=对话版本的 git：链→树（ParentID+BranchID，编辑重发=开分支不再截断删）③对话内版本树 UI+任意节点一键回到；含 F1 编辑重发语义变化/断点续传/LastAnalysis 适配 | 2026-08-15 用户裁决（「只有一种概念叫与 Agent 的对话」「像 git 的树状结构，从第二轮重新问=新分支」） | 方案已定可开工（数据模型/概念/UI 三层） |
 | [[plans/wiki-hygiene/README.md\|Wiki 卫生与客户记忆治理]] | Ready | 真实使用暴露三类库污染（自测残留 4+冒烟污染 11+类型错 1）+ 产品缺陷：同客户重复建条目无复用机制（7 变体）；F1 清理/F2 ensure 前置检索+prompt 续写指引/F3 审核类型徽章+重叠提示/F4 自测命名约束 | 2026-08-15 从会话 sess_cfdc2e91beb0 挖出 | 可开工（F1 清理半天内；F2-F4 各 1-2h） |
-| [[plans/session-management/README.md\|会话管理增强]] | Ready | 应用内确认弹窗（替换两处 window.confirm + alert）+ History 批量选择/批量删除（复选框+全选+Promise.allSettled 循环单删，不建后端批量端点） | 2026-08-15 用户提出（一期收尾后首项：「想从头来需要批量删除，做不到」） | 可直接开工（半天量级） |
+| [[plans/memory-management/README.md\|记忆管理增强]] | Ready | ①产品计数修正（docCount 子文档+1 把主文档算进去——万象「1 篇」实为主文档自身，无子文档不该显示篇数）②主产品页显示正文（现只显示子文档卡片）③六类型记忆条目多选+批量删除（复选框+全选+ConfirmDialog+allSettled 汇总，与 session-management 同套交互） | 2026-08-15 用户反馈（「说有一篇文章但里头啥也没有」「每一个记忆都需要多选」） | 可开工 |
+| [[plans/session-management/README.md\|会话管理增强]] | Ready | 应用内确认弹窗（替换两处 window.confirm + alert）+ History 批量选择/批量删除（复选框+全选+Promise.allSettled 循环单删，不建后端批量端点）+ F3 客户绑定 Agent 自主化（删手动 chip，session_bind_customer 工具+ask_user 问客户，Agent 行为）+ F4 消息复制按钮 | 2026-08-15 用户提出（一期收尾后首项：「想从头来需要批量删除，做不到」；二批：客户绑定自主化+复制按钮） | 可直接开工（半天量级） |
 | [[plans/de-tenancy/README.md\|移除多租户]] | Done | 四层去 tenant 落地（X-Tenant-ID 忽略、列保留、e2e 26/0、grep 无功能残留） | 2026-08-14 收尾 goal task 1 | — |
 
 ## 基线

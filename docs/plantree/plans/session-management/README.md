@@ -47,7 +47,30 @@
 - 侧栏「最近对话」不做多选（窄面板放不下，批量场景在 History 全量页）。
 - 「全部」入口（conv-all → /history）保持现状，批量能力落在 History 页内。
 
-### F3. 消息复制按钮（用户提出 2026-08-15）
+### F3. 客户绑定 Agent 自主化（用户裁决 2026-08-15 第二批）
+
+现状：对话页「+ 关联客户」chip 由用户手动填写客户名 → POST customer 字段
+→ sessions.customer 列 → Agent 每轮读注入 L2 身份行。**Agent 从不主动问。**
+
+用户裁决（原话）：「这个关联客户应该是 Agent 自己的行为。就是 Agent，它会
+看目前都有什么客户，然后 ask user question……当前你问的是谁家客户对吧？
+这应该是 Agent 的行为，而不是用户主动，也不是用户绑定的。」
+
+- **手动入口彻底删掉**（用户明确：「手动填的入口彻底删掉」）——前端
+  customerChip/editingCustomer/customer state 全链移除；POST customer
+  字段保留但只有 Agent 工具会写。
+- 新增 agent 业务工具 `session_bind_customer`（类似 ask_user 的轮次内
+  工具）：Agent 发现会话未关联客户且对话涉及真实客户需求时 → 先
+  memory_list(customer) 拿已有客户 → ask_user「这是谁家客户？」选项=
+  已有客户 + 「新客户」→ 用户答后调 bind 工具写 sessions.customer。
+- prompt（systemAutonomy）加指引：对话开始涉及具体客户而未绑定 →
+  主动问一次（每会话只问一次，不重复）。
+- 前端绑定后自动展示「客户：XX」（只读 chip，不可点编辑）。
+- 验证：集成测试——mock LLM 流 ask_user(选项来自 memory_list) →
+  bind 工具调用 → sessions.customer 落库 → 下一轮 prompt L2 身份行出现；
+  前端无手动输入入口。
+
+### F4. 消息复制按钮（用户提出 2026-08-15）
 
 - 用户消息气泡 + Agent 回复气泡 hover 显示复制按钮（点击复制完整文本到
   剪贴板，短暂反馈「已复制」）。
