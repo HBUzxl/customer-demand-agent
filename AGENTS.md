@@ -97,7 +97,7 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 
 ## 单租户（de-tenancy，2026-08-14 裁决）
 
-多租户已砍除（ADR-011 废止——无使用场景，单租户内部工具）：代码无 tenant 概念；`X-Tenant-ID` 请求头接受但忽略；SQLite `sessions.tenant_id` 列**保留**（新库 DDL 带 NOT NULL DEFAULT，老库 Open 时表重建补 DEFAULT、历史值原样保留）但**代码不读不写**（INSERT 不提及该列，SELECT 不查）；产品/行业/客户记忆组织级共享语义不变。
+多租户已砍除（ADR-011 废止——无使用场景，单租户内部工具）：代码无 tenant 概念；`X-Tenant-ID` 请求头接受但忽略；SQLite `sessions.tenant_id` 列**保留**（新库 DDL 带 NOT NULL DEFAULT，老库 Open 时表重建补 DEFAULT、历史值原样保留）但**业务路径不读不写**（INSERT 不提及该列、SELECT 不查；仅 Open 时的一次性 schema 迁移代码接触该列）；产品/行业/客户记忆组织级共享语义不变。
 
 ## 前后端连接
 

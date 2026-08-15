@@ -35,7 +35,7 @@ React+Vite 前端 ──HTTP──→ channel/http → agent（自主循环）
 
 ## 快速开始
 
-### 1. 配置（config.json，不用环境变量）
+### 1. 配置（业务配置走 config.json；数据根可用 CDA_DATA_DIR 环境变量指定）
 
 首次运行若 `config.json` 不存在会自动从模板创建；或手动复制：
 
@@ -56,7 +56,7 @@ API key、模型列表、路由、回退策略全部集中在 `config.json` 一�
 ```
 
 服务监听 `:8080`。Wiki 种子知识库（6 产品 + 6 威胁 + 3 合规 + 3 行业 + 示例画像）
-首次启动自动从 `wiki/` 复制到 `data/wiki/`。
+首次启动自动从 `wiki/` 播种到数据根（默认 `~/.local/share/customer-demand-agent/wiki`，可用 `CDA_DATA_DIR` 覆盖；老 `./data` 首次启动自动迁入数据根、原位保留可回退）。
 
 ### 3. 启动前端（开发模式）
 
@@ -119,7 +119,7 @@ FRONTEND_DIST=./frontend/dist ../scripts/run.sh
 ## 测试
 
 ```bash
-go test ./...              # 24 个单测 + 集成测试（含 mock LLM 全链路）
+go test ./...              # 11 包测试（含 mock LLM 全链路 + 固化 HTTP 端到端）
 ./scripts/e2e.sh           # HTTP API 端到端冒烟
 ```
 
