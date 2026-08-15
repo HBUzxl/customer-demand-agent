@@ -80,9 +80,10 @@ done
 sleep 0.5
 TRESP=$("$CURL" -s -X DELETE "$BASE/api/sessions/$SID/messages/after?seq=1")
 echo "$TRESP" | grep -q '"status":"ok"' && ok "⑤ truncate 返回 ok" || fail "⑤ truncate（${TRESP}）"
-MRESP=$("$CURL" -s "$BASE/api/sessions/$SID")
-MCOUNT=$(echo "$MRESP" | python3 -c "import json,sys;print(len(json.load(sys.stdin).get('messages') or []))" 2>/dev/null || echo -1)
-[ "$MCOUNT" = "0" ] && ok "⑤ 截断后消息清空（0 条）" || fail "⑤ 截断后仍有 $MCOUNT 条"
+# checkpoint-tree：编辑重发=软分叉——消息保留挂新分支（branch_id 返回）
+BRANCH=$(echo "$TRESP" | python3 -c "import json,sys;print(json.load(sys.stdin).get('branch_id',''))" 2>/dev/null)
+BNUM=$(echo "$TRESP" | python3 -c "import json,sys;print(json.load(sys.stdin).get('branched_messages',0))" 2>/dev/null)
+[ -n "$BRANCH" ] && [ "$BNUM" -ge 1 ] && ok "⑤ 分叉生效（branch=$BRANCH, $BNUM 条挂新分支）" || fail "⑤ 分叉异常（${TRESP}）"
 # 截断后可重新发消息（Run 解除占用）
 R2=$("$CURL" -s -H "Content-Type: application/json" -d "{\"text\":\"你好\",\"session_id\":\"$SID\"}" "$BASE/api/message")
 echo "$R2" | grep -q run_id && ok "⑤ 截断后可重发（新 Run）" || fail "⑤ 重发失败（${R2}）"
