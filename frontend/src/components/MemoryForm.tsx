@@ -64,11 +64,12 @@ export default function MemoryForm({
   onCancel: () => void;
 }) {
   const [v, setV] = useState<MemoryValues>(initial);
+  const [formErr, setFormErr] = useState("");
   const set = (patch: Partial<MemoryValues>) => setV({ ...v, ...patch });
 
   function submit() {
     if (!v.title.trim() || !v.content.trim()) {
-      alert("标题和内容不能为空");
+      setFormErr("标题和内容不能为空");
       return;
     }
     onSubmit(v);

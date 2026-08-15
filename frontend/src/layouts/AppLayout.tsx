@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { sessionDelete, sessionsList } from "../api/client";
+import ConfirmDialog from "../components/ConfirmDialog";
 import type { SessionListItem } from "../types";
 
 type RecentSession = SessionListItem & { running?: boolean };
@@ -46,6 +47,8 @@ export default function AppLayout() {
   const location = useLocation();
   const [recent, setRecent] = useState<RecentSession[]>([]);
   const [sessionQuery, setSessionQuery] = useState(""); // G6 会话搜索
+  const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
+  const [delErr, setDelErr] = useState("");
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebar") === "collapsed");
 
   function toggle() {
@@ -72,16 +75,21 @@ export default function AppLayout() {
     return () => clearInterval(t);
   }, [recent]);
 
-  async function deleteSession(e: MouseEvent, id: string) {
+  function deleteSession(e: MouseEvent, id: string) {
     e.stopPropagation();
-    if (!window.confirm("删除这个对话？删除后不可恢复。")) return;
+    setConfirmTarget(id);
+  }
+  async function doDelete() {
+    const id = confirmTarget;
+    if (!id) return;
     try {
       await sessionDelete(id);
       setRecent((rs) => rs.filter((s) => s.session_id !== id));
-      // 当前正打开的会话被删 → 回到新对话页
       if (location.pathname === `/analyze/${id}`) navigate("/analyze");
     } catch (err) {
-      window.alert(`删除失败：${err instanceof Error ? err.message : err}`);
+      setDelErr(`删除失败：${err instanceof Error ? err.message : err}`);
+    } finally {
+      setConfirmTarget(null);
     }
   }
 
@@ -179,6 +187,24 @@ export default function AppLayout() {
           ))}
         </div>
       </aside>
+      <ConfirmDialog
+        open={!!confirmTarget}
+        title="删除这个对话？"
+        body="删除后不可恢复。"
+        confirmText="删除"
+        onConfirm={doDelete}
+        onCancel={() => setConfirmTarget(null)}
+      />
+      <ConfirmDialog
+        open={!!delErr}
+        title="删除失败"
+        body={delErr}
+        danger={false}
+        confirmText="知道了"
+        cancelText="关闭"
+        onConfirm={() => setDelErr("")}
+        onCancel={() => setDelErr("")}
+      />
 
       <main className="main">
         <Outlet />

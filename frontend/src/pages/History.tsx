@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { Link } from "react-router-dom";
 import { sessionsList, sessionDelete } from "../api/client";
 import type { SessionListItem } from "../types";
 
 export default function History() {
   const [items, setItems] = useState<SessionListItem[]>([]);
+  const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
+  const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -24,12 +27,17 @@ export default function History() {
   }, []);
 
   async function handleDelete(id: string) {
-    if (!confirm("删除该会话及其全部记录？")) return;
+    setConfirmTarget(id);
+  }
+  async function doDelete() {
+    if (!confirmTarget) return;
     try {
-      await sessionDelete(id);
+      await sessionDelete(confirmTarget);
       load();
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfirmTarget(null);
     }
   }
 
@@ -93,6 +101,19 @@ export default function History() {
           </table>
         </div>
       )}
+      {err && (
+        <div className="err-banner" onClick={() => setErr("")}>
+          {err}（点击关闭）
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!confirmTarget}
+        title="删除该会话及其全部记录？"
+        body="删除后不可恢复。"
+        confirmText="删除"
+        onConfirm={doDelete}
+        onCancel={() => setConfirmTarget(null)}
+      />
     </div>
   );
 }

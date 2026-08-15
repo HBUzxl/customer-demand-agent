@@ -4,6 +4,7 @@ import { memoryGet, memoryList, memoryUpsert, memoryDelete } from "../api/client
 import type { MemoryEntry } from "../types";
 import MemoryForm, { toValues, fromValues, type MemoryValues } from "../components/MemoryForm";
 import MarkdownView from "../components/MarkdownView";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 const typeLabel: Record<string, string> = {
   product: "产品",
@@ -27,6 +28,8 @@ export default function MemoryDetail() {
   const [entry, setEntry] = useState<MemoryEntry | null>(null);
   const [subDocs, setSubDocs] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [archErr, setArchErr] = useState("");
   const [editing, setEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -68,13 +71,18 @@ export default function MemoryDetail() {
     }
   }
 
-  async function handleArchive() {
-    if (!entry || !confirm(`归档 ${entry.title}？`)) return;
+  function handleArchive() {
+    if (entry) setConfirmArchive(true);
+  }
+  async function doArchive() {
+    if (!entry) return;
     try {
       await memoryDelete(entry.type, entry.title, true);
       navigate("/memory");
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      setArchErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setConfirmArchive(false);
     }
   }
 
@@ -208,6 +216,34 @@ export default function MemoryDetail() {
             </div>
           )}
         </>
+      )}
+      <ConfirmDialog
+        open={!!confirmArchive}
+        title={`归档 ${entry?.title ?? ""}？`}
+        body="归档后不再参与检索，可从记忆库恢复。"
+        confirmText="归档"
+        danger={false}
+        onConfirm={doArchive}
+        onCancel={() => setConfirmArchive(false)}
+      />
+      {archErr && (
+        <div className="err-banner" onClick={() => setArchErr("")}>
+          {archErr}（点击关闭）
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!confirmArchive}
+        title={`归档 ${entry?.title ?? ""}？`}
+        body="归档后不再参与检索。"
+        confirmText="归档"
+        danger={false}
+        onConfirm={doArchive}
+        onCancel={() => setConfirmArchive(false)}
+      />
+      {archErr && (
+        <div className="err-banner" onClick={() => setArchErr("")}>
+          {archErr}（点击关闭）
+        </div>
       )}
     </div>
   );

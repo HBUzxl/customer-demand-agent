@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { reviewPending, reviewApprove, reviewReject } from "../api/client";
 import type { ReviewItem } from "../types";
 
@@ -7,6 +8,7 @@ export default function Review() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
+  const [rejectTarget, setRejectTarget] = useState<ReviewItem | null>(null);
 
   async function load() {
     setLoading(true);
@@ -33,14 +35,20 @@ export default function Review() {
       setError(e instanceof Error ? e.message : String(e));
     }
   }
-  async function reject(it: ReviewItem) {
-    if (!confirm(`拒绝并删除：${it.title}？`)) return;
+  function reject(it: ReviewItem) {
+    setRejectTarget(it);
+  }
+  async function doReject() {
+    const it = rejectTarget;
+    if (!it) return;
     try {
       await reviewReject(it.type, it.title);
       setMsg(`已拒绝：${it.title}`);
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRejectTarget(null);
     }
   }
 
@@ -102,6 +110,14 @@ export default function Review() {
           </div>
         </div>
       ))}
+      <ConfirmDialog
+        open={!!rejectTarget}
+        title={`拒绝并删除：${rejectTarget?.title ?? ""}？`}
+        body="拒绝将删除该待审条目。"
+        confirmText="拒绝"
+        onConfirm={doReject}
+        onCancel={() => setRejectTarget(null)}
+      />
     </div>
   );
 }

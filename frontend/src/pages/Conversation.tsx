@@ -517,14 +517,11 @@ export default function Conversation() {
         <div className="chat-inner">
           {messages.map((m) =>
             m.role === "user" ? (
-              <div key={m.id} className="msg user">
+              <div key={m.id} className="msg user msg-wrap" style={{ position: "relative" }}>
                 <div className="bubble">{m.text}</div>
+                <CopyBtn text={m.text} />
                 {!loading && (
-                  <button
-                    className="edit-resend"
-                    onClick={() => editResend(m)}
-                    title="编辑后重发（删除此消息及之后的对话）"
-                  >
+                  <button className="edit-resend" onClick={() => editResend(m)} title="编辑后重发">
                     ✎ 编辑重发
                   </button>
                 )}
@@ -549,12 +546,31 @@ export default function Conversation() {
   );
 }
 
+function CopyBtn({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className={`msg-copy${done ? " done" : ""}`}
+      title="复制"
+      onClick={() => {
+        navigator.clipboard.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        });
+      }}
+    >
+      {done ? "✓" : "⧉"}
+    </button>
+  );
+}
+
 function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }) {
   const [open, setOpen] = useState(false);
   const hasTrace = !!(m.reasoning || (m.tools && m.tools.length));
   const toolCount = m.tools?.length || 0;
   return (
-    <div className="msg assistant">
+    <div className="msg assistant msg-wrap" style={{ position: "relative" }}>
+      <CopyBtn text={m.text} />
       <div className="avatar">需求分析助手</div>
       <div className="body">
         {hasTrace && (

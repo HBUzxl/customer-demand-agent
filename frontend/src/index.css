@@ -2230,3 +2230,92 @@ details > summary {
   color: var(--green);
   font-weight: 600;
 }
+
+/* ConfirmDialog（应用内确认弹窗，替换原生 confirm/alert） */
+.cd-mask {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg, #111) 60%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.cd-box {
+  background: var(--surface, #1c1c22);
+  border: 1px solid var(--border, #2e2e36);
+  border-radius: 10px;
+  min-width: 300px;
+  max-width: 420px;
+  padding: 18px 20px 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.cd-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.cd-body {
+  font-size: 13px;
+  color: var(--text-faint);
+  margin-top: 8px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.cd-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.btn.danger {
+  background: var(--red, #d64545);
+  border-color: var(--red, #d64545);
+  color: #fff;
+}
+
+/* 消息复制按钮 */
+.msg-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.12s;
+  cursor: pointer;
+  padding: 0;
+}
+.msg-wrap:hover .msg-copy {
+  opacity: 1;
+}
+.msg-copy:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+}
+.msg-copy.done {
+  color: var(--green);
+}
+
+/* History 错误横幅 */
+.err-banner {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--red, #d64545);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  z-index: 210;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}

@@ -137,15 +137,39 @@ function summaryOf(r: Row): string {
   }
 }
 
+function CopyBtn({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className={`msg-copy${done ? " done" : ""}`}
+      title="复制"
+      onClick={() => {
+        navigator.clipboard.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        });
+      }}
+    >
+      {done ? "✓" : "⧉"}
+    </button>
+  );
+}
+
 function Detail({ row }: { row: Row }) {
   switch (row.kind) {
     case "user":
-      return <div className="rp-full">{row.content}</div>;
+      return (
+        <div className="rp-full msg-wrap" style={{ position: "relative" }}>
+          {row.content}
+          <CopyBtn text={row.content} />
+        </div>
+      );
     case "system":
       return <pre className="rp-full mono">{row.content}</pre>;
     case "assistant":
       return (
-        <div className="rp-full">
+        <div className="rp-full msg-wrap" style={{ position: "relative" }}>
+          <CopyBtn text={row.content} />
           {row.analysis && <ResultCard r={row.analysis} />}
           <MarkdownView>{row.content}</MarkdownView>
         </div>
