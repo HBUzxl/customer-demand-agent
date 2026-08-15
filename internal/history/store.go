@@ -438,6 +438,135 @@ func (s *Store) SearchMessages(sessionID, query string, limit int) ([]MessageHit
 	return out, nil
 }
 
+// SessionSearchHit 是会话搜索结果（标题或内容命中）。
+type SessionSearchHit struct {
+	SessionID string `json:"session_id"`
+	Title     string `json:"title"`
+	Customer  string `json:"customer"`
+	Snippet   string `json:"snippet"`   // 内容命中片段（标题命中为空）
+	Role      string `json:"role"`      // 命中消息角色（user/assistant）
+	HitTitle  bool   `json:"hit_title"` // true=标题命中（排序优先）
+	UpdatedAt string `json:"updated_at"`
+}
+
+// SearchSessions 会话搜索：标题 LIKE 命中（优先）+ 消息内容 LIKE 命中
+// （带 snippet，截取关键词前后 30 字符）。按 标题命中>内容命中、更新时间倒序。
+func (s *Store) SearchSessions(query string, limit int) ([]SessionSearchHit, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	like := "%" + query + "%"
+	// 内容命中（每会话取最近一条命中消息）
+	rows, err := s.db.Query(`SELECT m.session_id, m.role, m.content, m.created_at,
+			COALESCE(ss.title,''), COALESCE(ss.customer,''), COALESCE(ss.updated_at, m.created_at)
+		FROM messages m
+		JOIN sessions ss ON ss.session_id = m.session_id
+		WHERE m.content LIKE ?
+		ORDER BY m.created_at DESC`, like)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type rawHit struct {
+		h   SessionSearchHit
+		src string
+	}
+	var contents []rawHit
+	seen := map[string]bool{}
+	for rows.Next() {
+		var h SessionSearchHit
+		var content, createdAt string
+		if err := rows.Scan(&h.SessionID, &h.Role, &content, &createdAt, &h.Title, &h.Customer, &h.UpdatedAt); err != nil {
+			continue
+		}
+		if seen[h.SessionID] {
+			continue // 每会话一条（最近）
+		}
+		seen[h.SessionID] = true
+		h.Snippet = makeSnippet(content, query, 60)
+		h.HitTitle = false
+		h.UpdatedAt = createdAt
+		contents = append(contents, rawHit{h, content})
+	}
+	// 标题命中
+	trows, err := s.db.Query(`SELECT session_id, title, customer, updated_at
+		FROM sessions WHERE title LIKE ? ORDER BY updated_at DESC LIMIT ?`, like, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer trows.Close()
+	titleHits := map[string]bool{}
+	var titleList []SessionSearchHit
+	for trows.Next() {
+		var h SessionSearchHit
+		var updated string
+		if err := trows.Scan(&h.SessionID, &h.Title, &h.Customer, &updated); err != nil {
+			continue
+		}
+		titleHits[h.SessionID] = true
+		h.HitTitle = true
+		h.UpdatedAt = updated
+		titleList = append(titleList, h)
+	}
+	// 合并：标题命中在前（其会话若也有内容命中，补 snippet），内容命中排后
+	byID := map[string]SessionSearchHit{}
+	for _, c := range contents {
+		byID[c.h.SessionID] = c.h
+	}
+	out := titleList
+	for i := range out {
+		if c, ok := byID[out[i].SessionID]; ok {
+			out[i].Snippet = c.Snippet
+			out[i].Role = c.Role
+		}
+	}
+	for _, c := range contents {
+		if !titleHits[c.h.SessionID] {
+			out = append(out, c.h)
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// makeSnippet 截取关键词前后文（content 命中片段）。
+func makeSnippet(content, query string, width int) string {
+	i := strings.Index(content, query)
+	if i < 0 {
+		if len([]rune(content)) <= width {
+			return content
+		}
+		return string([]rune(content)[:width]) + "…"
+	}
+	start := i - width/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + width + len(query)
+	if end > len(content) {
+		end = len(content)
+		start = end - width - len(query)
+		if start < 0 {
+			start = 0
+		}
+	}
+	snip := content[start:end]
+	if start > 0 {
+		snip = "…" + snip
+	}
+	if end < len(content) {
+		snip += "…"
+	}
+	return strings.ReplaceAll(snip, "\n", " ")
+}
+
 // GetSession 返回会话详情。
 func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
 	s.mu.Lock()

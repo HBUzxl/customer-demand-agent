@@ -2338,3 +2338,41 @@ table tr.sel td {
 table input[type="checkbox"] {
   accent-color: var(--accent, #4a7dff);
 }
+
+/* 侧栏客户徽章 + 搜索命中片段 */
+.conv-cust {
+  font-style: normal;
+  font-size: 10px;
+  background: color-mix(in srgb, var(--gold, #d4a843) 18%, transparent);
+  color: var(--gold, #d4a843);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+.conv-snippet {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.conv-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* History 客户列长名截断 */
+.cust-cell {
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

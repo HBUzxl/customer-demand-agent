@@ -141,7 +141,9 @@ export default function History() {
                   <td>
                     <Link to={`/analyze/${s.session_id}`}>{s.title || s.session_id}</Link>
                   </td>
-                  <td className="faint">{s.customer || "—"}</td>
+                  <td className="faint cust-cell" title={s.customer}>
+                    {s.customer || "—"}
+                  </td>
                   <td className="faint mono" style={{ fontSize: 12 }}>
                     {new Date(s.updated_at).toLocaleString()}
                   </td>

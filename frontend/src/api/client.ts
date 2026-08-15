@@ -223,6 +223,23 @@ export const configTest = (probe: {
   });
 
 // 自动获取：代理网关 /models 拉可用模型列表
+export interface SessionSearchHit {
+  session_id: string;
+  title: string;
+  customer: string;
+  snippet: string;
+  role: string;
+  hit_title: boolean;
+  updated_at: string;
+}
+
+export const sessionsSearch = async (q: string, limit = 20): Promise<SessionSearchHit[]> => {
+  const res = await fetch(`${BASE}/sessions/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+  if (!res.ok) return [];
+  const d = (await res.json()) as { items: SessionSearchHit[] };
+  return d.items || [];
+};
+
 export const listModels = (probe: {
   name?: string;
   endpoint: string;

@@ -116,6 +116,22 @@ func (s *Server) resetRegistry() error {
 }
 
 // handleSessionList: GET /api/sessions?limit=&offset=
+// handleSessionsSearch: GET /api/sessions/search?q=&limit= —— 会话搜索
+// （标题命中优先 + 消息内容命中带 snippet）。
+func (s *Server) handleSessionsSearch(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	hits, err := s.history.SearchSessions(q, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "搜索会话: %v", err)
+		return
+	}
+	if hits == nil {
+		hits = []history.SessionSearchHit{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"count": len(hits), "items": hits})
+}
+
 func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))

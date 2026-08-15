@@ -63,6 +63,8 @@ export interface ConfigResponse {
 }
 
 export interface SessionListItem {
+  snippet?: string; // 内容搜索命中片段
+  hit_title?: boolean;
   session_id: string;
   title: string;
   customer: string;

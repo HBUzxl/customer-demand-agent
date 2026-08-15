@@ -97,6 +97,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/consolidate", s.handleTaskConsolidate)
 	mux.HandleFunc("POST /api/tasks/lint", s.handleTaskLint)
 
+	mux.HandleFunc("GET /api/sessions/search", s.handleSessionsSearch)
 	mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionGet)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.handleSessionDelete)

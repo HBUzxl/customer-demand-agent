@@ -192,3 +192,28 @@ func TestTenantColumnRestore(t *testing.T) {
 		t.Fatalf("新行应为默认值，got %q", v)
 	}
 }
+
+// TestSearchSessions 会话内容搜索：标题命中优先 + 内容命中带 snippet。
+func TestSearchSessions(t *testing.T) {
+	s := openTestStore(t)
+	_ = s.EnsureSession("s-title", "医院挂号系统刷号", "")
+	_ = s.EnsureSession("s-content", "随便聊聊", "")
+	if _, err := s.AppendMessage("s-content", "user", "客户官网被挂马要过等保三级", ""); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := s.SearchSessions("挂马", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].SessionID != "s-content" {
+		t.Fatalf("内容词应命中 s-content: %+v", hits)
+	}
+	if !strings.Contains(hits[0].Snippet, "挂马") {
+		t.Fatalf("snippet 应含关键词: %q", hits[0].Snippet)
+	}
+	// 标题命中 + 同会话内容也命中 → 合并且排前
+	hits2, _ := s.SearchSessions("刷号", 10)
+	if len(hits2) != 1 || hits2[0].SessionID != "s-title" || !hits2[0].HitTitle {
+		t.Fatalf("标题词应命中 s-title 且优先: %+v", hits2)
+	}
+}
