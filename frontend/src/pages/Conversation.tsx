@@ -8,6 +8,9 @@ import {
   truncateMessages,
   sessionRunning,
   sessionGet,
+  reviewPending,
+  reviewApprove,
+  reviewReject,
 } from "../api/client";
 import type { AnalysisResult, AgentEvent } from "../types";
 import MarkdownView from "../components/MarkdownView";
@@ -93,6 +96,7 @@ export default function Conversation() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [sessionCustomer, setSessionCustomer] = useState("");
+  const [pendingReviews, setPendingReviews] = useState<{ type: string; title: string }[]>([]);
   const [input, setInput] = useState(() => {
     // G2 草稿：进入时恢复该会话的草稿（新建会话无草稿）
     return "";
@@ -452,6 +456,28 @@ export default function Conversation() {
 
   const isEmpty = messages.length === 0 && !loading;
 
+  async function loadPending() {
+    try {
+      const d = await reviewPending();
+      setPendingReviews(d.items || []);
+    } catch {
+      /* 静默 */
+    }
+  }
+  async function actReview(type: string, title: string, approve: boolean) {
+    try {
+      if (approve) await reviewApprove(type, title);
+      else await reviewReject(type, title);
+    } finally {
+      loadPending();
+    }
+  }
+  useEffect(() => {
+    loadPending();
+    const t = setInterval(loadPending, 8000);
+    return () => clearInterval(t);
+  }, []);
+
   const custChip = sessionCustomer ? (
     <span className="cust-ro" title={sessionCustomer}>
       客户：{sessionCustomer}
@@ -514,6 +540,23 @@ export default function Conversation() {
           {error && <div className="error">! {error}</div>}
         </div>
       </div>
+      {pendingReviews.length > 0 && (
+        <div className="review-strip">
+          {pendingReviews.map((p) => (
+            <div key={`${p.type}/${p.title}`} className="rs-item">
+              <span className="rs-text">
+                Agent 请求写入 [{p.type}]「{p.title}」
+              </span>
+              <button className="btn sm" onClick={() => actReview(p.type, p.title, true)}>
+                批准
+              </button>
+              <button className="btn ghost sm" onClick={() => actReview(p.type, p.title, false)}>
+                拒绝
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="chat-input">
         <div className="inner">
           {composer}

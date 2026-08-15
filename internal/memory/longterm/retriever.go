@@ -108,6 +108,10 @@ func (w *WikiStore) SearchIndustryScenario(keywords []string) []IndustryScenario
 func (w *WikiStore) GetCustomerProfile(name string) (*CustomerProfile, error) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+	// 审核门禁：pending/archived 客户画像对 Agent 不可见
+	if e, ok := w.entries[domain.MemoryCustomer][name]; ok && !visibleToAgent(e.Status) {
+		return nil, fmt.Errorf("客户画像 %q 不存在", name)
+	}
 	if c, ok := w.customers[name]; ok {
 		return c, nil
 	}
@@ -154,13 +158,20 @@ func (w *WikiStore) SearchEntry(query, typeStr string, limit int) []*Entry {
 	defer w.mu.RUnlock()
 	out := make([]*Entry, 0, len(hits))
 	for _, h := range hits {
-		if e, ok := w.entries[h.Type][h.Title]; ok && e.Status != StatusArchived {
+		if e, ok := w.entries[h.Type][h.Title]; ok && visibleToAgent(e.Status) {
 			cp := *e
 			cp.Relevance = h.score
 			out = append(out, &cp)
 		}
 	}
 	return out
+}
+
+// visibleToAgent 审核门禁（review-gating 2026-08-15）：archived（已废弃）
+// 与 pending_review（待人审）对 Agent 不可见——批准（verified）即生效。
+// 审核队列/审批 UI 走 ListPending 等显式通道，不经此谓词。
+func visibleToAgent(st EntryStatus) bool {
+	return st != StatusArchived && st != StatusPendingReview
 }
 
 // GetEntryHistory 返回某条目的历史版本链（.superseded-*.md 归档文件，
@@ -210,7 +221,7 @@ func (w *WikiStore) ListEntry(typeStr string, offset, limit int) []*Entry {
 	defer w.mu.RUnlock()
 	titles := make([]string, 0, len(w.entries[mt]))
 	for t, e := range w.entries[mt] {
-		if e.Status != StatusArchived {
+		if visibleToAgent(e.Status) {
 			titles = append(titles, t)
 		}
 	}

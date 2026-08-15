@@ -157,8 +157,12 @@ func (r *Registry) execEnsure(args json.RawMessage) (string, error) {
 		note = "已记录（待审核，降权使用）"
 	}
 	// F4：needs_review+条目标识给前端渲染对话内审批卡片
-	return fmt.Sprintf(`{"status":"ok","message":"%s","type":"%s","title":"%s","needs_review":%t%s}`,
-		note, a.Type, a.Title, needsReview, existingHint), nil
+	if needsReview {
+		return fmt.Sprintf(`{"status":"ok","message":"%s","type":"%s","title":"%s","needs_review":true%s,"note":"已暂存待审——审批前你检索不到它，用户批准后生效"}`,
+			note, a.Type, a.Title, existingHint), nil
+	}
+	return fmt.Sprintf(`{"status":"ok","message":"%s","type":"%s","title":"%s","needs_review":false%s}`,
+		note, a.Type, a.Title, existingHint), nil
 }
 
 // ── memory_observe ────────────────────────────────────────────

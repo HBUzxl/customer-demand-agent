@@ -239,3 +239,57 @@ func TestEnsureExistingHint(t *testing.T) {
 		t.Fatalf("同名更新不应有 hint: %s", out2)
 	}
 }
+
+// TestReviewGatingVisibleToAgent 审核门禁（review-gating 2026-08-15）：
+// AI 写 threat → pending_review → SearchEntry/ListEntry/getProfile 均 miss
+// → approve → 全部 hit/可见。批准即生效。
+func TestReviewGatingVisibleToAgent(t *testing.T) {
+	dir := t.TempDir()
+	wiki := longterm.NewWikiStore(dir)
+	if err := wiki.Load(); err != nil {
+		t.Fatal(err)
+	}
+	reg := NewRegistry(wiki)
+	// 1) AI 写 threat → pending
+	out, err := reg.Execute("memory_ensure", json.RawMessage(`{"type":"threat","title":"零信任沙箱逃逸","content":"新型威胁描述","tags":["零信任"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"needs_review":true`) {
+		t.Fatalf("threat 写入应 pending: %s", out)
+	}
+	// 2) 审批前：检索 miss（门禁核心断言）
+	if hits := wiki.SearchEntry("零信任沙箱逃逸", "threat", 5); len(hits) != 0 {
+		t.Fatalf("审批前检索应 miss: %+v", hits)
+	}
+	// 3) approve → verified
+	if err := wiki.ApproveEntry("threat", "零信任沙箱逃逸"); err != nil {
+		t.Fatal(err)
+	}
+	// 4) 审批后：hit
+	if hits := wiki.SearchEntry("零信任沙箱逃逸", "threat", 5); len(hits) != 1 {
+		t.Fatalf("批准后检索应 hit: %+v", hits)
+	}
+}
+
+// TestReviewGatingCustomerProfilePending 客户画像门禁：pending 客户画像
+// GetCustomerProfile 不可见，approve 后可见（assembler L2 注入前提）。
+func TestReviewGatingCustomerProfilePending(t *testing.T) {
+	dir := t.TempDir()
+	wiki := longterm.NewWikiStore(dir)
+	if err := wiki.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := wiki.UpsertEntry(&longterm.Entry{Type: domain.MemoryCustomer, Title: "待审客户", Content: "画像", Status: longterm.StatusPendingReview}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wiki.GetCustomerProfile("待审客户"); err == nil {
+		t.Fatal("pending 客户画像应不可见")
+	}
+	if err := wiki.ApproveEntry("customer", "待审客户"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wiki.GetCustomerProfile("待审客户"); err != nil {
+		t.Fatalf("批准后应可见: %v", err)
+	}
+}

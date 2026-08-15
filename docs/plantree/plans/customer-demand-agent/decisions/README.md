@@ -109,8 +109,13 @@
 **后果**：
 
 - `LongTermMemory` 接口暴露写方法
-- 行业记忆中 AI 写入的内容打"待审核"标记
 - 产品记忆写权限不放给 AI
+- **[2026-08-15 修订]** AI 写入（threat/compliance/industry）= **写入门禁**：
+  落库为 pending_review 期间**对 Agent 不可见**（检索/列表/prompt 注入均
+  排除——visibleToAgent 谓词），用户批准即对 Agent 生效，拒绝即删。
+  审批交互为对话内权限式弹条（输入框上方 sticky，多条堆叠）；/review 页
+  降级为跨会话积压总览。原文「AI 写入内容可用但降权」的降权设计从未
+  实现，修订后由门禁语义取代（见 review-gating plan）。
 
 ---
 

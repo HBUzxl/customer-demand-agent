@@ -2483,3 +2483,29 @@ table input[type="checkbox"] {
   gap: 8px;
   margin-top: 8px;
 }
+
+/* 对话内审批条（review-gating：输入区上方 sticky 堆叠） */
+.review-strip {
+  position: sticky;
+  bottom: 0;
+  background: color-mix(in srgb, var(--gold, #d4a843) 8%, var(--surface));
+  border-top: 1px solid color-mix(in srgb, var(--gold, #d4a843) 40%, var(--border));
+  padding: 6px 14px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rs-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.rs-text {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
