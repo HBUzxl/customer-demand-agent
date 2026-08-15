@@ -2319,3 +2319,22 @@ details > summary {
   z-index: 210;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
 }
+
+/* History 批量操作条 + 选中行 */
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--accent, #4a7dff) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent, #4a7dff) 30%, var(--border));
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+table tr.sel td {
+  background: color-mix(in srgb, var(--accent, #4a7dff) 8%, transparent);
+}
+table input[type="checkbox"] {
+  accent-color: var(--accent, #4a7dff);
+}

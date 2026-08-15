@@ -8,6 +8,10 @@ export default function History() {
   const [items, setItems] = useState<SessionListItem[]>([]);
   const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
   const [err, setErr] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const allSelected = items.length > 0 && selected.size === items.length;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -29,6 +33,37 @@ export default function History() {
   async function handleDelete(id: string) {
     setConfirmTarget(id);
   }
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(items.map((i) => i.session_id)));
+  }
+  async function doBatchDelete() {
+    setBatchBusy(true);
+    const ids = [...selected];
+    const results = await Promise.allSettled(ids.map((id) => sessionDelete(id)));
+    const okN = results.filter((r) => r.status === "fulfilled").length;
+    const failN = ids.length - okN;
+    setBatchOpen(false);
+    setSelected(new Set());
+    if (failN === 0) setErr("");
+    else {
+      const firstErr = results.find((r) => r.status === "rejected") as
+        PromiseRejectedResult | undefined;
+      setErr(
+        `批量删除：成功 ${okN}，失败 ${failN}（${firstErr?.reason instanceof Error ? firstErr.reason.message : String(firstErr?.reason)}）`,
+      );
+    }
+    setBatchBusy(false);
+    load();
+  }
+
   async function doDelete() {
     if (!confirmTarget) return;
     try {
@@ -54,6 +89,18 @@ export default function History() {
       </div>
       <div className="page-sub">列出全部历史对话。可继续追问或回放完整轨迹。</div>
 
+      {selected.size > 0 && (
+        <div className="batch-bar">
+          <span>已选 {selected.size} 项</span>
+          <button className="btn sm danger" onClick={() => setBatchOpen(true)}>
+            批量删除
+          </button>
+          <button className="btn ghost sm" onClick={() => setSelected(new Set())}>
+            取消选择
+          </button>
+        </div>
+      )}
+
       {loading && <div className="loading">加载中…</div>}
       {error && <div className="error">! {error}</div>}
       {!loading && items.length === 0 && (
@@ -66,6 +113,14 @@ export default function History() {
           <table>
             <thead>
               <tr>
+                <th style={{ width: 32 }}>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    aria-label="全选"
+                  />
+                </th>
                 <th>标题</th>
                 <th>客户</th>
                 <th>更新</th>
@@ -74,7 +129,15 @@ export default function History() {
             </thead>
             <tbody>
               {items.map((s) => (
-                <tr key={s.session_id}>
+                <tr key={s.session_id} className={selected.has(s.session_id) ? "sel" : ""}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(s.session_id)}
+                      onChange={() => toggle(s.session_id)}
+                      aria-label={`选择 ${s.title || s.session_id}`}
+                    />
+                  </td>
                   <td>
                     <Link to={`/analyze/${s.session_id}`}>{s.title || s.session_id}</Link>
                   </td>
@@ -106,6 +169,15 @@ export default function History() {
           {err}（点击关闭）
         </div>
       )}
+      <ConfirmDialog
+        open={batchOpen}
+        title={`删除 ${selected.size} 个会话？`}
+        body="删除后不可恢复。"
+        confirmText="全部删除"
+        busy={batchBusy}
+        onConfirm={doBatchDelete}
+        onCancel={() => setBatchOpen(false)}
+      />
       <ConfirmDialog
         open={!!confirmTarget}
         title="删除该会话及其全部记录？"
