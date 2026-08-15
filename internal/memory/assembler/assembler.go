@@ -27,46 +27,48 @@ func New(knowledge *longterm.WikiStore, userName string) *Assembler {
 	return &Assembler{knowledge: knowledge, userName: userName, template: loadTemplate()}
 }
 
-// loadTemplate 加载外置模板（C3）。文件按「## 段名」组织——加载时把四个
-// 已知段的正文替换为内置常量（保证语义一致，外置文件作为编辑入口），
-// 缺失回退内置拼接。未识别段（自定义扩展）原样追加在尾部。
+// loadTemplate 加载外置模板（C3）。文件按「## 段名」组织，四个已知段
+// （角色/自主性指引/目标/约束）的正文**直接采用外置文件内容**——编辑
+// prompts/system.md 重启即生效；已知段名映射为内置标题（如「自主性指引」
+// →「## 你是自主的」）保证 systemPrompt 消费方的段落锚点稳定。文件缺失
+// 或为空时回退内置常量拼接。未识别段（自定义扩展）原样追加在尾部。
 func loadTemplate() string {
 	data, err := os.ReadFile("prompts/system.md")
 	if err != nil || len(data) == 0 {
 		return systemRole + "\n\n## 你是自主的\n" + systemAutonomy + "\n\n## 你的目标\n" + systemGoals + "\n\n## 约束\n" + systemConstraints
 	}
-	known := map[string]string{
-		"角色":    systemRole,
-		"自主性指引": systemAutonomy,
-		"目标":    systemGoals,
-		"约束":    systemConstraints,
+	heading := map[string]string{
+		"角色":    "",
+		"自主性指引": "## 你是自主的",
+		"目标":    "## 你的目标",
+		"约束":    "## 约束",
 	}
 	var b strings.Builder
 	var extra []string
+	inExtra := false
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if heading, ok := strings.CutPrefix(trimmed, "## "); ok {
-			if body, knownSeg := known[heading]; knownSeg {
-				switch heading {
-				case "角色":
-					b.WriteString(body + "\n")
-				case "自主性指引":
-					b.WriteString("\n## 你是自主的\n" + body + "\n")
-				case "目标":
-					b.WriteString("\n## 你的目标\n" + body + "\n")
-				case "约束":
-					b.WriteString("\n## 约束\n" + body + "\n")
+		if h, ok := strings.CutPrefix(trimmed, "## "); ok {
+			if title, knownSeg := heading[h]; knownSeg {
+				inExtra = false
+				if title != "" {
+					b.WriteString("\n" + title + "\n")
+				} else {
+					b.WriteString(h + "\n") // 角色段：文件首段无标准标题头，保留段名作锚
 				}
 				continue
 			}
-			extra = append(extra, "## "+heading)
+			extra = append(extra, "## "+h)
+			inExtra = true
 			continue
 		}
 		if strings.HasPrefix(trimmed, "#") || trimmed == "" {
-			continue // 顶部注释/空行不进 prompt；未识别段正文在下方收集
+			continue // 顶部注释/空行不进 prompt
 		}
-		if len(extra) > 0 {
+		if inExtra {
 			extra = append(extra, line)
+		} else {
+			b.WriteString(line + "\n")
 		}
 	}
 	if len(extra) > 0 {

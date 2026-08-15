@@ -3,8 +3,8 @@
 // memory: short-term is working memory for the LLM (in-process checkpoints),
 // history is the durable record for humans / audit / replay (ADR-010).
 //
-// 单租户（de-tenancy，ADR-011 废止）：schema 新库无 tenant_id 列；
-// 老库存在该列时 Open 幂等补 DEFAULT 'default' 使无列 INSERT 兼容，读写路径不再涉及。
+// 单租户（de-tenancy，ADR-011 废止）：tenant_id 列恒保留（见 schema DDL
+// NOT NULL DEFAULT）；代码不读不写——INSERT 不提及该列、SELECT 不查。
 // 组织级共享知识（不在此隔离，见 ADR-011）。
 package history
 

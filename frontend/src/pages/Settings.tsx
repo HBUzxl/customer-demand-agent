@@ -475,11 +475,13 @@ interface ConsoleData {
 }
 
 interface PromptLayers {
+  template_raw: string;
   layers: {
     id: string;
     name: string;
     dynamic: boolean;
     note?: string;
+    raw?: string;
     sections?: { title: string; body: string }[];
   }[];
   tool_prompts: { tool: string; desc: string }[];
@@ -521,6 +523,12 @@ function ConsoleCenter() {
               {l.dynamic ? "运行时动态" : "静态模板"}
             </span>
           </div>
+          {l.raw && (
+            <details className="cc-sec">
+              <summary>完整模板（外置 prompts/system.md · 编辑重启生效）</summary>
+              <pre>{l.raw}</pre>
+            </details>
+          )}
           {l.sections?.map((sec, i) => (
             <details key={i} className="cc-sec">
               <summary>{sec.title}</summary>
