@@ -153,11 +153,11 @@ func (m *Manager) ToolsForExport(tools []domain.Tool) []domain.Tool { return too
 
 // ChatStream 流式调用：按任务路由，失败时仅在「尚未推送任何 byte」时才换模型重试
 // （一旦开始推送内容就无法撤销，不能回退）。
-func (m *Manager) ChatStream(ctx context.Context, task TaskType, req *llm.ChatRequest, cb llm.DeltaCallbacks) (*llm.ChatResponse, error) {
+func (m *Manager) ChatStream(ctx context.Context, task TaskType, req *llm.ChatRequest, cb llm.DeltaCallbacks) (resp *llm.ChatResponse, err error) {
 	start := time.Now()
 	modelName := m.router.Route(task)
 	defer func() {
-		m.recordAudit(CallAudit{Task: string(task), Model: modelName, DurationMs: time.Since(start).Milliseconds(), At: start.Format(time.RFC3339)})
+		m.recordAudit(CallAudit{Task: string(task), Model: modelName, DurationMs: time.Since(start).Milliseconds(), OK: err == nil, Error: errStr(err), At: start.Format(time.RFC3339)})
 	}()
 	_ = modelName
 	primary := m.router.Route(task)
