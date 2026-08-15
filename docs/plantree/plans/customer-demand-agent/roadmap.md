@@ -20,7 +20,9 @@
 - ✅ ADR-001 ~ ADR-012 全部落定（见 decisions/README.md）
 - ✅ Plan tree 设计文档完整
 
-## In Progress
+## In Progress → 已全部完成（2026-08-13 一期 Landed）
+
+> 以下条目在建设中标记进行中，随一期全部落地（见 Done 段与 registry）。
 
 ### 记忆系统接口设计 + 项目骨架
 
@@ -46,7 +48,10 @@
 - 创建 Go module + 项目目录结构
 - 写 `go.mod`、`main.go`、`.env.example`
 
-## Next
+## Next → 已全部完成或转列 Deferred
+
+> 以下为当时排期项：Wiki 产品页/Checkpoint 链/长期记忆等已落地；
+> 多租户已废止；其余延期项见 Deferred 段。
 
 ### Wiki 产品知识库
 

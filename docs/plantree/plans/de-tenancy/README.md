@@ -13,7 +13,10 @@
 
 tenant 渗透 9 个文件 124 行（非测试）+ 44 行测试：
 
-| 位置 | 内容 |
+> 下表为 **开工时（2026-08-14）的影响面盘点**——描述的是当时要删什么，
+> 不是当前代码状态（当前已全部移除）。保留作执行记录。
+
+| 位置 | 当时存在的内容（已全部移除） |
 |---|---|
 | `internal/api/message.go` | OutboundMessage/InboundMessage 的 TenantID 字段（channel 协议层） |
 | `internal/agent/agent.go` + `submit.go` | Message(tenantID,...)、SetCheckpointSink/Source、SetCustomerResolver、SetHistorySearcher、turnState.tenantID、history_search 工具 |

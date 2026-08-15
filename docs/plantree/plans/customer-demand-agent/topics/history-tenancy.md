@@ -63,7 +63,12 @@ CREATE TABLE tool_calls (
 );
 ```
 
-## 二、多租户
+## 二、多租户（已废止——ADR-011 废止 2026-08-14，de-tenancy 已落地）
+
+> 以下租户设计整体作废：单租户内部工具；tenant_id 列保留但代码不读写；
+> X-Tenant-ID 忽略。仅存档设计过程，勿按此理解现状。
+
+<details><summary>废止前的设计存档（点击展开）</summary>
 
 ### 隔离范围
 
@@ -90,6 +95,8 @@ CREATE TABLE tool_calls (
 - 登录认证（账号密码/SSO/钉钉）
 - 权限体系（RBAC：谁能看谁的会话、谁能审谁的内容）
 - 配额（每 tenant 的 token/调用限制）
+
+</details>
 
 ## 三、页面功能（先不做业务，只看页面）
 
