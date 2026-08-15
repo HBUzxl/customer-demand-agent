@@ -680,7 +680,7 @@ function ConsoleCenter() {
         </label>
       </div>
       <button className="btn sm" disabled={savingBehavior} onClick={saveBehavior}>
-        {savingBehavior ? "保存中…" : "保存行为参数（热生效）"}
+        {savingBehavior ? "保存中…" : "保存（立即生效，无需重启）"}
       </button>
 
       <h3 className="cc-h">数据位置（只读——迁移需停服）</h3>

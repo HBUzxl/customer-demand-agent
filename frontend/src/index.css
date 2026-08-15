@@ -2519,3 +2519,27 @@ table input[type="checkbox"] {
   font-size: 11px;
   margin-right: 8px;
 }
+
+/* Replay 分支切换 */
+.branch-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 2px 2px;
+  flex-wrap: wrap;
+}
+.branch-switch .chip {
+  font-size: 11px;
+  font-family: monospace;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2px 10px;
+  background: var(--surface-2);
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.branch-switch .chip.active {
+  border-color: #7c6bd9;
+  color: #7c6bd9;
+  background: color-mix(in srgb, #7c6bd9 10%, transparent);
+}

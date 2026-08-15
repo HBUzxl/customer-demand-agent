@@ -132,7 +132,7 @@ function summaryOf(r: Row): string {
     case "checkpoint": {
       const t =
         { initial: "首次分析", followup: "追问", reanalysis: "重分析" }[r.cp.type] || r.cp.type;
-      return `${t}${r.cp.has_analysis ? " · 含结构化分析" : ""}${r.cp.question ? ` · Q: ${r.cp.question.slice(0, 30)}` : ""}`;
+      return `${t}${r.cp.question ? ` · Q: ${r.cp.question.slice(0, 30)}` : ""}`;
     }
   }
 }
@@ -264,6 +264,7 @@ export default function Replay() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<SessionDetail | null>(null);
   const [error, setError] = useState("");
+  const [currentBranch, setCurrentBranch] = useState(""); // checkpoint-tree：分支过滤（空=全部）
 
   useEffect(() => {
     if (!id) return;
@@ -304,19 +305,23 @@ export default function Replay() {
           </Link>
         </div>
       </div>
-      {showBranchSwitch && (
+      {data && (data.branches?.length ?? 0) > 1 && (
         <div className="branch-switch">
           <span className="faint mono">分支</span>
-          {branches.map((b) => (
+          {data.branches.map((b) => (
             <button
               key={b}
               className={`chip ${b === currentBranch ? "active" : ""}`}
               onClick={() => setCurrentBranch(b)}
-              title={b === "main" ? "主线（最初始的对话路径）" : `分支 ${b}`}
             >
               {b === "main" ? "主线" : b}
             </button>
           ))}
+          {currentBranch && (
+            <button className="chip" onClick={() => setCurrentBranch("")}>
+              全部
+            </button>
+          )}
         </div>
       )}
       <div className="page-sub">
