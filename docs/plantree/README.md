@@ -13,7 +13,7 @@
 | [[plans/console/README.md\|控制台化]] | **Done** | C1 配置中心（prompt/路由/参数/数据位置）+ C2 可观测（后台任务/LLM 审计）+ C3 prompt 配置化 | 2026-08-14 一期收尾 goal：C1/C2/C3 落地（四个 console API+观测台+prompt 外置快照） | — |
 | [[plans/frontend/README.md\|前端工作台]] | **Done** | **IA 总蓝图**：三层可见性（对话内/会话飞行记录仪/系统观测台），六页收敛五区，G5 否决（对话与回放不合并） | 2026-08-14 立项；同日收尾 goal 落地主体（订阅模式/观测台/配置中心/回放 checkpoint/审核融入对话/草稿/搜索/滚动记忆） | 残余归档二期候选 |
 | [[plans/review-gating/README.md\|审核机制重构：写入即审批]] | **Done** | visibleToAgent 门禁（pending 对 Agent 不可见，批准即生效）+ 对话内 sticky 审批弹条（/review 页已删）+ ADR-005 修订；TestReviewGatingVisibleToAgent + TestReviewGatingCustomerProfilePending 集成测试覆盖 | 2026-08-15 用户裁决（「按理说我通过之后才进记忆库」「直接在输入框上面弹个东西」） | — |
-| [[plans/checkpoint-tree/README.md\|Checkpoint 语义重构：对话版本树]] | **Done** | 用户裁决三层：①概念统一「与 Agent 的对话」（每轮必有 checkpoint，废弃纯聊天轻量说法）②checkpoint=对话版本的 git：链→树（ParentID+BranchID，编辑重发=开分支不再截断删）③对话内版本树 UI+任意节点一键回到；含 F1 编辑重发语义变化/断点续传/LastAnalysis 适配 | 2026-08-15 用户裁决（「只有一种概念叫与 Agent 的对话」「像 git 的树状结构，从第二轮重新问=新分支」） | 方案已定—（数据模型/概念/UI 三层） |
+| [[plans/checkpoint-tree/README.md\|Checkpoint 语义重构：对话版本树]] | **Done（部分）** | ①概念统一「每轮对话都有 checkpoint」✅②消息分支落地（BranchAfter 复制共享前缀、main 保留、分支切换/续写）✅③checkpoint 链真正分叉（ParentID 树）+ 完整 git-graph 版本树 UI + 任意节点回到 ⏳未完成（见 PPT 第三部分） | 2026-08-15 用户裁决（「只有一种概念叫与 Agent 的对话」「像 git 的树状结构」） | 版本树完整版待单独 goal |
 | [[plans/wiki-hygiene/README.md\|Wiki 卫生与客户记忆治理]] | **Done** | 真实使用暴露三类库污染（自测残留 4+冒烟污染 11+类型错 1）+ 产品缺陷：同客户重复建条目无复用机制（7 变体）；F1 清理/F2 ensure 前置检索+prompt 续写指引/F3 审核类型徽章+重叠提示/F4 自测命名约束 | 2026-08-15 从会话 sess_cfdc2e91beb0 挖出 | — |
 | [[plans/ui-copy-cleanup/README.md\|UI 文案去废话]] | **Done** |  |  |  |
 | [[plans/verify-close/README.md\|终态验证]] | **Done** | 全套门禁+四脚本一键复现（verify-all.sh 13 项/verify-plan-commits.sh 每 plan 独立 commit 机械复核 13/13） | 2026-08-15 goal 收口 | 复跑即验 |

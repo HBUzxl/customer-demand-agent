@@ -205,7 +205,7 @@ function ReviewCard({ type, title }: { type: string; title: string }) {
   }
   if (state === "approved") return <div className="rv-done ok">✓ 已通过，知识已生效</div>;
   if (state === "rejected") return <div className="rv-done no">✗ 已拒绝（归档）</div>;
-  if (state === "ignored") return <div className="rv-done">已忽略（稍后可在 /review 处理）</div>;
+  if (state === "ignored") return <div className="rv-done">已忽略</div>;
   return (
     <div className="rv-card">
       <div className="rv-title">📝 Agent 记了一条知识，待你确认</div>

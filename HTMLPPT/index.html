@@ -215,7 +215,7 @@
       <span class="mono-tag">短期记忆</span>
       <h4>Checkpoint 链</h4>
       <p>结构化状态快照：initial / followup / reanalysis 三种。每轮对话一个 checkpoint。</p>
-      <p class="mt-s">保留「最近有效分析」回溯——纯聊天轮不会挤掉分析上下文。</p>
+      <p class="mt-s">每轮对话一个 checkpoint（统一概念，无纯聊天/分析之分）；LastAnalysis 反向回溯保留最近一次分析。</p>
     </div>
     <div class="card card-accent">
       <span class="mono-tag">历史记录</span>
@@ -534,7 +534,7 @@
       </div>
     </div>
   </div>
-  <div class="note-box"><b>定位：</b>这是下一步的重点，计划单独开 goal 专做（checkpoint 链→树 + 完整 git-graph 版本树 + 任意节点回到）。</div>
+  <div class="note-box"><b>口径冲突说明：</b>plan 注册表曾把本 plan 标为 Done 且摘要宣称「ParentID 树 + 版本树 UI + 任意节点回到」三层全落地；但代码实际只完成<b>消息分支</b>（Checkpoint 无 ParentID、前端只按 branch 按钮过滤）。本页以<b>代码现状</b>为准——版本树完整版未完成，注册表摘要已同步修正为「Done（部分）」。<br><b>定位：</b>下一步重点，计划单独开 goal 专做。</div>
   <div class="deck-footer"><span class="slide-number" data-total="34"></span></div>
   <div class="notes">这页是今天最需要说清楚的一页，关于 checkpoint 版本树。<br><br><b>已经做完的</b>，是消息分支：编辑重发会复制共享前缀到新分支，主路径完整保留，能切分支、能继续写。<br><br><b>没做完的</b>，是三件事：<br>一是 checkpoint 链本身还是会话级单链，没有真正按分支分叉成树；<br>二是版本树 UI 只是按分支 id 画按钮，不是 checkpoint 的父子树；<br>三是「任意 checkpoint 节点从这里继续」这个操作没有。<br><br>所以别误会：<b>plan 虽然标了 Done，但版本树完整版是欠账</b>，这是下一步的重点，计划单独开个任务专做。</div>
 </section>
