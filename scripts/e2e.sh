@@ -11,7 +11,7 @@
 set -euo pipefail
 
 BASE="${BASE:-http://localhost:8080}"
-TENANT="${TENANT_ID:-default}"
+ANYH="${X_TENANT_ID:-default}"  # 任意头值（de-tenancy：服务端忽略）
 # 用绝对路径 curl，避免被 shell 别名/RTK 拦截
 CURL="${CURL:-/usr/bin/curl}"
 PASS=0
@@ -22,18 +22,18 @@ fail() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 
 # get <path> —— 期望 200
 get() {
-  "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: ${TENANT}" "$BASE$1"
+  "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: ${ANYH}" "$BASE$1"
 }
 # post <path> <json>
 post() {
-  "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: ${TENANT}" \
+  "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: ${ANYH}" \
     -H "Content-Type: application/json" -d "$2" "$BASE$1"
 }
 delete() {
-  "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: ${TENANT}" -X DELETE "$BASE$1"
+  "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: ${ANYH}" -X DELETE "$BASE$1"
 }
 
-echo "=== E2E (base=${BASE} tenant=${TENANT}) ==="
+echo "=== E2E (base=${BASE}) ==="
 
 echo "-- 1. 健康检查 --"
 [ "$(get /api/health)" = "200" ] && ok "GET /api/health" || { fail "GET /api/health (后端是否启动？)"; exit 1; }
@@ -64,37 +64,37 @@ echo "-- 5. 会话历史 --"
 
 # 统一消息入口（ADR-014 + F0：202 + Run 任务，立即返回 run_id）
 # 固定 session_id（e2e-msg / e2e-an），结束时清理；断开不影响执行（F0）。
-MRESP=$("$CURL" -s -H "X-Tenant-ID: ${TENANT}" -H "Content-Type: application/json" -d '{"text":"你好","session_id":"e2e-msg"}' "$BASE/api/message" 2>/dev/null)
+MRESP=$("$CURL" -s -H "X-Tenant-ID: ${ANYH}" -H "Content-Type: application/json" -d '{"text":"你好","session_id":"e2e-msg"}' "$BASE/api/message" 2>/dev/null)
 echo "$MRESP" | grep -q '"run_id"' && ok "POST /api/message（202+run_id，F0）" || fail "POST /api/message（got ${MRESP}）"
 # 订阅流：replay 应有 session 事件（Run 在后台跑，与请求连接无关）
 STREAM=$("$CURL" -s -N --max-time 2 "$BASE/api/sessions/e2e-msg/stream?since=0" 2>/dev/null | head -c 400 || true)
 echo "$STREAM" | grep -q '"type":"session"' && ok "GET /stream replay（session 事件）" || fail "stream replay（got ${STREAM:0:80}）"
 # 取消该 Run（让会话可复用/清理）
 RID=$(echo "$MRESP" | sed 's/.*"run_id":"\([^"]*\)".*/\1/')
-[ -n "$RID" ] && "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/e2e-msg/runs/$RID/cancel" -H "X-Tenant-ID: ${TENANT}" && ok "POST cancel（停止运行）" || fail "cancel"
+[ -n "$RID" ] && "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/e2e-msg/runs/$RID/cancel" -H "X-Tenant-ID: ${ANYH}" && ok "POST cancel（停止运行）" || fail "cancel"
 
 # P0 前端行为契约：新会话空状态 chip 填客户名后发首条消息——请求体带 customer，
 # 会话落库可读回（首轮身份行注入的数据前提）。
-MCUST=$("$CURL" -s -H "X-Tenant-ID: ${TENANT}" -H "Content-Type: application/json" -d '{"text":"你好","session_id":"e2e-cust","customer":"E2E测试客户"}' "$BASE/api/message" 2>/dev/null)
+MCUST=$("$CURL" -s -H "X-Tenant-ID: ${ANYH}" -H "Content-Type: application/json" -d '{"text":"你好","session_id":"e2e-cust","customer":"E2E测试客户"}' "$BASE/api/message" 2>/dev/null)
 echo "$MCUST" | grep -q '"run_id"' && ok "POST /api/message 首轮带 customer（空状态 chip 契约）" || fail "首轮带 customer（got ${MCUST}）"
 CRID=$(echo "$MCUST" | sed 's/.*"run_id":"\([^"]*\)".*/\1/')
-[ -n "$CRID" ] && "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/e2e-cust/runs/$CRID/cancel" -H "X-Tenant-ID: ${TENANT}"
-CUSTBACK=$("$CURL" -s -H "X-Tenant-ID: ${TENANT}" "$BASE/api/sessions/e2e-cust" | grep -o '"customer":"[^"]*"' | head -1)
+[ -n "$CRID" ] && "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/e2e-cust/runs/$CRID/cancel" -H "X-Tenant-ID: ${ANYH}"
+CUSTBACK=$("$CURL" -s -H "X-Tenant-ID: ${ANYH}" "$BASE/api/sessions/e2e-cust" | grep -o '"customer":"[^"]*"' | head -1)
 [ "$CUSTBACK" = '"customer":"E2E测试客户"' ] && ok "首轮 customer 落库可读回" || fail "customer 落库读回（got ${CUSTBACK}）"
-[ "$("$CURL" -s -o /dev/null -w "%{http_code}" -X DELETE -H "X-Tenant-ID: ${TENANT}" "$BASE/api/sessions/e2e-cust")" = "200" ] && ok "清理 e2e-cust" || fail "清理 e2e-cust"
+[ "$("$CURL" -s -o /dev/null -w "%{http_code}" -X DELETE -H "X-Tenant-ID: ${ANYH}" "$BASE/api/sessions/e2e-cust")" = "200" ] && ok "清理 e2e-cust" || fail "清理 e2e-cust"
 DRESP=$("$CURL" -s -H "Content-Type: application/json" -d '{"text":"hi","session_id":"e2e-an"}' "$BASE/api/analyze" 2>/dev/null)
 echo "$DRESP" | grep -q '"run_id"' && ok "POST /api/analyze（deprecated shim→202）" || fail "analyze shim（got ${DRESP}）"
 DRID=$(echo "$DRESP" | sed 's/.*"run_id":"\([^"]*\)".*/\1/')
-[ -n "$DRID" ] && "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/e2e-an/runs/$DRID/cancel" -H "X-Tenant-ID: ${TENANT}"
+[ -n "$DRID" ] && "$CURL" -s -o /dev/null -X POST "$BASE/api/sessions/e2e-an/runs/$DRID/cancel" -H "X-Tenant-ID: ${ANYH}"
 
-# 带租户头的请求辅助
-postt() {    # postt <tenant> <path> <json> → body（F0：202 响应体含 run_id）
+# 带 X-Tenant-ID 头的请求辅助（de-tenancy 后头接受但忽略——保留兼容旧客户端）
+postt() {    # postt <header_value> <path> <json> → body（F0：202 响应体含 run_id）
   "$CURL" -s -H "X-Tenant-ID: $1" -H "Content-Type: application/json" -d "$3" "$BASE$2"
 }
-posttcode() { # posttcode <tenant> <path> <json> → http_code
+posttcode() { # posttcode <header_value> <path> <json> → http_code
   "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: $1" -H "Content-Type: application/json" -d "$3" "$BASE$2"
 }
-deleteAs() { # deleteAs <tenant> <path>
+deleteAs() { # deleteAs <header_value> <path>
   "$CURL" -s -o /dev/null -w "%{http_code}" -H "X-Tenant-ID: $1" -X DELETE "$BASE$2"
 }
 

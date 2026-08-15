@@ -27,7 +27,7 @@ ADR-009 说「顶层是自主 Agent，不是 workflow」，但当前实现走样
 ## 范围
 
 - **在**：agent 工具化、prompt 重写、API 统一、SSE done 语义、前端统一对话 + markdown 渲染、checkpoint 语义适配、测试更新
-- **不在**：记忆系统（Wiki/Checkpoint 内部实现不动）、模型管理、审核流、多租户、钉钉、鉴权
+- **不在**：记忆系统（Wiki/Checkpoint 内部实现不动）、模型管理、审核流、多租户（后已整体废止）、钉钉、鉴权
 
 ## 文件地图
 

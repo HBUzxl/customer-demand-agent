@@ -44,7 +44,7 @@ export default function History() {
           </Link>
         </div>
       </div>
-      <div className="page-sub">按当前租户列出历史对话。可继续追问或回放完整轨迹。</div>
+      <div className="page-sub">列出全部历史对话。可继续追问或回放完整轨迹。</div>
 
       {loading && <div className="loading">加载中…</div>}
       {error && <div className="error">! {error}</div>}
