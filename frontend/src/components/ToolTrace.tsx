@@ -14,6 +14,8 @@ export interface ToolTrace {
   result?: string;
 }
 
+const API_BASE = "/api";
+
 // ── 工具元数据：名称、中文标签、图标 ──────────────────────────────
 
 const TOOL_META: Record<string, { label: string; icon: string }> = {
@@ -158,6 +160,59 @@ function MemResult({ data }: { data: unknown }) {
 
 // ── 单步渲染 ─────────────────────────────────────────────────────
 
+// parseNeedsReview 从 result JSON 提取审批信息（F4 内联审核）。
+function parseNeedsReview(result?: string): { type: string; title: string } | null {
+  if (!result) return null;
+  try {
+    const r = JSON.parse(result);
+    if (r && r.needs_review && r.type && r.title) {
+      return { type: r.type, title: r.title };
+    }
+  } catch {
+    /* 非 JSON */
+  }
+  return null;
+}
+
+// ReviewCard：对话内审批卡（通过=verified 即刻生效 / 拒绝=归档 / 忽略）。
+function ReviewCard({ type, title }: { type: string; title: string }) {
+  const [state, setState] = useState<"pending" | "approved" | "rejected">("pending");
+  const [busy, setBusy] = useState(false);
+  async function act(approve: boolean) {
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}/review/${type}/${encodeURIComponent(title)}/${approve ? "approve" : "reject"}`,
+        { method: "POST" },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setState(approve ? "approved" : "rejected");
+    } catch {
+      /* 失败保持 pending 可重试 */
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (state === "approved") return <div className="rv-done ok">✓ 已通过，知识已生效</div>;
+  if (state === "rejected") return <div className="rv-done no">✗ 已拒绝（归档）</div>;
+  return (
+    <div className="rv-card">
+      <div className="rv-title">📝 Agent 记了一条知识，待你确认</div>
+      <div className="rv-entry">
+        [{type}] {title}
+      </div>
+      <div className="rv-btns">
+        <button className="btn sm" disabled={busy} onClick={() => act(true)}>
+          {busy ? "…" : "通过"}
+        </button>
+        <button className="btn ghost sm" disabled={busy} onClick={() => act(false)}>
+          拒绝
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ToolStep({ trace, index, last }: { trace: ToolTrace; index: number; last: boolean }) {
   const meta = TOOL_META[trace.tool] || {
     label: trace.tool,
@@ -173,6 +228,7 @@ function ToolStep({ trace, index, last }: { trace: ToolTrace; index: number; las
   const pTitle = typeof p?.title === "string" ? p.title : undefined;
   const rMessage = typeof r?.message === "string" ? r.message : undefined;
 
+  const needsReview = parseNeedsReview(trace.result);
   const semResult =
     trace.tool === "memory_search" ||
     trace.tool === "memory_recall" ||
@@ -212,6 +268,8 @@ function ToolStep({ trace, index, last }: { trace: ToolTrace; index: number; las
         {/* 语义结果优先；未知形状兜底 JSON 树 */}
         {semResult ?? (trace.result && !r ? <div className="tt-raw">{trace.result}</div> : null)}
         {!semResult && r && !rMessage && <JsonView data={r} />}
+        {/* F4 内联审核：needs_review 的写入渲染审批卡 */}
+        {needsReview && <ReviewCard type={needsReview.type} title={needsReview.title} />}
       </div>
     </div>
   );

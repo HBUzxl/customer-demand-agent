@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"customer-demand-agent/internal/domain"
@@ -176,5 +177,35 @@ func TestEnsureOverwriteVerifiedDemotes(t *testing.T) {
 	}
 	if e.Status != longterm.StatusPendingReview {
 		t.Fatalf("AI 覆盖 verified 条目必须降级 pending，got %s", e.Status)
+	}
+}
+
+// TestEnsureObserveNeedsReviewFlag F4：result JSON 带 needs_review
+// （threat 新建 true；customer false；observe 新建 threat true）。
+func TestEnsureObserveNeedsReviewFlag(t *testing.T) {
+	r, _ := newTestRegistry(t)
+	// threat ensure → true
+	out, err := r.Execute("memory_ensure", rawJSON(map[string]any{
+		"type": "threat", "title": "F4威胁", "content": "x",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"needs_review":true`) {
+		t.Fatalf("threat ensure 应 needs_review:true，got %s", out)
+	}
+	// customer ensure → false
+	out, _ = r.Execute("memory_ensure", rawJSON(map[string]any{
+		"type": "customer", "title": "F4客户", "content": "x",
+	}))
+	if !strings.Contains(string(out), `"needs_review":false`) {
+		t.Fatalf("customer ensure 应 needs_review:false，got %s", out)
+	}
+	// observe 新建 threat → true
+	out, _ = r.Execute("memory_observe", rawJSON(map[string]any{
+		"type": "threat", "title": "F4观察", "content": "洞察", "relevance": "medium",
+	}))
+	if !strings.Contains(string(out), `"needs_review":true`) {
+		t.Fatalf("observe 新建 threat 应 needs_review:true，got %s", out)
 	}
 }

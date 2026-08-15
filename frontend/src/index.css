@@ -1914,3 +1914,42 @@ details > summary {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
+
+/* F4 内联审核卡 */
+.rv-card {
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--amber, #c9a227) 40%, transparent);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+}
+.rv-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.rv-entry {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+.rv-btns {
+  display: flex;
+  gap: 8px;
+}
+.rv-done {
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+}
+.rv-done.ok {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+.rv-done.no {
+  color: var(--red, #d64545);
+  background: color-mix(in srgb, var(--red, #d64545) 10%, transparent);
+}

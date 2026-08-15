@@ -130,10 +130,13 @@ func (r *Registry) execEnsure(args json.RawMessage) (string, error) {
 		return "", err
 	}
 	note := "已创建/更新"
-	if status == longterm.StatusPendingReview {
+	needsReview := status == longterm.StatusPendingReview
+	if needsReview {
 		note = "已记录（待审核，降权使用）"
 	}
-	return fmt.Sprintf(`{"status":"ok","message":"%s","type":"%s","title":"%s"}`, note, a.Type, a.Title), nil
+	// F4：needs_review+条目标识给前端渲染对话内审批卡片
+	return fmt.Sprintf(`{"status":"ok","message":"%s","type":"%s","title":"%s","needs_review":%t}`,
+		note, a.Type, a.Title, needsReview), nil
 }
 
 // ── memory_observe ────────────────────────────────────────────
@@ -165,7 +168,10 @@ func (r *Registry) execObserve(args json.RawMessage) (string, error) {
 		return "", err
 	}
 	obsText := fmt.Sprintf("### 观察 [%s]\n%s", rel, strings.TrimSpace(a.Content))
-	if existing, err := r.store.GetEntry(a.Type, a.Title); err == nil {
+	// F4：先判断是否新建（写入前查——写入后再查永远查得到）
+	existing, getErr := r.store.GetEntry(a.Type, a.Title)
+	isNew := getErr != nil
+	if !isNew {
 		existing.Content = existing.Content + "\n\n" + obsText // 保留原 frontmatter 结构化字段
 		if err := r.store.UpsertEntry(existing); err != nil {
 			return "", err
@@ -183,7 +189,9 @@ func (r *Registry) execObserve(args json.RawMessage) (string, error) {
 			return "", err
 		}
 	}
-	return fmt.Sprintf(`{"status":"ok","message":"已记录观察","relevance":"%s"}`, rel), nil
+	needsReview := isNew && needsReview(mt)
+	return fmt.Sprintf(`{"status":"ok","message":"已记录观察","relevance":"%s","type":"%s","title":"%s","needs_review":%t}`,
+		rel, a.Type, a.Title, needsReview), nil
 }
 
 // ── memory_delete ─────────────────────────────────────────────
