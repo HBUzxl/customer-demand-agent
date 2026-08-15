@@ -623,7 +623,7 @@ func (s *Store) GetSession(sessionID, branch string) (*SessionDetail, error) {
 		tcQuery = `SELECT id, COALESCE(message_id, 0), tool_name, params_json, result_json, seq, created_at FROM tool_calls
 			WHERE session_id=? AND message_id IN (SELECT id FROM messages WHERE session_id=? AND branch_id=?) ORDER BY seq`
 		cpQuery = `SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
-			WHERE session_id=? AND payload_json LIKE '%"branch_id":"` + branch + `"%' ORDER BY id ASC`
+			WHERE session_id=? AND payload_json LIKE ? ORDER BY id ASC`
 	} else {
 		msgQuery = `SELECT id, role, content, tool_call_id, seq, created_at FROM messages
 			WHERE session_id=? ORDER BY seq`
