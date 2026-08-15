@@ -1953,3 +1953,119 @@ details > summary {
   color: var(--red, #d64545);
   background: color-mix(in srgb, var(--red, #d64545) 10%, transparent);
 }
+
+/* C1 配置中心 */
+.cc-h {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 18px 0 8px;
+  letter-spacing: 0.04em;
+}
+.cc-layer {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.cc-layer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cc-badge {
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+.cc-dyn {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 0 8px;
+  font-weight: 400;
+}
+.cc-dyn.dyn {
+  color: var(--amber, #c9a227);
+  border-color: color-mix(in srgb, var(--amber, #c9a227) 40%, transparent);
+}
+.cc-sec summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  padding: 4px 0;
+}
+.cc-sec pre {
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  margin: 6px 0 0;
+}
+.cc-note {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+.cc-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-tool {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.cc-tool code {
+  color: var(--accent);
+  font-size: 12px;
+}
+.cc-group {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cc-group.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.cc-chain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cc-chain em {
+  color: var(--text-faint);
+  font-style: normal;
+  font-size: 11px;
+}
+.cc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+.cc-stat {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+}
+.cc-stat-type {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.cc-stat-nums {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}

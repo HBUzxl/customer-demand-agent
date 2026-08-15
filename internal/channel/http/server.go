@@ -76,6 +76,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/models", s.handleListModels)
 
 	// 会话历史
+	mux.HandleFunc("GET /api/console/config", s.handleConsoleConfig)
+	mux.HandleFunc("GET /api/console/prompts", s.handleConsolePrompts)
+	mux.HandleFunc("GET /api/console/memory", s.handleConsoleMemoryStats)
+	mux.HandleFunc("GET /api/console/health", s.handleConsoleHealth)
 	mux.HandleFunc("GET /api/tasks", s.handleTasksList)
 	mux.HandleFunc("POST /api/tasks/consolidate", s.handleTaskConsolidate)
 	mux.HandleFunc("POST /api/tasks/lint", s.handleTaskLint)

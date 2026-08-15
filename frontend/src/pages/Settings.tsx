@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { configGet, configPut, configTest, listModels } from "../api/client";
 import type { ConfigResponse, ModelConfig } from "../types";
 
-type Cat = "models" | "routing" | "about";
+type Cat = "models" | "routing" | "console" | "about";
 const CATS: { id: Cat; label: string }[] = [
   { id: "models", label: "模型" },
   { id: "routing", label: "路由" },
+  { id: "console", label: "配置中心" },
   { id: "about", label: "关于" },
 ];
 
@@ -320,6 +321,8 @@ export default function Settings() {
             </>
           )}
 
+          {cat === "console" && <ConsoleCenter />}
+
           {cat === "about" && (
             <>
               <h2>关于</h2>
@@ -447,5 +450,141 @@ function ModelCard({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── 配置中心（C1，只读）──────────────────────────────────────
+
+interface ConsoleData {
+  models: {
+    name: string;
+    endpoint: string;
+    model: string;
+    temperature: number;
+    max_tokens: number;
+    protocol: string;
+    has_key: boolean;
+  }[];
+  router: {
+    default: string;
+    routes: Record<string, string>;
+    fallback: { max_retries: number; backoff_base_ms: number; chain: string[] };
+  };
+  data: { data_dir: string; wiki_dir: string; history_db: string };
+  behavior: { agent_max_iterations: number; default_user: string; llm_timeout_sec: number };
+}
+
+interface PromptLayers {
+  layers: {
+    id: string;
+    name: string;
+    dynamic: boolean;
+    note?: string;
+    sections?: { title: string; body: string }[];
+  }[];
+  tool_prompts: { tool: string; desc: string }[];
+}
+
+interface MemStats {
+  stats: Record<string, { total: number; verified: number; pending: number }>;
+}
+
+function ConsoleCenter() {
+  const [cfg, setCfg] = useState<ConsoleData | null>(null);
+  const [prompts, setPrompts] = useState<PromptLayers | null>(null);
+  const [mem, setMem] = useState<MemStats | null>(null);
+  useEffect(() => {
+    fetch("/api/console/config")
+      .then((r) => r.json())
+      .then(setCfg)
+      .catch(() => {});
+    fetch("/api/console/prompts")
+      .then((r) => r.json())
+      .then(setPrompts)
+      .catch(() => {});
+    fetch("/api/console/memory")
+      .then((r) => r.json())
+      .then(setMem)
+      .catch(() => {});
+  }, []);
+  if (!cfg) return <div className="loading">加载中…</div>;
+  return (
+    <>
+      <h2>配置中心（只读）</h2>
+
+      <h3 className="cc-h">Prompt 分层（ADR-016 v2）</h3>
+      {prompts?.layers.map((l) => (
+        <div key={l.id} className="cc-layer">
+          <div className="cc-layer-head">
+            <span className="cc-badge">{l.id}</span> {l.name}
+            <span className={`cc-dyn ${l.dynamic ? "dyn" : ""}`}>
+              {l.dynamic ? "运行时动态" : "静态模板"}
+            </span>
+          </div>
+          {l.sections?.map((sec, i) => (
+            <details key={i} className="cc-sec">
+              <summary>{sec.title}</summary>
+              <pre>{sec.body}</pre>
+            </details>
+          ))}
+          {l.note && <div className="cc-note">{l.note}</div>}
+        </div>
+      ))}
+
+      <h3 className="cc-h">工具提示词</h3>
+      <div className="cc-tools">
+        {prompts?.tool_prompts.map((t) => (
+          <div key={t.tool} className="cc-tool">
+            <code>{t.tool}</code> {t.desc}
+          </div>
+        ))}
+      </div>
+
+      <h3 className="cc-h">回退链</h3>
+      <div className="cc-group">
+        <div>
+          默认模型 <code>{cfg.router.default}</code>；重试 {cfg.router.fallback.max_retries} 次 /
+          退避 {cfg.router.fallback.backoff_base_ms}ms
+        </div>
+        {cfg.router.fallback.chain?.length > 0 ? (
+          <div className="cc-chain">
+            {cfg.router.fallback.chain.map((m, i) => (
+              <span key={i}>
+                {i > 0 && <em>→ 失败 →</em>} {m}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="muted">无回退链</div>
+        )}
+      </div>
+
+      <h3 className="cc-h">行为参数</h3>
+      <div className="cc-group">
+        <div>Agent 最大迭代：{cfg.behavior.agent_max_iterations}</div>
+        <div>当前销售（分级输出）：{cfg.behavior.default_user}</div>
+        <div>LLM 全局超时：{cfg.behavior.llm_timeout_sec}s</div>
+      </div>
+
+      <h3 className="cc-h">数据位置</h3>
+      <div className="cc-group mono">
+        <div>数据根：{cfg.data.data_dir}</div>
+        <div>Wiki：{cfg.data.wiki_dir}</div>
+        <div>历史库：{cfg.data.history_db}</div>
+      </div>
+
+      <h3 className="cc-h">记忆统计</h3>
+      <div className="cc-stats">
+        {mem &&
+          Object.entries(mem.stats).map(([typ, s]) => (
+            <div key={typ} className="cc-stat">
+              <div className="cc-stat-type">{typ}</div>
+              <div className="cc-stat-nums">
+                {s.total} 条 · {s.verified} 已验证 · {s.pending} 待审
+              </div>
+            </div>
+          ))}
+      </div>
+    </>
   );
 }
