@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { memoryUpsert } from "../api/client";
 import MemoryForm, { fromValues, type MemoryValues } from "../components/MemoryForm";
 
 // /memory/new —— 新建记忆
 export default function MemoryEditor() {
   const navigate = useNavigate();
+  const [params] = useSearchParams(); // 无结果 CTA 预填（type+title）
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -31,7 +32,14 @@ export default function MemoryEditor() {
       </div>
       {error && <div className="error">! {error}</div>}
       <MemoryForm
-        initial={{ type: "customer", title: "", summary: "", content: "", tags: "", aliases: "" }}
+        initial={{
+          type: params.get("type") || "customer",
+          title: params.get("title") || "",
+          summary: "",
+          content: "",
+          tags: "",
+          aliases: "",
+        }}
         submitting={submitting}
         onSubmit={onSubmit}
         onCancel={() => navigate("/memory")}

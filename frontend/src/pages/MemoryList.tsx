@@ -118,12 +118,28 @@ export default function MemoryList() {
           className="tab-search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索…"
+          placeholder="搜索全部内容（含子文档正文）…"
           onKeyDown={(e) => e.key === "Enter" && load()}
         />
       </div>
 
       {error && <div className="error">! {error}</div>}
+      {searching && !loading && (
+        <div className="search-meta">
+          全库搜索「{query.trim()}」 · {items.length} 条结果（含产品子文档）
+          {items.length === 0 && (
+            <button
+              className="btn ghost sm"
+              onClick={() =>
+                navigate(`/memory/new?type=${type}&title=${encodeURIComponent(query.trim())}`)
+              }
+            >
+              新建「{query.trim()}」
+            </button>
+          )}
+        </div>
+      )}
+
       {loading && <div className="loading">加载中…</div>}
       {!loading && items.length === 0 && (
         <div className="panel">
@@ -142,6 +158,7 @@ export default function MemoryList() {
             >
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <span className="dc-title" style={{ fontSize: 15 }}>
+                  <span className="kind-badge kb-entry">入口</span>
                   {p.title}
                 </span>
                 {docCount(p.title) > 0 && (
