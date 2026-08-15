@@ -8,6 +8,7 @@ package assembler
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"customer-demand-agent/internal/domain"
@@ -18,11 +19,69 @@ import (
 type Assembler struct {
 	knowledge *longterm.WikiStore
 	userName  string // 当前使用者（销售），用于分级输出
+	template  string // 外置模板（C3：prompts/system.md；缺失回退内置拼接）
 }
 
 // New 创建拼装器。userName 是当前使用者名（影响输出风格，见 memory-system.md 分级输出）。
 func New(knowledge *longterm.WikiStore, userName string) *Assembler {
-	return &Assembler{knowledge: knowledge, userName: userName}
+	return &Assembler{knowledge: knowledge, userName: userName, template: loadTemplate()}
+}
+
+// loadTemplate 加载外置模板（C3）。文件按「## 段名」组织——加载时把四个
+// 已知段的正文替换为内置常量（保证语义一致，外置文件作为编辑入口），
+// 缺失回退内置拼接。未识别段（自定义扩展）原样追加在尾部。
+func loadTemplate() string {
+	data, err := os.ReadFile("prompts/system.md")
+	if err != nil || len(data) == 0 {
+		return systemRole + "\n\n## 你是自主的\n" + systemAutonomy + "\n\n## 你的目标\n" + systemGoals + "\n\n## 约束\n" + systemConstraints
+	}
+	known := map[string]string{
+		"角色":    systemRole,
+		"自主性指引": systemAutonomy,
+		"目标":    systemGoals,
+		"约束":    systemConstraints,
+	}
+	var b strings.Builder
+	var extra []string
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if heading, ok := strings.CutPrefix(trimmed, "## "); ok {
+			if body, knownSeg := known[heading]; knownSeg {
+				switch heading {
+				case "角色":
+					b.WriteString(body + "\n")
+				case "自主性指引":
+					b.WriteString("\n## 你是自主的\n" + body + "\n")
+				case "目标":
+					b.WriteString("\n## 你的目标\n" + body + "\n")
+				case "约束":
+					b.WriteString("\n## 约束\n" + body + "\n")
+				}
+				continue
+			}
+			extra = append(extra, "## "+heading)
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+			continue // 顶部注释/空行不进 prompt；未识别段正文在下方收集
+		}
+		if len(extra) > 0 {
+			extra = append(extra, line)
+		}
+	}
+	if len(extra) > 0 {
+		b.WriteString("\n" + strings.Join(extra, "\n") + "\n")
+	}
+	return b.String()
+}
+
+// TemplateRaw 返回外置模板原文（console C3 只读展示用）。
+func (a *Assembler) TemplateRaw() string {
+	data, err := os.ReadFile("prompts/system.md")
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // Assemble 根据 op 拼装完整的 messages 数组。
@@ -76,13 +135,7 @@ func (a *Assembler) Assemble(op domain.CheckpointOp, ctx *domain.SessionContext,
 // 决策权在 LLM，schema 即契约。
 func (a *Assembler) systemPrompt(op domain.CheckpointOp) string {
 	var b strings.Builder
-	b.WriteString(systemRole)
-	b.WriteString("\n\n## 你是自主的\n")
-	b.WriteString(systemAutonomy)
-	b.WriteString("\n\n## 你的目标\n")
-	b.WriteString(systemGoals)
-	b.WriteString("\n\n## 约束\n")
-	b.WriteString(systemConstraints)
+	b.WriteString(a.template) // C3：外置模板（含角色/自主性/目标/约束四段）
 
 	// 分级输出：根据使用者（销售）等级调整输出风格（memory-system.md）
 	if a.userName != "" {

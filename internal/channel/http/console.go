@@ -41,17 +41,14 @@ func (s *Server) handleConsoleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleConsolePrompts: GET /api/console/prompts —— Prompt 分层视图（C1/ADR-016 可视化）。
-// 返回静态模板的各段（前端分块展示并标注层号）；动态注入部分标注占位说明。
+// C3：L0 模板读外置 prompts/system.md 原文（前端展示真实生效内容+快照版本）。
 func (s *Server) handleConsolePrompts(w http.ResponseWriter, r *http.Request) {
+	tmplRaw := s.agent.TemplateRaw()
 	writeJSON(w, http.StatusOK, map[string]any{
+		"template_raw": tmplRaw,
 		"layers": []map[string]any{
-			{"id": "L0", "name": "静态模板", "dynamic": false,
-				"sections": []map[string]string{
-					{"title": "角色", "body": "你是长亭科技（Chaitin）的售前需求分析助手，服务对象是长亭的销售/售前团队。"},
-					{"title": "自主性指引", "body": "每次用户发言，你自己判断怎么回应……（记忆工具全程在线：查证/记录/ask_user/analysis_submit）"},
-					{"title": "目标", "body": "需求理解 / 产品匹配 / 可行性判断 / 追问识别"},
-					{"title": "约束", "body": "只推荐目录中产品；推荐前必须 memory_search 检索证实；置信度诚实……"},
-				}},
+			{"id": "L0", "name": "静态模板（外置 prompts/system.md）", "dynamic": false,
+				"raw": tmplRaw},
 			{"id": "L1", "name": "使用者画像（风格）", "dynamic": true,
 				"note": "config.default_user 选定销售，注入输出风格段（当前：" + s.store.Get().DefaultUser + "）"},
 			{"id": "L2", "name": "会话状态", "dynamic": true,

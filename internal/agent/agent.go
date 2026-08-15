@@ -309,3 +309,6 @@ func jsonEscape(s string) string {
 	b, _ := json.Marshal(s)
 	return strings.Trim(string(b), "\"")
 }
+
+// TemplateRaw 返回外置 prompt 模板原文（console C3 转发）。
+func (a *Agent) TemplateRaw() string { return a.assembler.TemplateRaw() }

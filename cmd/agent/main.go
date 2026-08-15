@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -179,6 +180,9 @@ func main() {
 		}
 	})
 
+	// C3 版本快照：外置模板按内容 hash 归档（data_dir/prompts-snapshots/）
+	snapshotTemplate(cfg.DataDir)
+
 	// C2 观测台：日志环形缓冲（tee：stderr 保留 + ring 供 tail）
 	logRing := httpapi.NewLogRing(500)
 	log.SetOutput(io.MultiWriter(os.Stderr, logRing))
@@ -319,4 +323,23 @@ func collectLintEntries(w *longterm.WikiStore) []taskbg.LintEntry {
 		}
 	}
 	return out
+}
+
+// snapshotTemplate 把当前外置模板按内容 hash 归档（幂等——同内容不重复存）。
+func snapshotTemplate(dataDir string) {
+	raw, err := os.ReadFile("prompts/system.md")
+	if err != nil {
+		return // 无外置模板
+	}
+	sum := fmt.Sprintf("%x", sha256.Sum256(raw))[:12]
+	dir := filepath.Join(dataDir, "prompts-snapshots")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	p := filepath.Join(dir, sum+".md")
+	if _, err := os.Stat(p); err == nil {
+		return // 已有同内容快照
+	}
+	_ = os.WriteFile(p, raw, 0o644)
+	log.Printf("[ok] Prompt 模板快照：%s", p)
 }
