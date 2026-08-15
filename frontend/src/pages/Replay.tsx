@@ -267,10 +267,10 @@ export default function Replay() {
 
   useEffect(() => {
     if (!id) return;
-    sessionGet(id)
+    sessionGet(id, currentBranch || undefined)
       .then(setData)
       .catch((e) => setError(e.message));
-  }, [id]);
+  }, [id, currentBranch]);
 
   if (error)
     return (
@@ -287,6 +287,8 @@ export default function Replay() {
 
   const rows = buildRows(data);
   const toolTotal = (data.tool_calls || []).length;
+  const branches = data.branches || ["main"];
+  const showBranchSwitch = branches.length > 1;
 
   return (
     <div className="page">
@@ -302,8 +304,23 @@ export default function Replay() {
           </Link>
         </div>
       </div>
+      {showBranchSwitch && (
+        <div className="branch-switch">
+          <span className="faint mono">分支</span>
+          {branches.map((b) => (
+            <button
+              key={b}
+              className={`chip ${b === currentBranch ? "active" : ""}`}
+              onClick={() => setCurrentBranch(b)}
+              title={b === "main" ? "主线（最初始的对话路径）" : `分支 ${b}`}
+            >
+              {b === "main" ? "主线" : b}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="page-sub">
-        调用时间线 · {rows.length} 个事件 · {toolTotal} 次工具调用 · 点击行展开详情
+        调用时间线 · {rows.length} 个事件 · {toolTotal} 次工具调用
       </div>
 
       <div className="panel flush" style={{ marginTop: 14 }}>

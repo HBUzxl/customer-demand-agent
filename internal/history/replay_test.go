@@ -40,7 +40,7 @@ func TestToolCallMessageAssociation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	det, err := s.GetSession("s1")
+	det, err := s.GetSession("s1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestToolCallNullMessageIDReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	det, err := s.GetSession("s-old")
+	det, err := s.GetSession("s-old", "")
 	if err != nil {
 		t.Fatalf("老数据（NULL message_id）应可读: %v", err)
 	}
@@ -160,7 +160,8 @@ func TestSearchMessages(t *testing.T) {
 	}
 }
 
-// TestTruncateAfterThreeTables F1 截断三表联删（store 级直查断言）。
+// TestTruncateAfterThreeTables F1 编辑重发（checkpoint-tree 软分叉语义）：
+// 消息不删挂新分支；store 级直查断言 branch_id 归属。
 func TestTruncateAfterThreeTables(t *testing.T) {
 	s := openTestStore(t)
 	_ = s.EnsureSession("st", "标题", "")
@@ -168,26 +169,24 @@ func TestTruncateAfterThreeTables(t *testing.T) {
 	aid2, _ := s.AppendMessage("st", "assistant", "a1", "")
 	_, _ = s.AppendToolCall("st", aid2, "memory_search", "{}", "{}")
 	_ = s.AppendCheckpoint("st", &domain.Checkpoint{ID: "cp1", Type: domain.CheckpointInitial})
-	// 截断 user（seq=1）及其后
-	n, err := s.TruncateAfter("st", 1)
+	// 从 user（seq=1）起分叉
+	branch, moved, err := s.TruncateAfter("st", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("应删 2 条消息，got %d", n)
+	if moved != 2 {
+		t.Fatalf("应分叉 2 条消息，got %d", moved)
 	}
-	// 三表全空
-	for tbl, want := range map[string]int{"messages": 0, "tool_calls": 0, "checkpoints": 0} {
-		rows, err := s.db.Query("SELECT COUNT(*) FROM " + tbl + " WHERE session_id='st'")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var got int
-		rows.Next()
-		_ = rows.Scan(&got)
-		rows.Close()
-		if got != want {
-			t.Errorf("%s 应 %d，got %d", tbl, want, got)
-		}
+	// 消息仍 2 条（软分叉不删），全部挂新分支
+	var n, onBranch int
+	_ = s.db.QueryRow("SELECT COUNT(*), COALESCE(SUM(CASE WHEN branch_id=? THEN 1 ELSE 0 END),0) FROM messages WHERE session_id='st'", branch).Scan(&n, &onBranch)
+	if n != 2 || onBranch != 2 {
+		t.Fatalf("软分叉：2 条消息应全挂新分支，got n=%d onBranch=%d", n, onBranch)
+	}
+	// tool_calls 保留（随消息归属）
+	var tc int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM tool_calls WHERE session_id='st'").Scan(&tc)
+	if tc != 1 {
+		t.Fatalf("tool_calls 应保留 1 条，got %d", tc)
 	}
 }

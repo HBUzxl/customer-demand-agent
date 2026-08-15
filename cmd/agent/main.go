@@ -105,7 +105,7 @@ func main() {
 	ag.SetCheckpointSource(hist.ListCheckpoints)
 	// 跨会话客户上下文：从会话记录解析关联客户（非空时注入客户画像）
 	ag.SetCustomerResolver(func(sessionID string) string {
-		if det, err := hist.GetSession(sessionID); err == nil {
+		if det, err := hist.GetSession(sessionID, ""); err == nil {
 			return det.Session.Customer
 		}
 		return ""

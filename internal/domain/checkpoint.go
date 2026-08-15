@@ -34,11 +34,12 @@ type Checkpoint struct {
 	ID        string          `json:"id"`
 	Type      CheckpointType  `json:"type"`
 	PrevID    string          `json:"prev_id,omitempty"`
-	Document  string          `json:"document,omitempty"` // 原始客户文本（initial/reanalysis）
-	Analysis  *AnalysisResult `json:"analysis,omitempty"` // 结构化分析结果
-	Question  string          `json:"question,omitempty"` // 追问内容（followup）
-	Answer    string          `json:"answer,omitempty"`   // 回答内容（followup）
-	Answered  []AnsweredInfo  `json:"answered,omitempty"` // 本轮记录的"追问已回答"（missing_answer 工具）
+	BranchID  string          `json:"branch_id,omitempty"` // 所属分支（checkpoint-tree：main=主线，b{seq}-* = 编辑重发产生的分支）
+	Document  string          `json:"document,omitempty"`  // 原始客户文本（initial/reanalysis）
+	Analysis  *AnalysisResult `json:"analysis,omitempty"`  // 结构化分析结果
+	Question  string          `json:"question,omitempty"`  // 追问内容（followup）
+	Answer    string          `json:"answer,omitempty"`    // 回答内容（followup）
+	Answered  []AnsweredInfo  `json:"answered,omitempty"`  // 本轮记录的"追问已回答"（missing_answer 工具）
 	CreatedAt time.Time       `json:"created_at"`
 }
 

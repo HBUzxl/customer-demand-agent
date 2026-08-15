@@ -121,7 +121,8 @@ func TestRunCancelExplicit(t *testing.T) {
 	t.Fatal("取消后 5s 内未解除忙碌态")
 }
 
-// TestMessagesTruncate F1 截断：seq 之后的消息 + tool_calls + checkpoints 全清。
+// TestMessagesTruncate F1 编辑重发（checkpoint-tree 语义）：seq 之后的消息
+// 软分叉到新分支（不物理删——旧对话在新分支保留），响应带 branch_id。
 func TestMessagesTruncate(t *testing.T) {
 	ts, store := setupServer(t)
 	_ = store
@@ -152,32 +153,42 @@ func TestMessagesTruncate(t *testing.T) {
 		t.Fatalf("truncate: %v", err)
 	}
 	var tout struct {
-		DeletedMessages int `json:"deleted_messages"`
+		BranchID         string `json:"branch_id"`
+		BranchedMessages int    `json:"branched_messages"`
 	}
 	_ = json.NewDecoder(tresp.Body).Decode(&tout)
 	tresp.Body.Close()
 	if tresp.StatusCode != http.StatusOK {
 		t.Fatalf("truncate 应 200，got %d", tresp.StatusCode)
 	}
-	// 验证三表联删：messages 清空 + tool_calls/checkpoints（经 store 直查）
+	if tout.BranchID == "" || tout.BranchedMessages < 1 {
+		t.Fatalf("应返回分支 ID 与分叉数: %+v", tout)
+	}
+	// 软分叉验证：消息仍在（挂新分支），会话出现两个分支
 	dresp2, _ := http.Get(ts.URL + "/api/sessions/trunc-s")
 	var det2 struct {
-		Messages []json.RawMessage `json:"messages"`
+		Messages []struct {
+			ID   int    `json:"id"`
+			Role string `json:"role"`
+		} `json:"messages"`
+		Branches []string `json:"branches"`
 	}
 	_ = json.NewDecoder(dresp2.Body).Decode(&det2)
 	dresp2.Body.Close()
-	if len(det2.Messages) != 0 {
-		t.Fatalf("截断后应无消息，got %d", len(det2.Messages))
+	if len(det2.Messages) == 0 {
+		t.Fatal("软分叉：消息不应被物理删除")
 	}
-	// tool_calls（detail 接口可见）应清空
-	dresp3, _ := http.Get(ts.URL + "/api/sessions/trunc-s")
-	var det3 struct {
-		ToolCalls []json.RawMessage `json:"tool_calls"`
+	hasMain, hasBranch := false, false
+	for _, b := range det2.Branches {
+		if b == "main" {
+			hasMain = true
+		}
+		if b == tout.BranchID {
+			hasBranch = true
+		}
 	}
-	_ = json.NewDecoder(dresp3.Body).Decode(&det3)
-	dresp3.Body.Close()
-	if len(det3.ToolCalls) != 0 {
-		t.Errorf("截断后 tool_calls 应 0，got %d", len(det3.ToolCalls))
+	if !hasMain || !hasBranch {
+		t.Fatalf("应存在 main 与新分支: %v (want %s)", det2.Branches, tout.BranchID)
 	}
 	// checkpoints 清空：断点续传后行为验证——ListCheckpoints 归零通过
 	// store 直查（setupServer 未暴露 db；用恢复路径：GetSession detail 不含

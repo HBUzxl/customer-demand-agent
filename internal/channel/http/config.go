@@ -44,11 +44,11 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 // configPutReq is the PUT /api/config body (full replace of models + router;
 // behavior 字段可选——指针不传不动，console-config 三态化)。
 type configPutReq struct {
-	Models            []model.ModelConfig `json:"models"`
-	Router            *model.RouterConfig `json:"router"`
-	DefaultUser       *string             `json:"default_user,omitempty"`
-	LLMTimeoutSec     *int                `json:"llm_timeout_sec,omitempty"`
-	AgentMaxIterations *int               `json:"agent_max_iterations,omitempty"`
+	Models             []model.ModelConfig `json:"models"`
+	Router             *model.RouterConfig `json:"router"`
+	DefaultUser        *string             `json:"default_user,omitempty"`
+	LLMTimeoutSec      *int                `json:"llm_timeout_sec,omitempty"`
+	AgentMaxIterations *int                `json:"agent_max_iterations,omitempty"`
 }
 
 // handleConfigPut: PUT /api/config
@@ -168,10 +168,12 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(out), "items": out})
 }
 
-// handleSessionGet: GET /api/sessions/{id}
+// handleSessionGet: GET /api/sessions/{id}?branch=main|b1-xxx
+// branch 空=全分支汇总（admin 用），否则只返回该分支的消息+工具+checkpoint。
 func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	det, err := s.history.GetSession(id)
+	branch := r.URL.Query().Get("branch")
+	det, err := s.history.GetSession(id, branch)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "%v", err)
 		return

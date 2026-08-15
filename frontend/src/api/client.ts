@@ -255,7 +255,10 @@ export const listModels = (probe: {
 export const sessionsList = (limit = 20, offset = 0) =>
   req<{ count: number; items: SessionListItem[] }>(`/sessions?limit=${limit}&offset=${offset}`);
 
-export const sessionGet = (id: string) => req<SessionDetail>(`/sessions/${id}`);
+export const sessionGet = (id: string, branch?: string) =>
+  req<SessionDetail>(
+    branch ? `/sessions/${id}?branch=${encodeURIComponent(branch)}` : `/sessions/${id}`,
+  );
 
 export const sessionDelete = (id: string) =>
   req<{ status: string }>(`/sessions/${id}`, { method: "DELETE" });

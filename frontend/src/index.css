@@ -2509,3 +2509,13 @@ table input[type="checkbox"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 分支计数徽章 */
+.branch-count {
+  background: color-mix(in srgb, #7c6bd9 14%, transparent);
+  color: #7c6bd9;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  margin-right: 8px;
+}

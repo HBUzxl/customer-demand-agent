@@ -99,6 +99,7 @@ export interface SessionDetail {
   session: SessionListItem;
   messages: MessageRecord[];
   checkpoints: CheckpointRec[];
+  branches: string[];
   tool_calls: {
     id: number;
     message_id: number; // 归属的 assistant 消息 id（回放归属边界）

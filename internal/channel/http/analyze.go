@@ -121,7 +121,7 @@ func (s *Server) executeTurn(ctx context.Context, sessionID, text string, emit f
 	}
 	// G4 会话标题：首轮完成时后台 LLM 生成（替代 firstLine 截断的丑标题）。
 	if s.tasks != nil {
-		if det, err := s.history.GetSession(sessionID); err == nil {
+		if det, err := s.history.GetSession(sessionID, ""); err == nil {
 			userCount := 0
 			for _, m := range det.Messages {
 				if m.Role == "user" {
@@ -139,7 +139,7 @@ func (s *Server) executeTurn(ctx context.Context, sessionID, text string, emit f
 // 再续传 live；Run 结束且缓冲追平后关流。
 func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	if _, err := s.history.GetSession(sessionID); err != nil {
+	if _, err := s.history.GetSession(sessionID, ""); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return
 	}
@@ -209,7 +209,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 // 返回会话运行态（不存在/已结束 → false）。
 func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	if _, err := s.history.GetSession(sessionID); err != nil {
+	if _, err := s.history.GetSession(sessionID, ""); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return
 	}
@@ -224,7 +224,7 @@ func (s *Server) handleSessionRunning(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	runID := r.PathValue("run_id")
-	if _, err := s.history.GetSession(sessionID); err != nil {
+	if _, err := s.history.GetSession(sessionID, ""); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return
 	}
@@ -240,7 +240,7 @@ func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMessagesTruncate(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	// 会话存在性校验，再检查运行状态
-	if _, err := s.history.GetSession(sessionID); err != nil {
+	if _, err := s.history.GetSession(sessionID, ""); err != nil {
 		writeError(w, http.StatusNotFound, "会话不存在: %v", err)
 		return
 	}
@@ -258,13 +258,14 @@ func (s *Server) handleMessagesTruncate(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "seq 必须为正整数（该消息及其之后将被删除）")
 		return
 	}
-	deleted, err := s.history.TruncateAfter(sessionID, after)
+	// checkpoint-tree：编辑重发=软分叉（旧消息挂新分支保留），返回分支 ID
+	branchID, moved, err := s.history.BranchAfter(sessionID, after)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "截断失败: %v", err)
+		writeError(w, http.StatusBadRequest, "分叉失败: %v", err)
 		return
 	}
 	s.runs.DropSession(sessionID)
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "deleted_messages": deleted})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "branch_id": branchID, "branched_messages": moved})
 }
 
 // chatReq is the request body for POST /api/chat (deprecated shim, body 映射用).

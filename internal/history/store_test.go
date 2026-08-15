@@ -42,7 +42,7 @@ func TestEnsureSessionSameTenantUpdate(t *testing.T) {
 	if err := s.EnsureSession("s1", "标题2", "客户X"); err != nil {
 		t.Fatalf("同租户更新: %v", err)
 	}
-	det, err := s.GetSession("s1")
+	det, err := s.GetSession("s1", "")
 	if err != nil {
 		t.Fatalf("GetSession: %v", err)
 	}
@@ -215,5 +215,48 @@ func TestSearchSessions(t *testing.T) {
 	hits2, _ := s.SearchSessions("刷号", 10)
 	if len(hits2) != 1 || hits2[0].SessionID != "s-title" || !hits2[0].HitTitle {
 		t.Fatalf("标题词应命中 s-title 且优先: %+v", hits2)
+	}
+}
+
+// TestBranchAfterCheckpointTree checkpoint-tree：编辑重发=软分叉——老消息
+// 保留挂新分支，main 恒在 branches；checkpoint branch_id 同步分叉。
+func TestBranchAfterCheckpointTree(t *testing.T) {
+	s := openTestStore(t)
+	_ = s.EnsureSession("br-s1", "分支测试", "")
+	// 三轮消息
+	for i, txt := range []string{"第一轮", "第二轮", "第三轮"} {
+		if _, err := s.AppendMessage("br-s1", "user", txt, ""); err != nil {
+			t.Fatal(err)
+		}
+		_ = i
+		if _, err := s.AppendMessage("br-s1", "assistant", "答"+txt, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 从 seq=3（第二轮 user）分叉
+	branch, moved, err := s.BranchAfter("br-s1", 3)
+	if err != nil || moved == 0 || branch == "" {
+		t.Fatalf("分叉失败: %v %d %s", err, moved, branch)
+	}
+	det, err := s.GetSession("br-s1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 消息零丢失（6 条全在——软分叉不删）
+	if len(det.Messages) != 6 {
+		t.Fatalf("软分叉不删消息：应 6 条，got %d", len(det.Messages))
+	}
+	// branches 含 main + 新分支
+	hasMain, hasB := false, false
+	for _, b := range det.Branches {
+		if b == "main" {
+			hasMain = true
+		}
+		if b == branch {
+			hasB = true
+		}
+	}
+	if !hasMain || !hasB {
+		t.Fatalf("branches 应含 main+新分支: %v", det.Branches)
 	}
 }

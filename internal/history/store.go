@@ -30,6 +30,29 @@ type Store struct {
 	db *sql.DB
 }
 
+// hasColumn 探测表某列是否存在（中间态库兼容，老库无 branch_id/tenant_id 时退化）。
+func hasColumn(db *sql.DB, table, col string) (bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, dflt, pk sql.NullString
+		var dfltVal sql.NullString
+		_ = dfltVal
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == col {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // hasTenantColumnAny 探测 sessions.tenant_id 列是否存在。
 func hasTenantColumnAny(db *sql.DB) bool {
 	rows, err := db.Query(`PRAGMA table_info(sessions)`)
@@ -195,6 +218,13 @@ func Open(dbPath string) (*Store, error) {
 		if err := addTenantColumnDefault(db); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("老库 tenant_id 列补默认值迁移: %w", err)
+		}
+	}
+	// checkpoint-tree：messages.branch_id（编辑重发=开分支，旧消息不删挂新分支）
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN branch_id TEXT NOT NULL DEFAULT 'main'`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			_ = db.Close()
+			return nil, fmt.Errorf("messages.branch_id 迁移: %w", err)
 		}
 	}
 	if _, err := db.Exec(`ALTER TABLE tool_calls ADD COLUMN message_id INTEGER`); err != nil {
@@ -388,6 +418,7 @@ type SessionDetail struct {
 	Messages    []MessageRecord  `json:"messages"`
 	ToolCalls   []ToolCallRecord `json:"tool_calls"`
 	Checkpoints []CheckpointRec  `json:"checkpoints"` // P4：回放页 checkpoint 行
+	Branches    []string         `json:"branches"`    // checkpoint-tree：全部分支（main + b*）
 }
 
 // CheckpointRec 是回放用的 checkpoint 摘要（不含完整 payload）。
@@ -567,8 +598,9 @@ func makeSnippet(content, query string, width int) string {
 	return strings.ReplaceAll(snip, "\n", " ")
 }
 
-// GetSession 返回会话详情。
-func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
+// GetSession 返回会话详情（按分支过滤时只取该分支消息/工具/检查点）。
+// branch 为空=全分支汇总（admin/初始迁移用），否则过滤到该分支。
+func (s *Store) GetSession(sessionID, branch string) (*SessionDetail, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -582,8 +614,26 @@ func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
 	}
 	det.Session = sess
 
-	rows, err := s.db.Query(`SELECT id, role, content, tool_call_id, seq, created_at FROM messages
-		WHERE session_id=? ORDER BY seq`, sessionID)
+	// branch_id 列存在则过滤；列缺失（中间态库）时退化到全分支
+	hasBranch, _ := hasColumn(s.db, "messages", "branch_id")
+	var msgQuery, tcQuery, cpQuery string
+	if hasBranch && branch != "" {
+		msgQuery = `SELECT id, role, content, tool_call_id, seq, created_at FROM messages
+			WHERE session_id=? AND branch_id=? ORDER BY seq`
+		tcQuery = `SELECT id, COALESCE(message_id, 0), tool_name, params_json, result_json, seq, created_at FROM tool_calls
+			WHERE session_id=? AND message_id IN (SELECT id FROM messages WHERE session_id=? AND branch_id=?) ORDER BY seq`
+		cpQuery = `SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
+			WHERE session_id=? AND payload_json LIKE '%"branch_id":"` + branch + `"%' ORDER BY id ASC`
+	} else {
+		msgQuery = `SELECT id, role, content, tool_call_id, seq, created_at FROM messages
+			WHERE session_id=? ORDER BY seq`
+		tcQuery = `SELECT id, COALESCE(message_id, 0), tool_name, params_json, result_json, seq, created_at FROM tool_calls
+			WHERE session_id=? ORDER BY seq`
+		cpQuery = `SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
+			WHERE session_id=? ORDER BY id ASC`
+	}
+
+	rows, err := s.db.Query(msgQuery, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -596,8 +646,15 @@ func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
 		det.Messages = append(det.Messages, m)
 	}
 
-	rows2, err := s.db.Query(`SELECT id, COALESCE(message_id, 0), tool_name, params_json, result_json, seq, created_at FROM tool_calls
-		WHERE session_id=? ORDER BY seq`, sessionID)
+	var rows2 *sql.Rows
+	if hasBranch && branch != "" {
+		rows2, err = s.db.Query(tcQuery, sessionID, sessionID, branch)
+	} else {
+		rows2, err = s.db.Query(tcQuery, sessionID)
+	}
+	if err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -610,10 +667,28 @@ func (s *Store) GetSession(sessionID string) (*SessionDetail, error) {
 		det.ToolCalls = append(det.ToolCalls, t)
 	}
 
+	// checkpoint-tree：分支列表（messages.branch_id 去重；main 恒在——会话存在即有主线）
+	det.Branches = []string{"main"}
+	brows, berr := s.db.Query(`SELECT DISTINCT branch_id FROM messages WHERE session_id=? AND branch_id != 'main'`, sessionID)
+	if berr == nil {
+		defer brows.Close()
+		for brows.Next() {
+			var b string
+			if brows.Scan(&b) == nil && b != "" {
+				det.Branches = append(det.Branches, b)
+			}
+		}
+	}
+
 	// P4：checkpoint 摘要（回放页时间线行）。已持 s.mu——不调 ListCheckpoints
 	// （它也要 Lock），直接轻量查询 payload 自行解。
-	crows, cerr := s.db.Query(`SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
-		WHERE session_id=? ORDER BY id ASC`, sessionID)
+	var crows *sql.Rows
+	var cerr error
+	if hasBranch && branch != "" {
+		crows, cerr = s.db.Query(cpQuery, sessionID, branch)
+	} else {
+		crows, cerr = s.db.Query(cpQuery, sessionID)
+	}
 	if cerr == nil {
 		defer crows.Close()
 		for crows.Next() {
@@ -695,33 +770,37 @@ func encodeJSON(v any) (string, error) {
 	return string(b), nil
 }
 
-// TruncateAfter 删除会话中 seq >= after 的消息及其关联 tool_calls，
-// 并清空该会话全部 checkpoints（F1 编辑重发：截断后重发）。
-// 返回删除的消息条数。
-func (s *Store) TruncateAfter(sessionID string, after int) (int, error) {
+// TruncateAfter 编辑重发（checkpoint-tree 语义，2026-08-15）：seq >= after
+// 的消息与 checkpoint 不再物理删除——软分叉到新分支（b{after}-{ts}）。
+// 主线 main 保留 seq < after；旧对话在新分支上可回看。返回分支 ID。
+func (s *Store) TruncateAfter(sessionID string, after int) (string, int, error) {
+	return s.BranchAfter(sessionID, after)
+}
+
+// BranchAfter 把 seq >= after 的消息软分叉到新分支，返回 (分支 ID, 分叉消息数)。
+func (s *Store) BranchAfter(sessionID string, after int) (string, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 三表联删走单事务（中途失败整体回滚，不产生部分删除）
+	branchID := fmt.Sprintf("b%d-%d", after, time.Now().Unix())
 	tx, err := s.db.Begin()
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
-	defer func() { _ = tx.Rollback() }() // 已提交时为 no-op
-	if _, err := tx.Exec(`DELETE FROM tool_calls WHERE session_id=? AND message_id IN
-		(SELECT id FROM messages WHERE session_id=? AND seq >= ?)`, sessionID, sessionID, after); err != nil {
-		return 0, err
-	}
-	res, err := tx.Exec(`DELETE FROM messages WHERE session_id=? AND seq >= ?`, sessionID, after)
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.Exec(`UPDATE messages SET branch_id=? WHERE session_id=? AND seq >= ?`,
+		branchID, sessionID, after)
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
-	deleted, _ := res.RowsAffected()
-	// checkpoints 是链式的，截断对话后短期记忆整体作废（保守但一致）
-	if _, err := tx.Exec(`DELETE FROM checkpoints WHERE session_id=?`, sessionID); err != nil {
-		return 0, err
+	affected, _ := res.RowsAffected()
+	// 对应轮的 checkpoint 挂同一分支（按被截断首条消息的创建时间之后的 checkpoint）
+	if _, err := tx.Exec(`UPDATE checkpoints SET payload_json = json_set(payload_json, '$.branch_id', ?)
+		WHERE session_id=? AND created_at >= (SELECT MIN(created_at) FROM messages WHERE session_id=? AND seq >= ?)`,
+		branchID, sessionID, sessionID, after); err != nil {
+		return "", 0, err
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return "", 0, err
 	}
-	return int(deleted), nil
+	return branchID, int(affected), nil
 }
