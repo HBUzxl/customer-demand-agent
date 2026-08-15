@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"customer-demand-agent/internal/agent"
+	"customer-demand-agent/internal/taskbg"
 )
 
 // analyzeReq is the request body for POST /api/analyze.
@@ -115,6 +117,20 @@ func (s *Server) executeTurn(ctx context.Context, sessionID, text string, emit f
 	if trace != nil {
 		for _, tc := range trace.ToolCalls {
 			_, _ = s.history.AppendToolCall(sessionID, assistantID, tc.Tool, tc.Params, tc.Result)
+		}
+	}
+	// G4 会话标题：首轮完成时后台 LLM 生成（替代 firstLine 截断的丑标题）。
+	if s.tasks != nil {
+		if det, err := s.history.GetSession(sessionID); err == nil {
+			userCount := 0
+			for _, m := range det.Messages {
+				if m.Role == "user" {
+					userCount++
+				}
+			}
+			if userCount <= 1 && det.Session.Title == firstLine(text) {
+				s.tasks.Submit(fmt.Sprintf("title-%d", time.Now().UnixNano()), taskbg.TaskTitle, sessionID+"/"+firstLine(text))
+			}
 		}
 	}
 }

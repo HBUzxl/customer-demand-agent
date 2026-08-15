@@ -152,6 +152,27 @@ func main() {
 			}
 			t.Result = sb.String()
 			return nil
+		case taskbg.TaskTitle:
+			// Detail = "sessionID/firstLine"——LLM 生成标题后更新会话
+			parts := strings.SplitN(t.Detail, "/", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("detail 应为 sessionID/firstLine")
+			}
+			msgs := []domain.Message{{Role: domain.RoleUser, Content: taskbg.BuildTitlePrompt(parts[1])}}
+			resp, err := modelMgr.Chat(ctx, model.TaskAnalysis, &llm.ChatRequest{Messages: msgs})
+			if err != nil {
+				return fmt.Errorf("LLM 标题: %w", err)
+			}
+			title := strings.TrimSpace(resp.Message.Content)
+			title = strings.Trim(title, "\u300c\u300d\"'“”")
+			if title == "" || len([]rune(title)) > 40 {
+				return fmt.Errorf("标题生成异常: %q", title)
+			}
+			if err := hist.EnsureSession(parts[0], title, ""); err != nil {
+				return err
+			}
+			t.Result = "标题：" + title
+			return nil
 		default:
 			return fmt.Errorf("未知任务类型: %s", t.Type)
 		}

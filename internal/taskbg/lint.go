@@ -63,3 +63,9 @@ func RunLint(in LintInput) []LintFinding {
 	}
 	return out
 }
+
+// BuildTitlePrompt 构造标题生成提示词（G4）。
+func BuildTitlePrompt(firstUserText string) string {
+	return "给下面这段客户对话起一个简短的会话标题（8-14 字，概括客户/场景/诉求，不带引号）：\n" +
+		firstUserText + "\n\n只输出标题本身。"
+}
