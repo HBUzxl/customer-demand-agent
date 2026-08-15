@@ -185,8 +185,11 @@ func Open(dbPath string) (*Store, error) {
 	//   （列保留、历史值不动），之后 INSERT 完全不提及该列。均幂等。
 	if !hasTenantColumnAny(db) {
 		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'`); err != nil {
-			// 已存在（并发迁移）等 benign 错误忽略
-			_ = err
+			// 并发迁移竞态（duplicate column）可容忍；其余错误（磁盘/权限）硬失败
+			if !strings.Contains(err.Error(), "duplicate column") {
+				_ = db.Close()
+				return nil, fmt.Errorf("tenant_id 列补全迁移: %w", err)
+			}
 		}
 	} else if hasTenantColumnWithoutDefault(db) {
 		if err := addTenantColumnDefault(db); err != nil {

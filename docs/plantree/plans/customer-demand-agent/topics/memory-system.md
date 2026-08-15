@@ -246,9 +246,9 @@ Session
 3. **Prompt 拼装时**：取 `current checkpoint` + 前 1 个 checkpoint（如果需要上下文），结构体直接序列化注入
 4. **审计**：每一步有明确快照，知道 Agent 判断了什么、为什么
 
-### Notes 机制
+### ~~Notes 机制~~（已删——P2 裁决 2026-08-15）
 
-主 Agent 在分析过程中产生的零散观察（"用户可能还需要注意 XX"），append 到 `notes.md`。每次创建 checkpoint 时消费 notes 内容、路由到对应字段、然后清空。这是 Agent 唯一被允许的临时写入通道。
+原设计（已废弃）：主 Agent 零散观察 append 到 notes，checkpoint 创建时消费。现由 memory_observe 工具直接写 Wiki 观察，Notes 通道全链删除（Manager 字段/方法/Checkpoint 字段）。
 
 ## Prompt 拼装器
 
@@ -346,10 +346,6 @@ type ShortTermMemory interface {
     CreateReanalysisCheckpoint(document string, analysis *AnalysisResult) *Checkpoint
     CurrentCheckpoint() *Checkpoint
     CheckpointChain() []*Checkpoint
-
-    // Notes 便签
-    AppendNote(note string)
-    DrainNotes() []string
 
     // 为 Prompt 拼装器提供上下文
     BuildContext(op CheckpointOp) *SessionContext

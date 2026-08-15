@@ -38,7 +38,6 @@ internal/
 │   ├── shortterm/       #   短期记忆：Checkpoint 链
 │   │   ├── checkpoint.go #    Checkpoint 结构体
 │   │   ├── chain.go      #    Checkpoint 链管理
-│   │   ├── notes.go      #    Notes 便签
 │   │   └── manager.go    #    上下文管理器
 │   └── assembler/       #   拼装层
 │       └── assembler.go #     Prompt 拼装器

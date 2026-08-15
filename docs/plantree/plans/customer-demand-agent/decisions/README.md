@@ -232,7 +232,7 @@
 
 > **状态：废止（2026-08-14 用户裁决）**——单租户内部工具，多租户是过度设计。
 > 见 [[plans/de-tenancy/README.md|de-tenancy plan]]：四层去 tenant 已落地；
-> sessions.tenant_id 列在新 schema 已移除（老库 Open 时探测兼容）。
+> sessions.tenant_id 列保留（恒带 NOT NULL DEFAULT，代码不读不写）。
 
 <details><summary>历史原文（已不生效）</summary>
 
