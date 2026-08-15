@@ -147,7 +147,9 @@ docs/plantree/      设计文档与 ADR（ADR-001 ~ ADR-012）
 
 见 `docs/plantree/plans/customer-demand-agent/decisions/README.md`（ADR-001 ~ ADR-012），
 核心：Go 自研轻量底座 / 不做 RAG / Checkpoint 链 / Wiki 三层分类 / AI 自主写入 + 待审核 /
-前后端分离 / 默认支持 FC / 自主 Agent 非 workflow / SQLite 历史 / 多租户 / 钉钉口子。
+前后端分离 / 默认支持 FC / 自主 Agent 非 workflow / SQLite 历史 / 服务端 Run 任务模型 / 钉钉口子。
+
+交互与可观测（一期收尾）：ask_user 选项卡 / 内联审核卡（F4，弃独立审核页主路径）/ 编辑重发 / 观测台（/observe：后台任务+日志 tail+LLM 审计）/ 配置中心（设置页只读：prompt 分层/回退链/参数/记忆统计）/ prompt 模板外置（prompts/system.md 编辑重启生效+版本快照）/ 事实时效（覆盖归档留痕）/ Docker 化（VOLUME /var/lib/cda）。
 
 ## 延期项
 
