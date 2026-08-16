@@ -501,7 +501,8 @@ func (a *Adapter) sendChoice(t *activeTurn, ev agent.Event) error {
 }
 
 // sanitizeOptionID 把 value 规整为平台合法选项 id（字母数字-_，≤64 字符）；
-// 冲突/空时用 opt-N 兑底。
+// 清洗后为空或冲突时回退 opt-N，并继续避让已用 id（防止与字面值恰为
+// opt-N 的选项撞 id——撞了会导致点选映射到另一个选项的 value）。
 func sanitizeOptionID(value string, idx int, used map[string]bool) string {
 	var b strings.Builder
 	for _, r := range value {
@@ -516,10 +517,15 @@ func sanitizeOptionID(value string, idx int, used map[string]bool) string {
 		}
 	}
 	id := strings.Trim(b.String(), "_")
-	if id == "" || used[id] {
-		return fmt.Sprintf("opt-%d", idx)
+	if id != "" && !used[id] {
+		return id
 	}
-	return id
+	for n := idx; ; n++ {
+		fallback := fmt.Sprintf("opt-%d", n)
+		if !used[fallback] {
+			return fallback
+		}
+	}
 }
 
 // procResult 是一轮异步处理的结果。

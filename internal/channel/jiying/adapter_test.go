@@ -507,6 +507,21 @@ func TestSanitizeOptionID(t *testing.T) {
 	}
 }
 
+// TestSanitizeOptionIDNoCollision 回退 opt-N 不得与已用 id 相撞（否则两个选项
+// 共用 id，点选会映射到另一个选项的 value——「点了 A 收到 B」）。
+func TestSanitizeOptionIDNoCollision(t *testing.T) {
+	values := []string{"opt-1", "银行", "opt-2"}
+	used := map[string]bool{}
+	ids := make([]string, len(values))
+	for i, v := range values {
+		ids[i] = sanitizeOptionID(v, i, used)
+		if used[ids[i]] {
+			t.Fatalf("value %q 得到已占用 id %q", v, ids[i])
+		}
+		used[ids[i]] = true
+	}
+}
+
 // TestServeChoiceResponseRoundTrip 点选答案映射回 value 进入会话，回复并 ACK。
 func TestServeChoiceResponseRoundTrip(t *testing.T) {
 	fc := newFakeConn()
