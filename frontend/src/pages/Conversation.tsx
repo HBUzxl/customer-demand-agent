@@ -706,6 +706,18 @@ function renderSegs(segs: Seg[], streaming: boolean) {
 
 function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }) {
   const [open, setOpen] = useState(false);
+  // 轨迹框贴底跟随：用户手动上滚即接管（sticky=false），滚回底部恢复跟随。
+  const boxRef = useRef<HTMLDivElement>(null);
+  const stickyRef = useRef(true);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (el && stickyRef.current) el.scrollTop = el.scrollHeight;
+  }, [m.segs, open]);
+  function onBoxScroll() {
+    const el = boxRef.current;
+    if (!el) return;
+    stickyRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  }
   const segs = m.segs || [];
   const trailingText =
     segs.length > 0 && segs[segs.length - 1].kind === "text"
@@ -733,7 +745,9 @@ function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }
               <span style={{ marginLeft: 2 }}>{open ? "▾" : "▸"}</span>
             </div>
             {(open || m.streaming) && (
-              <div className="trace-box">{renderSegs(traceSegs, !!m.streaming)}</div>
+              <div className="trace-box" ref={boxRef} onScroll={onBoxScroll}>
+                {renderSegs(traceSegs, !!m.streaming)}
+              </div>
             )}
           </>
         )}
