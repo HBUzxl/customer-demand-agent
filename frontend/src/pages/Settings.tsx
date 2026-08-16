@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { configGet, configPut, configTest, listModels } from "../api/client";
-import type { ConfigResponse, ModelConfig } from "../types";
+import { configGet, configPut, configTest, leadManagerPut, listModels } from "../api/client";
+import type { ConfigResponse, LeadManagerConfig, ModelConfig } from "../types";
 
 type Cat = "models" | "routing" | "console" | "about";
 const CATS: { id: Cat; label: string }[] = [
@@ -698,6 +698,7 @@ interface ConsoleData {
   };
   data: { data_dir: string; wiki_dir: string; history_db: string };
   behavior: { agent_max_iterations: number; default_user: string; llm_timeout_sec: number };
+  lead_manager?: { enabled: boolean; base_url: string; has_key: boolean; active: boolean };
 }
 
 function ConsoleCenter() {
@@ -802,6 +803,117 @@ function ConsoleCenter() {
         <div>数据根：{cfg.data.data_dir}</div>
         <div>Wiki：{cfg.data.wiki_dir}</div>
         <div>历史库：{cfg.data.history_db}</div>
+      </div>
+
+      <LeadManagerGroup />
+    </>
+  );
+}
+
+// ── 商机平台（Lead Manager）分组（lead-manager 接入 M2）────
+// 系统级 Token：管理员配一次、全员共用；保存后重启生效（同 jiying 语义）。
+function LeadManagerGroup() {
+  const [lm, setLm] = useState<LeadManagerConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    configGet()
+      .then((c) => {
+        if (c.lead_manager) setLm(c.lead_manager);
+      })
+      .catch(() => {});
+  }, []);
+  async function save() {
+    if (!lm) return;
+    setSaving(true);
+    setMsg("");
+    setErr("");
+    try {
+      const r = await leadManagerPut(lm);
+      if (r.lead_manager) setLm(r.lead_manager);
+      setMsg("已保存并回写 config.json，重启后生效");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  if (!lm) return null;
+  return (
+    <>
+      <h3 className="cc-h">商机平台（Lead Manager）</h3>
+      <div className="cc-group">
+        <label>
+          启用
+          <input
+            type="checkbox"
+            className="checkbox"
+            checked={lm.enabled}
+            onChange={(e) => setLm({ ...lm, enabled: e.target.checked })}
+          />
+        </label>
+        <label>
+          平台地址
+          <input
+            value={lm.base_url || ""}
+            placeholder="http://api.in.chaitin.net/mql"
+            onChange={(e) => setLm({ ...lm, base_url: e.target.value })}
+          />
+        </label>
+        <label>
+          API Token（系统级）
+          <input
+            type="password"
+            value={lm.api_key || ""}
+            placeholder="lm_pat_…（留空 = 不改；已设置显示 ********）"
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => setLm({ ...lm, api_key: e.target.value })}
+          />
+        </label>
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ fontSize: 12, color: "var(--text-faint)", cursor: "pointer" }}>
+            高级（限流/超时，一般用默认）
+          </summary>
+          <div className="cc-group" style={{ marginTop: 8 }}>
+            <label>
+              超时（秒）
+              <input
+                type="number"
+                value={lm.timeout_sec ?? 10}
+                onChange={(e) => setLm({ ...lm, timeout_sec: parseInt(e.target.value) || 10 })}
+              />
+            </label>
+            <label>
+              限流（次/分钟）
+              <input
+                type="number"
+                value={lm.rate_per_min ?? 60}
+                onChange={(e) => setLm({ ...lm, rate_per_min: parseInt(e.target.value) || 60 })}
+              />
+            </label>
+            <label>
+              突发容量
+              <input
+                type="number"
+                value={lm.burst ?? 3}
+                onChange={(e) => setLm({ ...lm, burst: parseInt(e.target.value) || 3 })}
+              />
+            </label>
+          </div>
+        </details>
+        <div className="muted" style={{ fontSize: 12, lineHeight: 1.7 }}>
+          系统级 Token：管理员配一次、全员共用（统计权限随 Token 创建人角色）。 需公司内网或
+          VPN；仅只读查询（列表/详情/统计）。遇 HTTP 401 说明 Token 失效，
+          请在商机平台重建后更新此处；怀疑泄露时在平台侧吊销。
+        </div>
+      </div>
+      <div className="row" style={{ gap: 10, alignItems: "center" }}>
+        <button className="btn sm" disabled={saving} onClick={save}>
+          {saving ? "保存中…" : "保存（重启后生效）"}
+        </button>
+        {msg && <span style={{ color: "var(--green)", fontSize: 12 }}>{msg}</span>}
+        {err && <span style={{ color: "var(--red)", fontSize: 12 }}>{err}</span>}
       </div>
     </>
   );

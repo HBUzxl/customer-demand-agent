@@ -30,7 +30,20 @@ type Config struct {
 	AgentMaxIterations int                 `json:"agent_max_iterations"` // Agent 单轮最大工具循环数（console-config：可配置化，默认 15）
 	Models             []model.ModelConfig `json:"models"`
 	Router             model.RouterConfig  `json:"router"`
-	Jiying             JiyingCfg           `json:"jiying"` // 即应渠道（可选，enabled=true 才启动）
+	Jiying             JiyingCfg           `json:"jiying"`       // 即应渠道（可选，enabled=true 才启动）
+	LeadManager        LeadManagerCfg      `json:"lead_manager"` // 商机平台（只读外部数据源，enabled+api_key 齐备才接入）
+}
+
+// LeadManagerCfg 商机平台（Lead Manager / MQL）接入配置。
+// 系统统一 Token：管理员配一次、全员共用（统计权限随 Token 创建人角色）；
+// api_key 纪律与 LLM key 完全一致（文件 0600、绝不入日志、API 永不回显）。
+type LeadManagerCfg struct {
+	Enabled    bool   `json:"enabled"`
+	BaseURL    string `json:"base_url"`
+	APIKey     string `json:"api_key"` // lm_pat_ 开头的系统级 Token
+	TimeoutSec int    `json:"timeout_sec"`
+	RatePerMin int    `json:"rate_per_min"` // 令牌桶速率（次/分钟，平台生产上限 60）
+	Burst      int    `json:"burst"`        // 令牌桶容量（瞬时并发上限，≤ 平台 10 次/秒）
 }
 
 // JiyingCfg 即应渠道接入配置
@@ -92,6 +105,14 @@ func template() *Config {
 			Secret:  "",
 			WSURL:   "wss://<server-host>/api/app/ws",
 			Proxy:   "", // 例："http://proxy:8123"（内网出网时填）
+		},
+		LeadManager: LeadManagerCfg{
+			Enabled:    false,
+			BaseURL:    "http://api.in.chaitin.net/mql",
+			APIKey:     "", // ← 在这里填系统级 Token（lm_pat_ 开头，管理员在商机平台创建）
+			TimeoutSec: 10,
+			RatePerMin: 60,
+			Burst:      3,
 		},
 	}
 }
@@ -210,6 +231,18 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Router.Fallback.BackoffMs <= 0 {
 		cfg.Router.Fallback.BackoffMs = 200
+	}
+	if cfg.LeadManager.BaseURL == "" {
+		cfg.LeadManager.BaseURL = "http://api.in.chaitin.net/mql"
+	}
+	if cfg.LeadManager.TimeoutSec <= 0 {
+		cfg.LeadManager.TimeoutSec = 10
+	}
+	if cfg.LeadManager.RatePerMin <= 0 {
+		cfg.LeadManager.RatePerMin = 60
+	}
+	if cfg.LeadManager.Burst <= 0 {
+		cfg.LeadManager.Burst = 3
 	}
 }
 

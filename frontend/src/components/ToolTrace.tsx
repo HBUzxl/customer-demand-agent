@@ -38,6 +38,18 @@ const TOOL_META: Record<string, { label: string; icon: string }> = {
     label: "提交需求分析",
     icon: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
   },
+  leads_search: {
+    label: "检索商机",
+    icon: "M3 8h18v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8zM8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18",
+  },
+  leads_get: {
+    label: "线索详情",
+    icon: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5",
+  },
+  leads_stats: {
+    label: "商机统计",
+    icon: "M3 3v18h18M7 15v3M12 10v8M17 6v12",
+  },
 };
 
 const TYPE_LABEL: Record<string, string> = {

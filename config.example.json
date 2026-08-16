@@ -15,7 +15,7 @@
       "model": "deepseek-chat",
       "temperature": 0.3,
       "max_tokens": 4096,
-      "timeout_sec": 60,
+      "timeout_sec": 120,
       "context_window": 128000,
       "max_retries": 0,
       "remark": "",
@@ -38,5 +38,13 @@
     "secret": "",
     "ws_url": "wss://<server-host>/api/app/ws",
     "proxy": ""
+  },
+  "lead_manager": {
+    "enabled": false,
+    "base_url": "http://api.in.chaitin.net/mql",
+    "api_key": "",
+    "timeout_sec": 10,
+    "rate_per_min": 60,
+    "burst": 3
   }
 }

@@ -36,6 +36,13 @@ func (s *Server) handleConsoleConfig(w http.ResponseWriter, r *http.Request) {
 			"default_user":         cfg.DefaultUser,
 			"llm_timeout_sec":      cfg.LLMTimeoutSec,
 		},
+		// 商机平台（lead-manager）：只读视图，api_key 只出 has_key（同 LLM key 纪律）
+		"lead_manager": map[string]any{
+			"enabled":  cfg.LeadManager.Enabled,
+			"base_url": cfg.LeadManager.BaseURL,
+			"has_key":  cfg.LeadManager.APIKey != "",
+			"active":   cfg.LeadManager.Enabled && cfg.LeadManager.APIKey != "",
+		},
 	})
 }
 
@@ -60,6 +67,9 @@ func (s *Server) handleConsolePrompts(w http.ResponseWriter, r *http.Request) {
 			{"tool": "missing_answer", "desc": toolDescSummary("记录追问答案（闭环）")},
 			{"tool": "ask_user", "desc": toolDescSummary("向用户提问并给选项")},
 			{"tool": "history_search", "desc": toolDescSummary("检索历史对话原文")},
+			{"tool": "leads_search", "desc": toolDescSummary("检索商机平台线索列表（外部数据源，启用才注册）")},
+			{"tool": "leads_get", "desc": toolDescSummary("读取线索详情/活动记录")},
+			{"tool": "leads_stats", "desc": toolDescSummary("商机统计（权限随 Token 创建人角色）")},
 		},
 	})
 }

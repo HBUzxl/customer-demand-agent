@@ -27,6 +27,15 @@ import (
 // setupServer 构建一个完整可用的 HTTP server（用临时 wiki + sqlite + mock 模型）。
 func setupServer(t *testing.T) (*httptest.Server, *longterm.WikiStore) {
 	t.Helper()
+	// 用临时 config.json 加载（测试真实持久化路径）
+	configFile := filepath.Join(t.TempDir(), "config.json")
+	_ = os.WriteFile(configFile, []byte(`{"server":{"addr":":0"},"default_tenant":"default","models":[{"name":"default","endpoint":"http://localhost:1","api_key":"k","model":"m","temperature":0.3,"max_tokens":1024,"timeout_sec":5}],"router":{"default":"default","routes":{},"fallback":{"max_retries":1,"backoff_base_ms":10,"chain":null}}}`), 0o600)
+	return setupServerWithConfig(t, configFile)
+}
+
+// setupServerWithConfig 用指定 config.json 构造完整服务（验证回写文件用）。
+func setupServerWithConfig(t *testing.T, configFile string) (*httptest.Server, *longterm.WikiStore) {
+	t.Helper()
 	wikiDir := t.TempDir()
 	store := longterm.NewWikiStore(wikiDir)
 	if err := store.Load(); err != nil {
@@ -48,9 +57,6 @@ func setupServer(t *testing.T) (*httptest.Server, *longterm.WikiStore) {
 	toolReg := tools.NewRegistry(store)
 	asm := assembler.New(store, "")
 
-	// 用临时 config.json 加载（测试真实持久化路径）
-	configFile := filepath.Join(t.TempDir(), "config.json")
-	_ = os.WriteFile(configFile, []byte(`{"server":{"addr":":0"},"default_tenant":"default","models":[{"name":"default","endpoint":"http://localhost:1","api_key":"k","model":"m","temperature":0.3,"max_tokens":1024,"timeout_sec":5}],"router":{"default":"default","routes":{},"fallback":{"max_retries":1,"backoff_base_ms":10,"chain":null}}}`), 0o600)
 	cfgStore, err := config.Load(configFile)
 	if err != nil {
 		t.Fatal(err)

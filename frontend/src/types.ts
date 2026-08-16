@@ -62,9 +62,21 @@ export interface RouterConfig {
   fallback: { max_retries: number; backoff_base_ms: number; chain: string[] | null };
 }
 
+// 商机平台（Lead Manager）配置——api_key 掩码语义同 LLM key：
+// 已设置显示 "********"，未设置为空；PUT 原样发回 = 不改
+export interface LeadManagerConfig {
+  enabled: boolean;
+  base_url: string;
+  api_key?: string;
+  timeout_sec?: number;
+  rate_per_min?: number;
+  burst?: number;
+}
+
 export interface ConfigResponse {
   models: ModelConfig[];
   router: RouterConfig;
+  lead_manager?: LeadManagerConfig;
 }
 
 export interface SessionListItem {

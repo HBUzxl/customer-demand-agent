@@ -27,6 +27,7 @@ import (
 	"customer-demand-agent/internal/config"
 	"customer-demand-agent/internal/domain"
 	"customer-demand-agent/internal/history"
+	"customer-demand-agent/internal/leads"
 	"customer-demand-agent/internal/llm"
 	"customer-demand-agent/internal/memory/assembler"
 	"customer-demand-agent/internal/memory/longterm"
@@ -120,6 +121,24 @@ func main() {
 		return hist.EnsureSession(sessionID, "", customer)
 	})
 
+	// ── 商机平台（Lead Manager，只读外部数据源）────────────
+	// 启用条件：enabled && api_key 齐备，缺一不接入（工具不注册，模型无感知）。
+	// Token 是系统级的：管理员配一次、全员共用；重启生效（无热切换）。
+	if cfg.LeadManager.Enabled && cfg.LeadManager.APIKey != "" {
+		ag.SetLeads(leads.New(leads.Options{
+			BaseURL:    cfg.LeadManager.BaseURL,
+			APIKey:     cfg.LeadManager.APIKey,
+			Timeout:    time.Duration(cfg.LeadManager.TimeoutSec) * time.Second,
+			RatePerMin: cfg.LeadManager.RatePerMin,
+			Burst:      cfg.LeadManager.Burst,
+		}))
+		log.Printf("[ok] 商机平台数据源已接入：%s（限流 %d/分钟，突发 %d）",
+			cfg.LeadManager.BaseURL, cfg.LeadManager.RatePerMin, cfg.LeadManager.Burst)
+	} else {
+		log.Printf("[ok] 商机平台未接入（lead_manager.enabled=%t，api_key %s）",
+			cfg.LeadManager.Enabled, hasKeyLabel(cfg.LeadManager.APIKey))
+	}
+
 	// ── 审核系统 ────────────────────────────────────────────
 	reviewSvc := review.New(wikiStore)
 
@@ -204,6 +223,14 @@ func orDirect(proxy string) string {
 		return "直连"
 	}
 	return proxy
+}
+
+// hasKeyLabel 密钥存在性文案（日志用，绝不输出明文 key）。
+func hasKeyLabel(key string) string {
+	if key != "" {
+		return "已配置"
+	}
+	return "未配置"
 }
 
 // hasAPIKey 检查注册表中是否有任一模型配置了 api_key。

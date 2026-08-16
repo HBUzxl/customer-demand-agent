@@ -16,6 +16,7 @@ import (
 
 	"customer-demand-agent/internal/domain"
 	"customer-demand-agent/internal/history"
+	"customer-demand-agent/internal/leads"
 	"customer-demand-agent/internal/llm"
 	"customer-demand-agent/internal/memory/assembler"
 	"customer-demand-agent/internal/memory/shortterm"
@@ -92,6 +93,7 @@ type Agent struct {
 	bindCustomer func(sessionID, customer string) error                                 // 客户绑定 Agent 自主化（2026-08-15）
 	maxIters     int                                                                    // 单轮最大工具循环（console-config 可配置；0=默认 15）
 	histSearch   func(sessionID, query string, limit int) ([]history.MessageHit, error) // 历史检索（P1 history_search 工具）
+	leads        *leads.Service                                                         // 商机平台工具（nil=未启用：不注册，模型无感知）
 }
 
 // New 创建 Agent。
@@ -134,6 +136,15 @@ func (a *Agent) SetCustomerResolver(fn func(sessionID string) string) {
 // Agent 可回溯原始对话轨迹，P1——checkpoint 注入摘要不够用时兜底）。
 func (a *Agent) SetHistorySearcher(fn func(sessionID, query string, limit int) ([]history.MessageHit, error)) {
 	a.histSearch = fn
+}
+
+// SetLeads 注入商机平台工具（lead-manager 接入）。nil（未启用）时工具定义
+// 根本不注册——模型完全看不到，避免「调用了不存在的工具」（外部数据源启停
+// 是常态，干净注册比「恒注册、运行时报未配置」更合适）；启用时同步告知
+// assembler 注入数据源身份行（同客户身份行模式）。
+func (a *Agent) SetLeads(s *leads.Service) {
+	a.leads = s
+	a.assembler.SetLeadsEnabled(s != nil)
 }
 
 // restoreIfNeeded 若内存无 checkpoint 且历史有，则恢复短期记忆（断点续传）。
@@ -232,6 +243,9 @@ func (a *Agent) Message(ctx context.Context, sessionID, text string, emit func(E
 // 不再强制 JSON 输出——输出形态由 Agent 自主决定（ADR-013）。
 func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trace *Trace, emit func(Event), st *turnState) (string, error) {
 	toolDefs := append(a.tools.Definitions(), analysisSubmitDef(), missingAnswerDef(), historySearchDef(), askUserDef(), bindCustomerDef())
+	if a.leads != nil {
+		toolDefs = append(toolDefs, a.leads.Definitions()...) // 启用才注册（nil=模型无感知）
+	}
 
 	for iter := 0; iter < a.maxIter(); iter++ {
 		emitEvent(emit, Event{Type: EventRound, Round: iter + 1})
@@ -259,7 +273,7 @@ func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trac
 
 		for _, tc := range resp.Message.ToolCalls {
 			emitEvent(emit, Event{Type: EventToolCall, Tool: tc.Function.Name, Params: tc.Function.Arguments})
-			result := a.executeTool(tc, trace, st)
+			result := a.executeTool(ctx, tc, trace, st)
 			emitEvent(emit, Event{Type: EventToolResult, Tool: tc.Function.Name, Result: truncateForTrace(result)})
 			msgList = append(msgList, domain.Message{
 				Role:       domain.RoleTool,
@@ -274,8 +288,9 @@ func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trac
 
 // executeTool 执行单次工具调用，记录轨迹。
 // analysis_submit / missing_answer 是 agent 层业务工具：拦截解析后挂到轮次
-// 状态，不进 memory registry。
-func (a *Agent) executeTool(tc domain.ToolCall, trace *Trace, st *turnState) string {
+// 状态，不进 memory registry。leads_* 分发到商机平台服务（ctx 传播：Run
+// cancel 即断外部 HTTP 调用）。
+func (a *Agent) executeTool(ctx context.Context, tc domain.ToolCall, trace *Trace, st *turnState) string {
 	var result string
 	switch tc.Function.Name {
 	case ToolAnalysisSubmit:
@@ -302,7 +317,13 @@ func (a *Agent) executeTool(tc domain.ToolCall, trace *Trace, st *turnState) str
 		result = a.execBindCustomer(tc.Function.Arguments, st.session)
 	default:
 		args := json.RawMessage(tc.Function.Arguments)
-		r, err := a.tools.Execute(tc.Function.Name, args)
+		var r string
+		var err error
+		if a.leads != nil && a.leads.Handles(tc.Function.Name) {
+			r, err = a.leads.Execute(ctx, tc.Function.Name, args)
+		} else {
+			r, err = a.tools.Execute(tc.Function.Name, args)
+		}
 		if err != nil {
 			result = fmt.Sprintf(`{"error":"%s"}`, jsonEscape(err.Error()))
 		} else {

@@ -18,15 +18,19 @@ import (
 
 // Assembler 把长期知识 + 短期 checkpoint + 用户输入拼成 messages。
 type Assembler struct {
-	knowledge *longterm.WikiStore
-	userName  string // 当前使用者（销售），用于分级输出
-	template  string // 外置模板（C3：prompts/system.md；缺失回退内置拼接）
+	knowledge    *longterm.WikiStore
+	userName     string // 当前使用者（销售），用于分级输出
+	template     string // 外置模板（C3：prompts/system.md；缺失回退内置拼接）
+	leadsEnabled bool   // 商机平台已接入（注入数据源身份行；未接入不注入，模型无感知）
 }
 
 // New 创建拼装器。userName 是当前使用者名（影响输出风格，见 memory-system.md 分级输出）。
 func New(knowledge *longterm.WikiStore, userName string) *Assembler {
 	return &Assembler{knowledge: knowledge, userName: userName, template: loadTemplate()}
 }
+
+// SetLeadsEnabled 标记商机平台数据源是否已接入（Agent.SetLeads 联动调用）。
+func (a *Assembler) SetLeadsEnabled(on bool) { a.leadsEnabled = on }
 
 // loadTemplate 加载外置模板（C3）。文件按「## 段名」组织，四个已知段
 // （角色/自主性指引/目标/约束）的正文**直接采用外置文件内容**——编辑
@@ -126,6 +130,16 @@ func (a *Assembler) Assemble(op domain.CheckpointOp, ctx *domain.SessionContext,
 			fmt.Fprintf(&b, "- %s → %s\n", ai.Item, ai.Answer)
 		}
 		msgs = append(msgs, domain.Message{Role: domain.RoleSystem, Content: b.String()})
+	}
+
+	// 商机数据源身份行（lead-manager 接入，同客户身份行模式）：启用时注入
+	// 一行让模型知道工具可用；未启用不注入（工具也未注册，模型无感知）。
+	if a.leadsEnabled {
+		msgs = append(msgs, domain.Message{
+			Role: domain.RoleSystem,
+			Content: "【外部数据源】商机平台（Lead Manager）已接入：leads_search（线索列表）/ leads_get（线索详情）/ leads_stats（商机统计）。" +
+				"涉及商机/线索/MQL/转化数据时用这些工具查询；工具返回的错误提示已含行动指引，按指引向用户说明。",
+		})
 	}
 
 	// 用户输入
@@ -240,6 +254,7 @@ func groupByLine(products []longterm.Product) []lineGroup {
 const systemAutonomy = `每次用户发言，你自己判断怎么回应，没有固定流程。这是和 Agent 的对话，不是普通 chat——你的记忆工具全程在线，任何轮次都该自然使用：
 - 聊天中涉及产品/威胁/合规事实 → 先 memory_search 查证再回答（不凭记忆瞎说）；确定候选后用 memory_get 读完整页：产品主页含能力置信度/能力边界/竞品对比/相关文档目录，正文超长时先返章节目录、用 section（或 body_offset）分段读。推荐产品与引用细节前必须 get 证实——置信度参考能力点标注，能力边界（limitations）用于避免过度承诺
 - 需要回溯之前对话的细节（客户原话、之前怎么答的、别的会话聊过什么）→ history_search 检索历史原文
+- 涉及商机/线索/MQL/转化数据（当前有哪些线索、某客户线索进展、转化趋势）→ 用 leads_search / leads_get / leads_stats 检索商机平台；若工具不可用则如实说明商机平台未接入，让用户在设置里配置；结果与产品能力结合回答时，产品细节仍以 memory_get 为准（商机平台的产品口径 ≠ 产品能力事实）
 - 聊天中出现新客户信息/线索 → 主动 memory_observe / memory_ensure 记录
 - 此前分析的追问（missing_info）在对话中得到回答 → 调用 missing_answer 记录答案（追问闭环，避免重复追问）
 - 关键信息缺失且能枚举选项（部署环境/预算区间/行业等）→ 调用 ask_user 给选项让用户点选，比开放追问省事；用户的选择回来后用 missing_answer 记录

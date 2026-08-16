@@ -2,6 +2,7 @@
 import type {
   AgentEvent,
   ConfigResponse,
+  LeadManagerConfig,
   MemoryEntry,
   ReviewItem,
   SessionDetail,
@@ -216,7 +217,18 @@ export const configGet = () => req<ConfigResponse>("/config");
 export const configPut = (cfg: ConfigResponse) =>
   req<ConfigResponse>("/config", {
     method: "PUT",
-    body: JSON.stringify({ models: cfg.models, router: cfg.router }),
+    body: JSON.stringify({
+      models: cfg.models,
+      router: cfg.router,
+      lead_manager: cfg.lead_manager,
+    }),
+  });
+
+// 仅更新商机平台配置（部分更新：不动 models/router）
+export const leadManagerPut = (lm: LeadManagerConfig) =>
+  req<ConfigResponse>("/config", {
+    method: "PUT",
+    body: JSON.stringify({ lead_manager: lm }),
   });
 
 // 测试连接：发个 hi 验证模型配置

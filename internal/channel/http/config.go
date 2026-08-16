@@ -23,8 +23,32 @@ import (
 
 // configResponse is the GET /api/config payload.
 type configResponse struct {
-	Models []model.ModelConfig `json:"models"`
-	Router model.RouterConfig  `json:"router"`
+	Models      []model.ModelConfig `json:"models"`
+	Router      model.RouterConfig  `json:"router"`
+	LeadManager *LeadManagerView    `json:"lead_manager,omitempty"` // 商机平台（key 掩码语义与 LLM key 一致）
+}
+
+// LeadManagerView 是 lead_manager 的 API 视图（api_key 永不回传明文：
+// 已设置显示占位 "********"，未设置为空；PUT 原样发回 = 不改）。
+type LeadManagerView struct {
+	Enabled    bool   `json:"enabled"`
+	BaseURL    string `json:"base_url"`
+	APIKey     string `json:"api_key"`
+	TimeoutSec int    `json:"timeout_sec"`
+	RatePerMin int    `json:"rate_per_min"`
+	Burst      int    `json:"burst"`
+}
+
+// maskedLeadManager 从配置构造掩码视图。
+func maskedLeadManager(lm config.LeadManagerCfg) *LeadManagerView {
+	v := &LeadManagerView{
+		Enabled: lm.Enabled, BaseURL: lm.BaseURL,
+		TimeoutSec: lm.TimeoutSec, RatePerMin: lm.RatePerMin, Burst: lm.Burst,
+	}
+	if lm.APIKey != "" {
+		v.APIKey = "********"
+	}
+	return v
 }
 
 // handleConfigGet: GET /api/config（永不回传真实 api_key；已设置的显示占位 "********"，未设置为空）
@@ -35,9 +59,11 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 			models[i].APIKey = "********" // 占位：表示已设置（真实 key 不出库）；PUT 原样发回=不改
 		}
 	}
+	lm := maskedLeadManager(s.store.Get().LeadManager)
 	writeJSON(w, http.StatusOK, configResponse{
-		Models: models,
-		Router: s.modelMgr.Router(),
+		Models:      models,
+		Router:      s.modelMgr.Router(),
+		LeadManager: lm,
 	})
 }
 
@@ -49,6 +75,7 @@ type configPutReq struct {
 	DefaultUser        *string             `json:"default_user,omitempty"`
 	LLMTimeoutSec      *int                `json:"llm_timeout_sec,omitempty"`
 	AgentMaxIterations *int                `json:"agent_max_iterations,omitempty"`
+	LeadManager        *LeadManagerView    `json:"lead_manager,omitempty"` // 可选：商机平台配置（重启生效）
 }
 
 // handleConfigPut: PUT /api/config
@@ -59,31 +86,55 @@ func (s *Server) handleConfigPut(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "解析请求体: %v", err)
 		return
 	}
-	// 先快照现有真实密钥 + endpoint（reset 前的真相源）
-	existingKey := map[string]string{}
-	existingEndpoint := map[string]string{}
-	for _, name := range s.registry.Names() {
-		if c, err := s.registry.Get(name); err == nil {
-			existingKey[name] = c.APIKey
-			existingEndpoint[name] = c.Endpoint
-		}
-	}
-	// 合并：传入 api_key 为空或占位 "********" → 仅当 endpoint 未变才保留旧 key；
-	// 改了 endpoint 还留空/占位 → 不代填（防把已存 key 指向被篡改的 endpoint）
-	merged := make([]model.ModelConfig, len(req.Models))
-	for i, m := range req.Models {
-		if m.APIKey == "" || m.APIKey == "********" {
-			if ep, ok := existingEndpoint[m.Name]; ok && sameEndpoint(m.Endpoint, ep) {
-				m.APIKey = existingKey[m.Name]
+	// lead_manager 先行校验（错误早返回，不动任何现有状态）。
+	// api_key 为空或占位 "********" 时保留已存 key（与 LLM key 合并语义一致）。
+	var lmNew *config.LeadManagerCfg
+	if req.LeadManager != nil {
+		lm := s.store.Get().LeadManager // 快照现值（key 合并用）
+		v := *req.LeadManager
+		if v.BaseURL != "" {
+			u, perr := url.Parse(v.BaseURL)
+			if perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				writeError(w, http.StatusBadRequest, "lead_manager.base_url 非法（须为 http/https URL）")
+				return
 			}
 		}
-		merged[i] = m
+		if v.APIKey == "" || v.APIKey == "********" {
+			v.APIKey = lm.APIKey
+		}
+		lmNew = &config.LeadManagerCfg{
+			Enabled: v.Enabled, BaseURL: v.BaseURL, APIKey: v.APIKey,
+			TimeoutSec: v.TimeoutSec, RatePerMin: v.RatePerMin, Burst: v.Burst,
+		}
 	}
-	_ = s.resetRegistry()
-	for _, m := range merged {
-		if err := s.registry.Register(m); err != nil {
-			writeError(w, http.StatusBadRequest, "注册模型 %s: %v", m.Name, err)
-			return
+	var merged []model.ModelConfig
+	if req.Models != nil {
+		// 先快照现有真实密钥 + endpoint（reset 前的真相源）
+		existingKey := map[string]string{}
+		existingEndpoint := map[string]string{}
+		for _, name := range s.registry.Names() {
+			if c, err := s.registry.Get(name); err == nil {
+				existingKey[name] = c.APIKey
+				existingEndpoint[name] = c.Endpoint
+			}
+		}
+		// 合并：传入 api_key 为空或占位 "********" → 仅当 endpoint 未变才保留旧 key；
+		// 改了 endpoint 还留空/占位 → 不代填（防把已存 key 指向被篡改的 endpoint）
+		merged = make([]model.ModelConfig, len(req.Models))
+		for i, m := range req.Models {
+			if m.APIKey == "" || m.APIKey == "********" {
+				if ep, ok := existingEndpoint[m.Name]; ok && sameEndpoint(m.Endpoint, ep) {
+					m.APIKey = existingKey[m.Name]
+				}
+			}
+			merged[i] = m
+		}
+		_ = s.resetRegistry()
+		for _, m := range merged {
+			if err := s.registry.Register(m); err != nil {
+				writeError(w, http.StatusBadRequest, "注册模型 %s: %v", m.Name, err)
+				return
+			}
 		}
 	}
 	if req.Router != nil {
@@ -91,9 +142,14 @@ func (s *Server) handleConfigPut(w http.ResponseWriter, r *http.Request) {
 	}
 	// 回写配置文件（合并后的含密钥模型 + 路由），保留 server/wiki/history 设置
 	if err := s.store.Update(func(cfg *config.Config) {
-		cfg.Models = merged
+		if req.Models != nil {
+			cfg.Models = merged
+		}
 		if req.Router != nil {
 			cfg.Router = *req.Router
+		}
+		if lmNew != nil {
+			cfg.LeadManager = *lmNew // 重启生效（不做热切换，同 jiying 语义）
 		}
 		// console-config：行为参数可选合并（热生效——Agent/Registry 即时重配）
 		if req.DefaultUser != nil {
@@ -118,8 +174,9 @@ func (s *Server) handleConfigPut(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, configResponse{
-		Models: merged,
-		Router: s.modelMgr.Router(),
+		Models:      merged,
+		Router:      s.modelMgr.Router(),
+		LeadManager: maskedLeadManager(s.store.Get().LeadManager),
 	})
 }
 
