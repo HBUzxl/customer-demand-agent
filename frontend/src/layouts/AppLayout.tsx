@@ -23,6 +23,11 @@ const Ico = ({ d, size = 18 }: { d: string; size?: number }) => (
 );
 
 const secondaryNav = [
+  {
+    to: "/dashboard",
+    label: "商机面板",
+    icon: "M3 3v18h18M7 14l4-4 3 3 5-6",
+  },
   { to: "/memory", label: "记忆库", icon: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01" },
   {
     to: "/settings",

@@ -4,6 +4,7 @@ import AppLayout from "./layouts/AppLayout";
 
 // 路由级懒加载（代码分割）
 const Conversation = lazy(() => import("./pages/Conversation"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
 const History = lazy(() => import("./pages/History"));
 const Replay = lazy(() => import("./pages/Replay"));
 const MemoryList = lazy(() => import("./pages/MemoryList"));
@@ -30,6 +31,7 @@ const withSuspense = (
 
 /**
  * 路由树（每个功能一个具名路径）：
+ *   /dashboard            商机面板（高价值线索 + 一键 AI 分析交接）
  *   /analyze              需求分析（新对话）
  *   /analyze/:sessionId   继续某对话（URL 可定位 / 书签 / 恢复）
  *   /history              对话列表
@@ -46,6 +48,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, loader: () => redirect("/analyze") },
+      { path: "dashboard", element: withSuspense(Dashboard) },
       { path: "analyze", element: withSuspense(Conversation) },
       { path: "analyze/:sessionId", element: withSuspense(Conversation) },
       { path: "c/:sessionId", loader: ({ params }) => redirect(`/analyze/${params.sessionId}`) },

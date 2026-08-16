@@ -15,6 +15,7 @@ import (
 	"customer-demand-agent/internal/agent"
 	"customer-demand-agent/internal/config"
 	"customer-demand-agent/internal/history"
+	"customer-demand-agent/internal/leads"
 	"customer-demand-agent/internal/memory/longterm"
 	"customer-demand-agent/internal/model"
 	"customer-demand-agent/internal/review"
@@ -33,6 +34,7 @@ type Server struct {
 	runs      *RunManager    // F0：服务端 Run 任务（执行与连接解耦）
 	tasks     *taskbg.Runner // P11：后台任务（观测台消费）
 	logRing   *LogRing       // C2：日志环形缓冲（观测台 tail）
+	leads     *leads.Service // 商机面板（Dashboard）只读代理（nil=未接入；SetLeads 注入）
 }
 
 // New creates the HTTP server with all dependencies injected.
@@ -85,6 +87,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/config", s.handleConfigPut)
 	mux.HandleFunc("POST /api/config/test", s.handleConfigTest)
 	mux.HandleFunc("POST /api/models", s.handleListModels)
+
+	// 商机面板（Dashboard，只读代理：与 Agent 工具共享同一 leads 实例与限流）
+	mux.HandleFunc("GET /api/leads/dashboard", s.handleLeadsDashboard)
+	mux.HandleFunc("GET /api/leads/stats", s.handleLeadsStats)
 
 	// 会话历史
 	mux.HandleFunc("GET /api/console/config", s.handleConsoleConfig)

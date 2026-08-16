@@ -419,7 +419,7 @@ export default function Conversation() {
   // 编辑重发的分支续写标记（截断返回 branch_id 存这里，下一条 send 带上）
   const pendingBranchRef = useRef<string | null>(null);
 
-  async function send(text: string, branch?: string) {
+  async function send(text: string, branch?: string, customer?: string) {
     const content = text.trim();
     if (!content || loading) return;
     setError("");
@@ -429,7 +429,9 @@ export default function Conversation() {
     try {
       const effBranch = branch || pendingBranchRef.current || currentBranch || undefined;
       pendingBranchRef.current = null;
-      const handle = await submitMessage(content, sessionId || undefined, undefined, effBranch);
+      // customer 仅首轮生效（新会话绑定客户身份；后续轮以会话为准）
+      const cust = customer && !sessionId ? customer : undefined;
+      const handle = await submitMessage(content, sessionId || undefined, cust, effBranch);
       setSessionId(handle.session_id);
       setActiveRun({ sid: handle.session_id, rid: handle.run_id });
       if (!routeSid && handle.session_id)
@@ -440,6 +442,26 @@ export default function Conversation() {
       setLoading(false);
     }
   }
+
+  // 商机面板「一键 AI 分析」交接：进入空会话时自动发送（Dashboard 写入
+  // sessionStorage，此处一次即焚——读后立即删，StrictMode 双跑安全；
+  // 已有会话不自动发，避免误触发）。
+  const handoffDoneRef = useRef(false);
+  useEffect(() => {
+    if (handoffDoneRef.current) return;
+    handoffDoneRef.current = true;
+    if (routeSid) return;
+    const raw = sessionStorage.getItem("cda.handoff");
+    if (!raw) return;
+    sessionStorage.removeItem("cda.handoff");
+    try {
+      const h = JSON.parse(raw) as { text?: string; customer?: string };
+      if (h.text && h.text.trim()) send(h.text, undefined, h.customer);
+    } catch {
+      /* 交接数据损坏则忽略，不阻塞正常对话 */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // F1：编辑重发——截断该 user 消息及其之后（分叉出分支），原文填回输入框；
   // 分叉后的下一条消息写入该分支（checkpoint-tree：编辑重发=开分支续写）

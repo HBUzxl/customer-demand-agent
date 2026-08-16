@@ -43,8 +43,9 @@ func (s *Service) Handles(name string) bool {
 	return false
 }
 
-// maxPageSize 是分页上限（防单次拉爆上下文；平台文档未记载上限，客户端自律）。
-const maxPageSize = 50
+// maxPageSize → MaxPageSize：分页上限（防单次拉爆上下文；平台文档未记载上限，
+// 客户端自律）。导出供 HTTP 代理层（面板）归一化分页参数复用。
+const MaxPageSize = 50
 
 // Definitions 返回全部工具的 LLM function-calling 定义。
 func (s *Service) Definitions() []domain.Tool {
@@ -112,8 +113,8 @@ func (s *Service) execSearch(ctx context.Context, args json.RawMessage) (string,
 	if a.PageSize <= 0 {
 		a.PageSize = 10
 	}
-	if a.PageSize > maxPageSize {
-		a.PageSize = maxPageSize
+	if a.PageSize > MaxPageSize {
+		a.PageSize = MaxPageSize
 	}
 	q := url.Values{}
 	if a.Stage != "" {
@@ -135,58 +136,17 @@ var itemsKeys = []string{"items", "data", "list", "records", "results", "leads"}
 // totalKeys 是常见的总数总数字段名。
 var totalKeys = []string{"total", "total_count", "count"}
 
-// shapeList 把平台列表响应整形为 {"count":N,"total":T,"page":P,"items":[...]}。
-// 容错解析：顶层数组、或对象中任一常见 items 字段名 → 统一形状；识别不出
-// 则整体透传（LLM 直接读原始响应，联调冒烟后按实况收紧）。
+// shapeList 把平台列表响应整形为回填 JSON（与 List 同一 parseList 解析路径）。
+// 识别不出的包络 → 整体透传（附分页提示，LLM 直接读原始响应）。
 func shapeList(raw []byte, page int) string {
-	// 形状 1：顶层即数组
-	var arr []json.RawMessage
-	if err := json.Unmarshal(raw, &arr); err == nil {
-		return marshalList(len(arr), -1, page, arr)
-	}
-	// 形状 2：对象，找常见 items 字段
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err == nil {
-		for _, k := range itemsKeys {
-			if v, ok := obj[k]; ok {
-				if err := json.Unmarshal(v, &arr); err == nil {
-					total := -1
-					for _, tk := range totalKeys {
-						if tv, ok := obj[tk]; ok {
-							if err := json.Unmarshal(tv, &total); err == nil {
-								break
-							}
-							total = -1
-						}
-					}
-					return marshalList(len(arr), total, page, arr)
-				}
-			}
+	if lst, ok := parseList(raw, page); ok {
+		b, err := json.Marshal(lst)
+		if err == nil {
+			return string(b)
 		}
 	}
 	// 形状 3：识别不出 → 原样透传（附分页提示）
 	return fmt.Sprintf(`{"page":%d,"raw":%s}`, page, rawJSONOrString(raw))
-}
-
-func marshalList(count, total, page int, items []json.RawMessage) string {
-	if items == nil {
-		items = []json.RawMessage{}
-	}
-	totalStr := "null"
-	if total >= 0 {
-		totalStr = strconv.Itoa(total)
-	}
-	return fmt.Sprintf(`{"count":%d,"total":%s,"page":%d,"items":[%s]}`,
-		count, totalStr, page, joinRaw(items))
-}
-
-// joinRaw 把 RawMessage 片段拼成逗号分隔（保持原始空白规整）。
-func joinRaw(items []json.RawMessage) string {
-	parts := make([]string, len(items))
-	for i, it := range items {
-		parts[i] = string(json.RawMessage(it))
-	}
-	return strings.Join(parts, ",")
 }
 
 // rawJSONOrString：合法 JSON 原样嵌入，否则按 JSON 字符串嵌入。

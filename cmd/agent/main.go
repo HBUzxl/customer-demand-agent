@@ -124,15 +124,18 @@ func main() {
 	// ── 商机平台（Lead Manager，只读外部数据源）────────────
 	// 启用条件：enabled && api_key 齐备，缺一不接入（工具不注册，模型无感知）。
 	// Token 是系统级的：管理员配一次、全员共用；重启生效（无热切换）。
+	// 实例只建一份：Agent 工具与 HTTP 面板代理共享（进程级限流合并）。
+	var leadsSvc *leads.Service
 	if cfg.LeadManager.Enabled && cfg.LeadManager.APIKey != "" {
-		ag.SetLeads(leads.New(leads.Options{
+		leadsSvc = leads.New(leads.Options{
 			BaseURL:    cfg.LeadManager.BaseURL,
 			APIKey:     cfg.LeadManager.APIKey,
 			Timeout:    time.Duration(cfg.LeadManager.TimeoutSec) * time.Second,
 			RatePerMin: cfg.LeadManager.RatePerMin,
 			Burst:      cfg.LeadManager.Burst,
-		}))
-		log.Printf("[ok] 商机平台数据源已接入：%s（限流 %d/分钟，突发 %d）",
+		})
+		ag.SetLeads(leadsSvc)
+		log.Printf("[ok] 商机平台数据源已接入（Agent 工具 + 商机面板）：%s（限流 %d/分钟，突发 %d）",
 			cfg.LeadManager.BaseURL, cfg.LeadManager.RatePerMin, cfg.LeadManager.Burst)
 	} else {
 		log.Printf("[ok] 商机平台未接入（lead_manager.enabled=%t，api_key %s）",
@@ -181,6 +184,7 @@ func main() {
 	log.SetOutput(io.MultiWriter(os.Stderr, logRing))
 
 	server := httpapi.New(store, ag, reviewSvc, wikiStore, hist, modelMgr, registry, runner, logRing)
+	server.SetLeads(leadsSvc) // 商机面板只读代理（未接入时为 nil → 面板引导态）
 
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,

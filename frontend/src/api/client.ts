@@ -231,6 +231,35 @@ export const leadManagerPut = (lm: LeadManagerConfig) =>
     body: JSON.stringify({ lead_manager: lm }),
   });
 
+// ── 商机面板（Dashboard，只读代理）──────────
+// 「高价值」口径 stage=mql（与 leads_search 一致）；未接入时 enabled=false。
+// items 字段名随平台实况透传（后端包络容错解析），页面按候选名容错提取。
+export interface LeadsDashboard {
+  enabled: boolean;
+  stage?: string;
+  count?: number;
+  total?: number | null; // null = 平台未返回总数
+  page?: number;
+  page_size?: number;
+  items?: Record<string, unknown>[];
+}
+
+// 统计 best-effort：403/平台错误随 error 返回（200），面板降级展示原因。
+export interface LeadsStats {
+  enabled: boolean;
+  metric?: string;
+  data?: unknown;
+  error?: string;
+}
+
+export const leadsDashboard = (page = 1, pageSize = 20, stage = "mql") =>
+  req<LeadsDashboard>(
+    `/leads/dashboard?stage=${encodeURIComponent(stage)}&page=${page}&page_size=${pageSize}`,
+  );
+
+export const leadsStats = (metric = "summary") =>
+  req<LeadsStats>(`/leads/stats?metric=${encodeURIComponent(metric)}`);
+
 // 测试连接：发个 hi 验证模型配置
 export const configTest = (probe: {
   name?: string;
