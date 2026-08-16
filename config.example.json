@@ -31,5 +31,12 @@
       "chain": []
     }
   },
-  "agent_max_iterations": 15
+  "agent_max_iterations": 15,
+  "jiying": {
+    "enabled": false,
+    "app_id": "",
+    "secret": "",
+    "ws_url": "wss://<server-host>/api/app/ws",
+    "proxy": ""
+  }
 }
