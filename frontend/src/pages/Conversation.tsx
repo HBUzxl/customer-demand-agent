@@ -18,13 +18,20 @@ import ResultCard from "../components/ResultCard";
 import ToolTimeline from "../components/ToolTrace";
 import type { ToolTrace } from "../components/ToolTrace";
 
+// Seg 是按时间顺序记录的一个执行分段（与模型执行过程一致：
+// 思考→工具→中间说明→再思考→…→最终回答），避免不同轮次的思考/输出
+// 被拼进同一块导致时序错乱。
+type ReasoningSeg = { kind: "reasoning"; text: string };
+type ToolSeg = { kind: "tool"; tc: ToolTrace };
+type TextSeg = { kind: "text"; text: string };
+type Seg = ReasoningSeg | ToolSeg | TextSeg;
+
 interface ChatMsg {
   id: string; // 稳定渲染 key（"m{seq}" 或 uid()）
   seq?: number; // 持久化序号（编辑重发截断用，本地新消息无）
   role: "user" | "assistant";
-  text: string;
-  reasoning?: string;
-  tools?: ToolTrace[];
+  text: string; // 最终回答（done.content；流式中末尾 text 分段实时充当）
+  segs?: Seg[]; // 按序执行分段（思考/工具/中间说明）
   analysis?: AnalysisResult;
   streaming?: boolean;
   askUser?: {
@@ -71,7 +78,7 @@ function reconstruct(
       // system 消息间的 assistant：工具按 message_id（数据库 id）归属
       const mine = byMessage.get(m.id);
       if (mine && mine.length > 0) {
-        msg.tools = mine;
+        msg.segs = mine.map((tc) => ({ kind: "tool", tc }) as ToolSeg);
         for (let j = mine.length - 1; j >= 0; j--) {
           if (mine[j].tool === ANALYSIS_TOOL) {
             msg.analysis = parseSubmitParams(mine[j].params);
@@ -244,6 +251,25 @@ export default function Conversation() {
     });
   }
 
+  // 追加分段：同类尾部段合并（同轮增量），异类新起一段（保留真实时序）。
+  function pushSeg(m: ChatMsg, seg: Seg) {
+    const segs = m.segs ? [...m.segs] : [];
+    const last = segs[segs.length - 1];
+    const mergeable =
+      last &&
+      ((seg.kind === "reasoning" && last.kind === "reasoning") ||
+        (seg.kind === "text" && last.kind === "text"));
+    if (mergeable && last) {
+      segs[segs.length - 1] = {
+        ...last,
+        text: (last as ReasoningSeg).text + (seg as ReasoningSeg).text,
+      };
+    } else {
+      segs.push(seg);
+    }
+    m.segs = segs;
+  }
+
   function handleEvent(e: AgentEvent, run: string) {
     // 多轮/切回防串台：只处理当前订阅 Run 的事件——replay 里历史 Run 的
     // 事件（含旧 done）带自身 x-run 归属，在这里被丢弃。
@@ -255,34 +281,40 @@ export default function Conversation() {
         break;
       case "reasoning":
         patchLast((m) => {
-          m.reasoning = (m.reasoning || "") + (e.text || "");
+          if (e.text) pushSeg(m, { kind: "reasoning", text: e.text });
         });
         break;
       case "tool_call":
         patchLast((m) => {
-          m.tools = [...(m.tools || []), { tool: e.tool || "", params: e.params || "" }];
+          pushSeg(m, { kind: "tool", tc: { tool: e.tool || "", params: e.params || "" } });
         });
         break;
       case "tool_result":
         patchLast((m) => {
-          if (m.tools && m.tools.length) {
-            const t = [...m.tools];
-            t[t.length - 1] = { ...t[t.length - 1], result: e.result || "" };
-            m.tools = t;
-            // ResultCard 即时渲染（用户裁决：过程透明优先）：
-            // analysis_submit 的结果到达时立刻解析其 params 展示卡片。
-            if (e.tool === ANALYSIS_TOOL) {
-              const sub = t[t.length - 1];
-              const analysis = parseSubmitParams(sub.params);
-              if (analysis) m.analysis = analysis;
+          if (!m.segs) return;
+          const segs = m.segs.map((s) => ({ ...s }));
+          // 从尾部找最近一个尚未回填结果的工具段（串行执行按序闭环）
+          for (let j = segs.length - 1; j >= 0; j--) {
+            const s = segs[j];
+            if (s.kind === "tool" && !s.tc.result) {
+              s.tc = { ...s.tc, result: e.result || "" };
+              m.segs = segs;
+              // ResultCard 即时渲染（用户裁决：过程透明优先）：
+              // analysis_submit 的结果到达时立刻解析其 params 展示卡片。
+              if (e.tool === ANALYSIS_TOOL) {
+                const analysis = parseSubmitParams(s.tc.params);
+                if (analysis) m.analysis = analysis;
+              }
+              break;
             }
           }
         });
         break;
       case "content":
-        // content 始终累积（自主模式下 Agent 的自然语言说明全程可见）。
+        // content 按时序入段：末尾 text 段实时充当主回答；
+        // 后续又来工具时自动降为轨迹内的中间说明。
         patchLast((m) => {
-          m.text = (m.text || "") + (e.text || "");
+          if (e.text) pushSeg(m, { kind: "text", text: e.text });
         });
         break;
       case "ask_user":
@@ -294,7 +326,14 @@ export default function Conversation() {
         patchLast((m) => {
           if (m.askUser) m.streaming = false; // 有待答问题时保持卡片展示
           // done.content 是最终答案（服务端已累积全程 content）。
-          if (e.content) m.text = e.content;
+          if (e.content) {
+            m.text = e.content;
+            // 末尾 text 段即最终回答（已移到下方主区），从轨迹中移除避免重复。
+            const segs = m.segs;
+            if (segs && segs.length && segs[segs.length - 1].kind === "text") {
+              m.segs = segs.slice(0, -1);
+            }
+          }
           // analysis 以提交过的为准（tool_result 已即时渲染，此处最终定稿）。
           if (e.analysis) m.analysis = e.analysis;
           m.streaming = false;
@@ -630,13 +669,56 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
+// renderSegs 按时间顺序渲染分段：思考块 / 工具时间线（连续工具归并一条轨）/ 中间说明。
+function renderSegs(segs: Seg[], streaming: boolean) {
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  let k = 0;
+  while (i < segs.length) {
+    const s = segs[i];
+    if (s.kind === "reasoning") {
+      out.push(
+        <div className="t-think" key={k++}>
+          {s.text}
+          {streaming && i === segs.length - 1 && <span className="cursor" />}
+        </div>,
+      );
+      i++;
+    } else if (s.kind === "tool") {
+      const group: ToolTrace[] = [];
+      while (i < segs.length && segs[i].kind === "tool") {
+        group.push((segs[i] as ToolSeg).tc);
+        i++;
+      }
+      out.push(<ToolTimeline key={k++} tools={group} />);
+    } else {
+      if (s.text.trim())
+        out.push(
+          <div className="t-note" key={k++}>
+            {s.text}
+          </div>,
+        );
+      i++;
+    }
+  }
+  return out;
+}
+
 function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }) {
   const [open, setOpen] = useState(false);
-  const hasTrace = !!(m.reasoning || (m.tools && m.tools.length));
-  const toolCount = m.tools?.length || 0;
+  const segs = m.segs || [];
+  const trailingText =
+    segs.length > 0 && segs[segs.length - 1].kind === "text"
+      ? (segs[segs.length - 1] as TextSeg)
+      : null;
+  // 流式中末尾 text 段实时充当主回答（下方渲染）；其余段入轨迹。
+  const traceSegs = m.streaming && trailingText ? segs.slice(0, -1) : segs;
+  const hasTrace = traceSegs.length > 0;
+  const toolCount = segs.filter((s) => s.kind === "tool").length;
+  const answerText = m.text || trailingText?.text || "";
   return (
     <div className="msg assistant msg-wrap" style={{ position: "relative" }}>
-      <CopyBtn text={m.text} />
+      <CopyBtn text={answerText} />
       <div className="avatar">需求分析助手</div>
       <div className="body">
         {hasTrace && (
@@ -646,20 +728,12 @@ function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }
               onClick={() => setOpen((x) => !x)}
             >
               <span className="dot" />
-              {m.streaming ? "思考中…" : "思考过程"}
+              {m.streaming ? "思考中…" : "执行过程"}
               {toolCount > 0 && ` · ${toolCount} 次工具调用`}
               <span style={{ marginLeft: 2 }}>{open ? "▾" : "▸"}</span>
             </div>
             {(open || m.streaming) && (
-              <div className="trace-box">
-                {m.reasoning && (
-                  <div className="t-think">
-                    {m.reasoning}
-                    {m.streaming && <span className="cursor" />}
-                  </div>
-                )}
-                {m.tools && m.tools.length > 0 && <ToolTimeline tools={m.tools} />}
-              </div>
+              <div className="trace-box">{renderSegs(traceSegs, !!m.streaming)}</div>
             )}
           </>
         )}
@@ -681,8 +755,8 @@ function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }
           </div>
         )}
         {m.analysis && <ResultCard r={m.analysis} />}
-        {m.text ? (
-          <MarkdownView>{m.text}</MarkdownView>
+        {answerText ? (
+          <MarkdownView>{answerText}</MarkdownView>
         ) : m.streaming ? (
           <span className="muted">
             正在回应…
