@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"customer-demand-agent/internal/agent"
+	"customer-demand-agent/internal/channel"
 	httpapi "customer-demand-agent/internal/channel/http"
+	"customer-demand-agent/internal/channel/jiying"
 	"customer-demand-agent/internal/config"
 	"customer-demand-agent/internal/domain"
 	"customer-demand-agent/internal/history"
@@ -121,6 +123,33 @@ func main() {
 	// ── 审核系统 ────────────────────────────────────────────
 	reviewSvc := review.New(wikiStore)
 
+	// ── 即应渠道（与 HTTP 共用 AgentProcessor 处理管线）──
+	if cfg.Jiying.Enabled {
+		opts := jiying.Config{
+			AppID:  cfg.Jiying.AppID,
+			Secret: cfg.Jiying.Secret,
+			WSURL:  cfg.Jiying.WSURL,
+			Proxy:  cfg.Jiying.Proxy,
+		}
+		proc := channel.NewAgentProcessor(ag, hist)
+		jiyingAdapter := jiying.New(opts, proc)
+		// ask_user → 平台 choice 消息（点选闭环）；话题关闭 → 驱逐短期记忆。
+		proc.SetOnEvent(jiyingAdapter.HandleAgentEvent)
+		jiyingAdapter.SetOnTopicClosed(func(sessionID string) {
+			sessions.Delete(sessionID)
+			log.Printf("[ok] 即应话题已关闭，驱逐会话短期记忆：%s", sessionID)
+		})
+		if cfg.Jiying.AppID == "" || cfg.Jiying.Secret == "" || cfg.Jiying.WSURL == "" {
+			log.Printf("[warn] 即应渠道已启用但接入信息不完整（app_id/secret/ws_url），连接将失败")
+		}
+		go func() {
+			if err := jiyingAdapter.Run(context.Background()); err != nil {
+				log.Printf("[warn] 即应渠道退出: %v", err)
+			}
+		}()
+		log.Printf("[ok] 即应渠道已启动（AppID：%s，代理：%s）", cfg.Jiying.AppID, orDirect(cfg.Jiying.Proxy))
+	}
+
 	// ── HTTP Channel（配置回写由 store 持久化）─────────────
 	// ── 后台任务域（TaskBackground，ADR-015/P11）：无记忆依赖的一次性调用 ──
 	runner := buildTaskRunner(wikiStore, modelMgr, hist)
@@ -169,6 +198,15 @@ func main() {
 	log.Println("已退出")
 }
 
+// orDirect 空代理显示为「直连」。
+func orDirect(proxy string) string {
+	if proxy == "" {
+		return "直连"
+	}
+	return proxy
+}
+
+// hasAPIKey 检查注册表中是否有任一模型配置了 api_key。
 func hasAPIKey(reg *model.Registry) bool {
 	for _, name := range reg.Names() {
 		if c, err := reg.Get(name); err == nil && c.APIKey != "" {

@@ -30,6 +30,16 @@ type Config struct {
 	AgentMaxIterations int                 `json:"agent_max_iterations"` // Agent 单轮最大工具循环数（console-config：可配置化，默认 15）
 	Models             []model.ModelConfig `json:"models"`
 	Router             model.RouterConfig  `json:"router"`
+	Jiying             JiyingCfg           `json:"jiying"` // 即应渠道（可选，enabled=true 才启动）
+}
+
+// JiyingCfg 即应渠道接入配置
+type JiyingCfg struct {
+	Enabled bool   `json:"enabled"`
+	AppID   string `json:"app_id"`
+	Secret  string `json:"secret"`
+	WSURL   string `json:"ws_url"`
+	Proxy   string `json:"proxy"` // HTTP 代理，空则直连（不读环境变量，显式配置才可靠）
 }
 
 // ServerCfg 是服务监听与前端托管配置。
@@ -75,6 +85,13 @@ func template() *Config {
 				BackoffMs:  200,
 				Chain:      nil,
 			},
+		},
+		Jiying: JiyingCfg{
+			Enabled: false,
+			AppID:   "",
+			Secret:  "",
+			WSURL:   "wss://<server-host>/api/app/ws",
+			Proxy:   "", // 例："http://proxy:8123"（内网出网时填）
 		},
 	}
 }
