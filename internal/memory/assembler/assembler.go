@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"customer-demand-agent/internal/domain"
@@ -147,20 +148,17 @@ func (a *Assembler) systemPrompt(op domain.CheckpointOp) string {
 		}
 	}
 
-	// 产品目录索引（ADR-016 L3a）：只注入"有什么"（名字+一句话+别名），
-	// 不注入内容——能力/场景/竞品等细节走 memory_search 按名检索。
-	// 模型必须知道产品存在，才能形成检索假设并执行"只推荐存在的产品"。
+	// 产品目录索引（ADR-016 L3a）：只注入"有什么"（产品线分组 + 名字+一句话+别名），
+	// 不注入内容——能力/场景/竞品等细节走 memory_search 定位、memory_get 阅读。
+	// 产品线是官方分类（主页 tags 首位），注入它避免模型自行语义分类。
 	if products := a.knowledge.AllProducts(); len(products) > 0 {
-		b.WriteString("\n\n## 长亭产品目录（仅目录；详情经 memory_search 定位、memory_get 阅读）\n")
-		for _, p := range products {
-			line := "- " + p.Name
-			if p.Description != "" {
-				line += "：" + p.Description
+		b.WriteString("\n\n## 长亭产品目录（按产品线分组；详情经 memory_search 定位、memory_get 阅读）\n")
+		groups := groupByLine(products)
+		for _, g := range groups {
+			fmt.Fprintf(&b, "\n### %s\n", g.line)
+			for _, l := range g.items {
+				b.WriteString(l + "\n")
 			}
-			if len(p.Aliases) > 0 {
-				line += "（别名：" + strings.Join(p.Aliases, "/") + "）"
-			}
-			b.WriteString(line + "\n")
 		}
 	}
 
@@ -180,6 +178,64 @@ func (a *Assembler) systemPrompt(op domain.CheckpointOp) string {
 }
 
 const systemRole = `你是长亭科技（Chaitin）的售前需求分析助手，服务对象是长亭的销售/售前团队。`
+
+// lineOrder 是官方产品线的展示顺序（五大产品线）；未知分类追加在后。
+var lineOrder = []string{"流量安全", "端点安全", "安全平台", "安全开发", "漏洞扫描"}
+
+type lineGroup struct {
+	line  string
+	items []string
+}
+
+// groupByLine 按产品线（主页 tags 首位）分组渲染目录项；无 tags 归入「其他」。
+func groupByLine(products []longterm.Product) []lineGroup {
+	idx := map[string]*lineGroup{}
+	var order []string
+	group := func(line string) *lineGroup {
+		if g, ok := idx[line]; ok {
+			return g
+		}
+		g := &lineGroup{line: line}
+		idx[line] = g
+		order = append(order, line)
+		return g
+	}
+	for _, p := range products {
+		line := "其他"
+		if len(p.Tags) > 0 && p.Tags[0] != "" {
+			line = p.Tags[0]
+		}
+		item := "- " + p.Name
+		if p.Description != "" {
+			item += "：" + p.Description
+		}
+		if len(p.Aliases) > 0 {
+			item += "（别名：" + strings.Join(p.Aliases, "/") + "）"
+		}
+		group(line).items = append(group(line).items, item)
+	}
+	// 排序：官方顺序优先，未知分类按字典序追加
+	known := map[string]int{}
+	for i, l := range lineOrder {
+		known[l] = i
+	}
+	sort.Slice(order, func(i, j int) bool {
+		ki, oki := known[order[i]]
+		kj, okj := known[order[j]]
+		if oki && okj {
+			return ki < kj
+		}
+		if oki != okj {
+			return oki
+		}
+		return order[i] < order[j]
+	})
+	out := make([]lineGroup, 0, len(order))
+	for _, l := range order {
+		out = append(out, *idx[l])
+	}
+	return out
+}
 
 const systemAutonomy = `每次用户发言，你自己判断怎么回应，没有固定流程。这是和 Agent 的对话，不是普通 chat——你的记忆工具全程在线，任何轮次都该自然使用：
 - 聊天中涉及产品/威胁/合规事实 → 先 memory_search 查证再回答（不凭记忆瞎说）；确定候选后用 memory_get 读完整页：产品主页含能力置信度/能力边界/竞品对比/相关文档目录，正文超长时先返章节目录、用 section（或 body_offset）分段读。推荐产品与引用细节前必须 get 证实——置信度参考能力点标注，能力边界（limitations）用于避免过度承诺
