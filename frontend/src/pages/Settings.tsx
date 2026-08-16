@@ -662,6 +662,7 @@ function ModelCard({
               <label>启用</label>
               <input
                 type="checkbox"
+                className="checkbox"
                 checked={m.enabled !== false}
                 onChange={(e) => onPatch({ enabled: e.target.checked })}
               />

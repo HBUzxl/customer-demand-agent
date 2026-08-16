@@ -116,17 +116,16 @@ export default function History() {
         style={{ marginBottom: 12 }}
       />
 
-      {selected.size > 0 && (
-        <div className="batch-bar">
-          <span>已选 {selected.size} 项</span>
-          <button className="btn sm danger" onClick={() => setBatchOpen(true)}>
-            批量删除
-          </button>
-          <button className="btn ghost sm" onClick={() => setSelected(new Set())}>
-            取消选择
-          </button>
-        </div>
-      )}
+      {/* 批量操作条常驻占位：无选中时隐藏，避免出现/消失导致表格跳动 */}
+      <div className={`batch-bar${selected.size === 0 ? " empty" : ""}`}>
+        <span>已选 {selected.size} 项</span>
+        <button className="btn sm danger" onClick={() => setBatchOpen(true)}>
+          批量删除
+        </button>
+        <button className="btn ghost sm" onClick={() => setSelected(new Set())}>
+          取消选择
+        </button>
+      </div>
 
       {loading && <div className="loading">加载中…</div>}
       {error && <div className="error">! {error}</div>}
@@ -140,9 +139,10 @@ export default function History() {
           <table>
             <thead>
               <tr>
-                <th style={{ width: 32 }}>
+                <th style={{ width: 32, textAlign: "center" }}>
                   <input
                     type="checkbox"
+                    className="checkbox"
                     checked={allSelected}
                     onChange={toggleAll}
                     aria-label="全选"
@@ -157,9 +157,10 @@ export default function History() {
             <tbody>
               {(hits ?? items).map((s) => (
                 <tr key={s.session_id} className={selected.has(s.session_id) ? "sel" : ""}>
-                  <td>
+                  <td style={{ textAlign: "center", verticalAlign: "middle" }}>
                     <input
                       type="checkbox"
+                      className="checkbox"
                       checked={selected.has(s.session_id)}
                       onChange={() => toggle(s.session_id)}
                       aria-label={`选择 ${s.title || s.session_id}`}

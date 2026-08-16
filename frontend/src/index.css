@@ -12,6 +12,7 @@
   --text-faint: #9ca3af; /* gray-400 */
 
   --accent: #2563eb; /* 蓝焦点色（Z.ai blue）*/
+  --accent-deep: #1e40af; /* blue-800 深蓝（筛选态/主控）*/
   --accent-soft: #eff6ff; /* blue-50 */
   --accent-border: #bfdbfe; /* blue-200 */
   --green: #16a34a;
@@ -610,7 +611,7 @@ tbody tr:last-child td {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-dim);
-  transition: all 0.12s;
+  transition: all 0.12s ease;
   white-space: nowrap;
 }
 .tab:hover {
@@ -618,9 +619,10 @@ tbody tr:last-child td {
   color: var(--text);
 }
 .tab.active {
-  background: var(--text);
+  background: var(--accent-deep);
   color: #fff;
-  border-color: var(--text);
+  border-color: var(--accent-deep);
+  box-shadow: 0 2px 6px rgba(30, 64, 175, 0.2);
 }
 .tab-search {
   width: 220px;
@@ -810,11 +812,13 @@ tbody tr:last-child td {
 /* 文档卡片网格（轻量小卡片）*/
 .doc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 10px;
   margin-bottom: 20px;
 }
 .doc-card {
+  display: flex;
+  flex-direction: column;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: var(--r);
@@ -832,11 +836,53 @@ tbody tr:last-child td {
   font-weight: 600;
   font-size: 13.5px;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 产品卡片中部：简介固定两行（无简介占位），保证卡片等高 */
+.doc-card .dc-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  margin-top: 5px;
+  min-height: 37.2px; /* 2 行 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* 产品卡片底部：文档数 + 别名，贴底对齐 */
+.doc-card .dc-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  min-height: 22px;
+}
+.dc-count {
+  flex: none;
+  font-size: 11px;
+  padding: 1.5px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.dc-count.zero {
+  background: var(--surface-2);
+  color: var(--text-faint);
+}
+.dc-alias {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .doc-card .dc-summary {
   font-size: 12px;
   color: var(--text-dim);
-  margin-top: 3px;
+  margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -846,6 +892,150 @@ tbody tr:last-child td {
   flex-wrap: wrap;
   gap: 3px;
   margin-top: 7px;
+}
+/* 平铺卡片首行：内联复选框 + 标题 + 状态徽章（常驻可见，不悬浮不占位） */
+.doc-card .dc-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.doc-card .dc-main .dc-title {
+  flex: 1;
+  min-width: 0;
+}
+.dc-check {
+  cursor: pointer;
+}
+
+/* 产品线分组头 */
+.prod-group {
+  margin-bottom: 6px;
+}
+.prod-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 14px 2px 10px;
+}
+.prod-group-head .pg-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.prod-group-head .pg-count {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* 平铺列表工具条（全选 + 批量操作，替代塞在网格里的全选单元格）
+   固定内容区高度（min-height 28px）：无论是否有批量按钮都不改变工具条高度，
+   选中不产生上下跳动；底部 10px 为与卡片的固定间距。 */
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+  padding: 0 2px 10px;
+  font-size: 12.5px;
+  line-height: 1.4; /* 统一行高基准：全选/计数/按钮在同一水平线上 */
+  color: var(--text-dim);
+}
+.list-toolbar .sel-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-dim);
+}
+.list-toolbar .sel-all:hover {
+  color: var(--text);
+}
+.list-toolbar .sel-count {
+  color: var(--accent);
+  font-weight: 600;
+  min-width: 72px;
+  display: inline-block;
+}
+.list-toolbar .sel-count.dim {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+/* 批量操作按钮区：按需出现；按钮用紧凑尺寸（高 ~25px），不超过工具条
+   min-height，出现/消失不会改变工具条高度 */
+.list-toolbar .batch-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.list-toolbar .batch-actions .btn.sm {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* ── 自绘复选框：更轻、更小，和卡片 / 标签统一成同一套极简方形视觉（12px）── */
+input[type="checkbox"].checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: pointer;
+  position: relative;
+  flex: none;
+  line-height: 0;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+input[type="checkbox"].checkbox:hover {
+  border-color: var(--accent);
+}
+input[type="checkbox"].checkbox:active {
+  background: var(--accent-soft);
+}
+input[type="checkbox"].checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* 对钩（居中，带轻微弹入动效） */
+input[type="checkbox"].checkbox:checked::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 3px;
+  height: 5px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg) translate(-0.5px, -0.5px);
+  animation: cda-check-pop 0.15s ease-out;
+}
+input[type="checkbox"].checkbox:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+@keyframes cda-check-pop {
+  0% {
+    transform: rotate(45deg) translate(-0.5px, -0.5px) scale(0.65);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(45deg) translate(-0.5px, -0.5px) scale(1);
+    opacity: 1;
+  }
+}
+
+/* 全选主控：与普通项同一套方形视觉；不做半选态（选中才会打勾） */
+.head-meta {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-right: 8px;
 }
 
 /* markdown 渲染 */
@@ -2332,6 +2522,10 @@ details > summary {
   font-size: 13px;
   margin-bottom: 12px;
 }
+/* 无选中时占位隐藏，避免批量条出现/消失导致表格跳动 */
+.batch-bar.empty {
+  visibility: hidden;
+}
 table tr.sel td {
   background: color-mix(in srgb, var(--accent, #4a7dff) 8%, transparent);
 }
@@ -2392,16 +2586,9 @@ table input[type="checkbox"] {
 }
 
 /* 记忆卡片选中态 */
-.doc-card {
-  position: relative;
-}
 .doc-card.sel {
   border-color: color-mix(in srgb, var(--accent, #4a7dff) 60%, var(--border));
   background: color-mix(in srgb, var(--accent, #4a7dff) 8%, var(--surface));
-}
-.doc-grid-actions {
-  grid-column: 1 / -1;
-  padding: 0 2px 6px;
 }
 
 /* 搜索结果元信息 */
@@ -2544,26 +2731,10 @@ table input[type="checkbox"] {
   background: color-mix(in srgb, #7c6bd9 10%, transparent);
 }
 
-/* 多选复选框：hover/选中才浮现（平时不占视觉） */
-.doc-card input[type="checkbox"] {
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.doc-card:hover input[type="checkbox"],
-.doc-card.sel input[type="checkbox"] {
-  opacity: 1;
-}
-
-/* 表格多选：行 hover/选中才浮现 */
-table input[type="checkbox"] {
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-tr:hover input[type="checkbox"],
-tr.sel input[type="checkbox"],
-th input[type="checkbox"],
-.batch-bar input[type="checkbox"] {
-  opacity: 1;
+/* 表格多选：常驻自绘复选框（与卡片同款），单元格内居中 */
+table input[type="checkbox"].checkbox {
+  display: block;
+  margin: 0 auto;
 }
 
 .rs-overlap {
