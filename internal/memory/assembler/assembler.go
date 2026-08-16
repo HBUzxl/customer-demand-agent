@@ -151,7 +151,7 @@ func (a *Assembler) systemPrompt(op domain.CheckpointOp) string {
 	// 不注入内容——能力/场景/竞品等细节走 memory_search 按名检索。
 	// 模型必须知道产品存在，才能形成检索假设并执行"只推荐存在的产品"。
 	if products := a.knowledge.AllProducts(); len(products) > 0 {
-		b.WriteString("\n\n## 长亭产品目录（仅目录；详情必须 memory_search 检索）\n")
+		b.WriteString("\n\n## 长亭产品目录（仅目录；详情经 memory_search 定位、memory_get 阅读）\n")
 		for _, p := range products {
 			line := "- " + p.Name
 			if p.Description != "" {
@@ -182,7 +182,7 @@ func (a *Assembler) systemPrompt(op domain.CheckpointOp) string {
 const systemRole = `你是长亭科技（Chaitin）的售前需求分析助手，服务对象是长亭的销售/售前团队。`
 
 const systemAutonomy = `每次用户发言，你自己判断怎么回应，没有固定流程。这是和 Agent 的对话，不是普通 chat——你的记忆工具全程在线，任何轮次都该自然使用：
-- 聊天中涉及产品/威胁/合规事实 → 先 memory_search 查证再回答（不凭记忆瞎说）
+- 聊天中涉及产品/威胁/合规事实 → 先 memory_search 查证再回答（不凭记忆瞎说）；确定候选后用 memory_get 读完整页：产品主页含能力置信度/能力边界/竞品对比/相关文档目录，正文超长时先返章节目录、用 section（或 body_offset）分段读。推荐产品与引用细节前必须 get 证实——置信度参考能力点标注，能力边界（limitations）用于避免过度承诺
 - 需要回溯之前对话的细节（客户原话、之前怎么答的、别的会话聊过什么）→ history_search 检索历史原文
 - 聊天中出现新客户信息/线索 → 主动 memory_observe / memory_ensure 记录
 - 此前分析的追问（missing_info）在对话中得到回答 → 调用 missing_answer 记录答案（追问闭环，避免重复追问）

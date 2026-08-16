@@ -132,14 +132,14 @@ func TestSearchAndList(t *testing.T) {
 func TestDefinitions(t *testing.T) {
 	r, _ := newTestRegistry(t)
 	defs := r.Definitions()
-	if len(defs) != 6 {
-		t.Fatalf("expected 6 tool definitions, got %d", len(defs))
+	if len(defs) != 7 {
+		t.Fatalf("expected 7 tool definitions, got %d", len(defs))
 	}
 	names := map[string]bool{}
 	for _, d := range defs {
 		names[d.Function.Name] = true
 	}
-	for _, want := range []string{"memory_search", "memory_ensure", "memory_observe", "memory_delete", "memory_recall", "memory_list"} {
+	for _, want := range []string{"memory_search", "memory_get", "memory_ensure", "memory_observe", "memory_delete", "memory_recall", "memory_list"} {
 		if !names[want] {
 			t.Errorf("missing tool definition: %s", want)
 		}
@@ -291,5 +291,184 @@ func TestReviewGatingCustomerProfilePending(t *testing.T) {
 	}
 	if _, err := wiki.GetCustomerProfile("待审客户"); err != nil {
 		t.Fatalf("批准后应可见: %v", err)
+	}
+}
+
+// ── memory_get ────────────────────────────────────────────────
+
+// seedProductPages 造一个产品主页（结构化字段）+ 子文档，返回 registry。
+func seedProductPages(t *testing.T) *Registry {
+	t.Helper()
+	r, store := newTestRegistry(t)
+	main := `---
+type: product
+title: 雷池
+aliases: ["WAF", "SafeLine"]
+full_name: 长亭雷池下一代 WAF
+capabilities:
+  - {name: CC 攻击防护, confidence: 1.0, keywords: ["CC", "CC攻击"], description: 频率与行为识别并阻断}
+  - {name: Web 扫描防护, confidence: 0.9, keywords: ["扫描", "爬虫"], description: 识别拦截扫描器与爬虫探测}
+scenarios: ["网站被扫描或攻击"]
+limitations: ["不做网络层 DDoS 清洗", "主要防护 7 层 HTTP/HTTPS"]
+competitors:
+  - {name: 传统正则 WAF, compare: 误报率更低}
+---
+雷池是语义分析 WAF。`
+	if err := store.UpsertEntry(&longterm.Entry{
+		Type: domain.MemoryProduct, Title: "雷池",
+		Content: main, Summary: "下一代 WAF", Status: longterm.StatusVerified,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	child := `---
+type: product
+title: 雷池-FAQ
+product: 雷池
+summary: 高频问题：误报调优、性能
+---
+Q: 误报太多怎么办？可加白名单或调整防护等级。`
+	if err := store.UpsertEntry(&longterm.Entry{
+		Type: domain.MemoryProduct, Title: "雷池-FAQ", Product: "雷池",
+		Content: child, Summary: "高频问题：误报调优、性能", Status: longterm.StatusVerified,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestGetProductFull(t *testing.T) {
+	r := seedProductPages(t)
+	out, err := r.Execute("memory_get", rawJSON(map[string]any{"type": "product", "title": "雷池"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 结构化字段、置信度、能力边界、竞品、子文档导航、正文都要出现
+	for _, want := range []string{
+		"## 能力（置信度）",
+		"CC 攻击防护",
+		"[1.0]",
+		"## 能力边界",
+		"不做网络层 DDoS 清洗",
+		"## 竞品对比",
+		"传统正则 WAF",
+		"## 相关文档",
+		"雷池-FAQ",
+		"## 正文",
+		"语义分析 WAF",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("get 雷池应含 %q\n--- got ---\n%s", want, out)
+		}
+	}
+	// 主页不被列进自己的相关文档
+	if strings.Contains(out, "- 雷池：") {
+		t.Errorf("相关文档不应包含主页自身:\n%s", out)
+	}
+}
+
+func TestGetChildDoc(t *testing.T) {
+	r := seedProductPages(t)
+	out, err := r.Execute("memory_get", rawJSON(map[string]any{"type": "product", "title": "雷池-FAQ"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "所属产品：雷池") {
+		t.Errorf("子文档应指回主页:\n%s", out)
+	}
+	if !strings.Contains(out, "误报太多怎么办") {
+		t.Errorf("子文档正文应可见:\n%s", out)
+	}
+}
+
+func TestGetNotFoundSuggests(t *testing.T) {
+	r := seedProductPages(t)
+	out, err := r.Execute("memory_get", rawJSON(map[string]any{"type": "product", "title": "雷池WAF不存在"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "不存在或不可见") || !strings.Contains(out, "雷池") {
+		t.Errorf("not found 应带相近候选:\n%s", out)
+	}
+}
+
+func TestGetPendingInvisible(t *testing.T) {
+	r, _ := newTestRegistry(t)
+	// threat 经 ensure 写入 → pending，对 Agent 不可见
+	if _, err := r.Execute("memory_ensure", rawJSON(map[string]any{
+		"type": "threat", "title": "新型攻击", "content": "细节",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.Execute("memory_get", rawJSON(map[string]any{"type": "threat", "title": "新型攻击"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "不存在或不可见") {
+		t.Errorf("pending 条目 get 应不可见:\n%s", out)
+	}
+}
+
+func TestGetLongBodySectionNav(t *testing.T) {
+	r, store := newTestRegistry(t)
+	var sb strings.Builder
+	sb.WriteString("这是一份超长手册的引言。\n\n")
+	sb.WriteString("## 部署\n\n" + strings.Repeat("部署细节说明。", 500) + "\n\n") // 3500 字
+	sb.WriteString("## 配置\n\n" + strings.Repeat("配置项讲解。", 500) + "配置区唯一标记。\n\n")
+	sb.WriteString("## 排障\n\n排障章节唯一标记。\n")
+	if err := store.UpsertEntry(&longterm.Entry{
+		Type: domain.MemoryProduct, Title: "手册", Content: sb.String(), Status: longterm.StatusVerified,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1) 首次 get：超长 → 只给章节目录，不给正文内容
+	out, err := r.Execute("memory_get", rawJSON(map[string]any{"type": "product", "title": "手册"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "正文目录") || !strings.Contains(out, "- 部署") || !strings.Contains(out, "配置") {
+		t.Errorf("超长正文首次应给章节目录:\n%.500s", out)
+	}
+	if strings.Contains(out, "配置区唯一标记") || strings.Contains(out, "排障章节唯一标记") {
+		t.Errorf("首次 get 不应包含正文内容:\n%.500s", out)
+	}
+
+	// 2) section 精读：拿到指定章节内容
+	out, err = r.Execute("memory_get", rawJSON(map[string]any{"type": "product", "title": "手册", "section": "配置"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "配置区唯一标记") || !strings.Contains(out, "正文·配置") {
+		t.Errorf("section 精读应命中配置章:\n%.500s", out)
+	}
+	if strings.Contains(out, "排障章节唯一标记") {
+		t.Errorf("section 精读不应跨章:\n%.500s", out)
+	}
+
+	// 3) section 不存在 → 列可用章节
+	out, err = r.Execute("memory_get", rawJSON(map[string]any{"type": "product", "title": "手册", "section": "不存在的章"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "未找到章节") || !strings.Contains(out, "部署") {
+		t.Errorf("不存在的 section 应回目录:\n%.500s", out)
+	}
+
+	// 4) body_offset 续读：从深处窗口读到配置区标记
+	out, err = r.Execute("memory_get", rawJSON(map[string]any{"type": "product", "title": "手册", "body_offset": 3800}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[3800-") || !strings.Contains(out, "配置区唯一标记") {
+		t.Errorf("offset 续读应给区间窗口与后续内容:\n%.500s", out)
+	}
+
+	// 5) offset 超界
+	out, err = r.Execute("memory_get", rawJSON(map[string]any{"type": "product", "title": "手册", "body_offset": 999999}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "超出正文长度") {
+		t.Errorf("offset 超界应有明确提示:\n%s", out)
 	}
 }

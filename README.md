@@ -3,7 +3,7 @@
 > 面向长亭科技销售与售前团队的 AI 需求分析助手。粘贴客户沟通文本，Agent **自主**理解
 > 安全需求、匹配长亭产品、判断可行性，并给出待追问信息。
 
-自主 Agent（非固定 workflow）：LLM 通过 6 个常驻记忆工具自主决策检索与记录路径。
+自主 Agent（非固定 workflow）：LLM 通过 7 个常驻记忆工具自主决策检索与记录路径。
 长期记忆用确定性关键词检索的 Wiki（不做 RAG），短期记忆用 Checkpoint 链。
 
 ## 架构
@@ -24,7 +24,7 @@ React+Vite 前端 ──HTTP──→ channel/http → agent（自主循环）
 | Agent 核心 | `internal/agent` | 自主循环：LLM → tool_calls → 执行 → 回填 → 再调（ADR-009）|
 | 长期记忆 | `internal/memory/longterm` | Wiki 适配器，确定性关键词检索（ADR-002/004）|
 | 短期记忆 | `internal/memory/shortterm` | Checkpoint 链，结构化状态快照（ADR-003）|
-| 记忆工具 | `internal/memory/tools` | 6 个 Function Calling + 权限矩阵（ADR-005）|
+| 记忆工具 | `internal/memory/tools` | 7 个 Function Calling + 权限矩阵（ADR-005；含 memory_get 读正文）|
 | 拼装器 | `internal/memory/assembler` | system prompt + 知识 + checkpoint 注入 |
 | LLM 客户端 | `internal/llm` | OpenAI 兼容，Chat/ChatWithTools |
 | 模型管理 | `internal/model` | 注册/路由/回退/重试（ADR-007）|
@@ -88,7 +88,7 @@ FRONTEND_DIST=./frontend/dist ../scripts/run.sh
 - 可行性判断（直接覆盖 / 需定制 / 外部整合 / 不建议接）
 - 待追问信息
 
-**记忆管理**——6 个常驻工具（`memory_search/ensure/observe/delete/recall/list`），
+**记忆管理**——7 个常驻工具（`memory_search/get/ensure/observe/delete/recall/list`），
 
 | 类型 | AI 读 | AI 写 | AI 删 |
 |------|:---:|:---:|:---:|

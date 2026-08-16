@@ -466,8 +466,8 @@ func TestAgentDefinitionsAreValidJSON(t *testing.T) {
 	if err := json.Unmarshal(b, &decoded); err != nil {
 		t.Fatalf("tool defs not round-trippable: %v", err)
 	}
-	if len(decoded) != 6 {
-		t.Errorf("expected 6 memory tools, got %d", len(decoded))
+	if len(decoded) != 7 {
+		t.Errorf("expected 7 memory tools, got %d", len(decoded))
 	}
 }
 

@@ -7,12 +7,29 @@ import "customer-demand-agent/internal/domain"
 func searchDef() domain.ToolFunction {
 	return domain.ToolFunction{
 		Name:        "memory_search",
-		Description: "确定性关键词搜索，跨记忆类型。查产品/威胁/合规/行业/客户知识用这个，快且准。",
+		Description: "确定性关键词搜索，跨记忆类型。查产品/威胁/合规/行业/客户知识用这个，快且准。只返回摘要定位；确定目标后用 memory_get 读完整内容。",
 		Parameters: obj(
 			prop("query", str("搜索关键词"), true),
 			prop("type", enumStr("限定类型：product/threat/compliance/industry/customer/user，不传搜全部", false,
 				"product", "threat", "compliance", "industry", "customer", "user", "all"), false),
 			prop("limit", intProp("最大返回数，默认 10", false), false),
+		),
+	}
+}
+
+func getDef() domain.ToolFunction {
+	return domain.ToolFunction{
+		Name: "memory_get",
+		Description: "按 type+title 获取一条记忆的完整内容：产品主页含全部能力点（带置信度）、" +
+			"适用场景、能力边界、竞品对比、相关文档目录与正文；其他类型含结构化字段与正文。" +
+			"确定候选产品后、正式推荐或引用细节前必读。正文超长时首次返回章节目录，" +
+			"用 section 参数精读指定章节（或 body_offset 续读）。",
+		Parameters: obj(
+			prop("type", enumStr("记忆类型", true,
+				"product", "threat", "compliance", "industry", "customer", "user"), true),
+			prop("title", str("条目标题（来自 memory_search 结果或产品目录）"), true),
+			prop("section", str("章节名：正文超长时按章节精读（见首次返回的章节目录）"), false),
+			prop("body_offset", intProp("正文续读偏移（字符）：无章节结构时的分段兜底", false), false),
 		),
 	}
 }

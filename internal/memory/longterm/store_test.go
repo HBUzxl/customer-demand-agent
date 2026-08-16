@@ -135,3 +135,44 @@ func TestGenericSearchAllTypes(t *testing.T) {
 		t.Errorf("expected threat/CC攻击 (related_products) in hits, got %v", titles)
 	}
 }
+
+// TestListChildrenAndCatalogExcludesSubdocs 子文档（product 字段指向主页）
+// 不进产品目录（AllProducts），但能被 ListChildren 导航到。
+func TestListChildrenAndCatalogExcludesSubdocs(t *testing.T) {
+	dir := t.TempDir()
+	writeTestPage(t, dir, "产品记忆", "雷池", `---
+type: product
+title: 雷池
+capabilities:
+  - name: CC 攻击防护
+    confidence: 1.0
+description: 下一代 WAF
+---
+雷池是 WAF。`)
+	writeTestPage(t, dir, "产品记忆", "雷池-FAQ", `---
+type: product
+title: 雷池-FAQ
+product: 雷池
+summary: 高频问题
+---
+Q: 误报怎么办？`)
+
+	store := NewWikiStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// 目录只列主页
+	prods := store.AllProducts()
+	if len(prods) != 1 || prods[0].Name != "雷池" {
+		t.Fatalf("目录应只含产品主页，got %+v", prods)
+	}
+	// 子文档导航
+	children := store.ListChildren("雷池")
+	if len(children) != 1 || children[0].Title != "雷池-FAQ" || children[0].Summary != "高频问题" {
+		t.Fatalf("ListChildren 应返回雷池-FAQ，got %+v", children)
+	}
+	// 无子文档的产品返回空
+	if len(store.ListChildren("不存在的产品")) != 0 {
+		t.Fatal("无子文档应返回空")
+	}
+}

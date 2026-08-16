@@ -15,14 +15,17 @@ import (
 
 // ── 类型化检索（供 assembler / agent 使用）──────────────────────
 
-// AllProducts 返回全部已验证产品（按名排序）。
+// AllProducts 返回全部已验证产品主页（按名排序）。
+// 子文档（frontmatter product 字段指向主页的页面，如雷池-FAQ）不进目录——
+// 它们经 memory_get 的「相关文档」导航触达，避免目录被文档淹没。
 func (w *WikiStore) AllProducts() []Product {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	out := make([]Product, 0, len(w.products))
 	for _, p := range w.products {
-		if e, ok := w.entries[domain.MemoryProduct][p.Name]; ok && e.Status == StatusArchived {
-			continue
+		e, ok := w.entries[domain.MemoryProduct][p.Name]
+		if !ok || e.Status == StatusArchived || e.Product != "" {
+			continue // 排除归档与子文档
 		}
 		out = append(out, *p)
 	}
@@ -101,6 +104,71 @@ func (w *WikiStore) SearchIndustryScenario(keywords []string) []IndustryScenario
 			out = append(out, *i)
 		}
 	}
+	return out
+}
+
+// GetThreat 按名称（或别名）精确查找威胁类型。
+func (w *WikiStore) GetThreat(name string) (*ThreatType, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if t, ok := w.threats[name]; ok {
+		return t, true
+	}
+	for _, t := range w.threats {
+		for _, a := range t.Aliases {
+			if strings.EqualFold(a, name) {
+				return t, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// GetCompliance 按名称（或别名）精确查找合规要求。
+func (w *WikiStore) GetCompliance(name string) (*ComplianceRequirement, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if c, ok := w.compliances[name]; ok {
+		return c, true
+	}
+	for _, c := range w.compliances {
+		for _, a := range c.Aliases {
+			if strings.EqualFold(a, name) {
+				return c, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// GetIndustry 按名称精确查找行业场景。
+func (w *WikiStore) GetIndustry(name string) (*IndustryScenario, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if i, ok := w.industries[name]; ok {
+		return i, true
+	}
+	return nil, false
+}
+
+// EntryBrief 是子文档导航项（标题 + 摘要）。
+type EntryBrief struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary,omitempty"`
+}
+
+// ListChildren 返回挂在某产品名下的子文档（frontmatter product 字段关联，
+// 排除主页自身、排除归档/待审核）。供 memory_get 的「相关文档」导航。
+func (w *WikiStore) ListChildren(product string) []EntryBrief {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	var out []EntryBrief
+	for title, e := range w.entries[domain.MemoryProduct] {
+		if e.Product == product && title != product && visibleToAgent(e.Status) {
+			out = append(out, EntryBrief{Title: title, Summary: e.Summary})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	return out
 }
 

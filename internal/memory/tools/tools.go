@@ -1,7 +1,7 @@
-// Package tools implements the 6 resident function-calling tools the Agent
-// uses to autonomously maintain long-term memory. Naming follows the LLM Wiki
-// verb_object style: memory_search / memory_ensure / memory_observe /
-// memory_delete / memory_recall / memory_list.
+// Package tools implements the 7 resident function-calling tools the Agent
+// uses to autonomously maintain and consult long-term memory. Naming follows
+// the LLM Wiki verb_object style: memory_search / memory_get / memory_ensure /
+// memory_observe / memory_delete / memory_recall / memory_list.
 //
 // 权限矩阵（ADR-005）：
 //   - product：AI 只读
@@ -24,6 +24,7 @@ type ToolName string
 
 const (
 	Search  ToolName = "memory_search"
+	Get     ToolName = "memory_get"
 	Ensure  ToolName = "memory_ensure"
 	Observe ToolName = "memory_observe"
 	Delete  ToolName = "memory_delete"
@@ -45,6 +46,7 @@ func NewRegistry(store *longterm.WikiStore) *Registry {
 func (r *Registry) Definitions() []domain.Tool {
 	return []domain.Tool{
 		{Type: "function", Function: searchDef()},
+		{Type: "function", Function: getDef()},
 		{Type: "function", Function: ensureDef()},
 		{Type: "function", Function: observeDef()},
 		{Type: "function", Function: deleteDef()},
@@ -58,6 +60,8 @@ func (r *Registry) Execute(name string, args json.RawMessage) (string, error) {
 	switch ToolName(name) {
 	case Search:
 		return r.execSearch(args)
+	case Get:
+		return r.execGet(args)
 	case Ensure:
 		return r.execEnsure(args)
 	case Observe:
@@ -88,6 +92,313 @@ func (r *Registry) execSearch(args json.RawMessage) (string, error) {
 	}
 	hits := r.store.SearchEntry(a.Query, a.Type, a.Limit)
 	return marshalHits(hits), nil
+}
+
+// ── memory_get（读正文：search 定位 → get 精读）──────────────
+
+type getArgs struct {
+	Type       string `json:"type"`
+	Title      string `json:"title"`
+	Section    string `json:"section"`
+	BodyOffset int    `json:"body_offset"`
+}
+
+// execGet 返回一条记忆的完整内容（结构化字段 + 子文档导航 + 正文，分级分页）。
+// 三级漏斗的第 3 级：search 给定位，get 给细节。
+func (r *Registry) execGet(args json.RawMessage) (string, error) {
+	var a getArgs
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", fmt.Errorf("参数解析: %w", err)
+	}
+	if _, ok := domain.ParseMemoryType(a.Type); !ok {
+		return "", fmt.Errorf("未知 type: %q", a.Type)
+	}
+	e, err := r.store.GetEntry(a.Type, a.Title)
+	if err != nil || e.Status == longterm.StatusPendingReview || e.Status == longterm.StatusArchived {
+		// 不存在或对 Agent 不可见（审核门禁，与 SearchEntry 同语义）。
+		// 不作为 error 返回——带相近候选，让 LLM 自纠错后重调。
+		return r.getNotFound(a.Type, a.Title), nil
+	}
+	return r.renderFull(e, a), nil
+}
+
+// getNotFound 构造「不存在」响应，附相近候选（自纠错提示）。
+func (r *Registry) getNotFound(typeStr, title string) string {
+	sugg := make([]string, 0, 3)
+	for _, h := range r.store.SearchEntry(title, typeStr, 3) {
+		sugg = append(sugg, h.Title)
+	}
+	b, _ := json.Marshal(map[string]any{
+		"error":       fmt.Sprintf("%s/%s 不存在或不可见", typeStr, title),
+		"suggestions": sugg,
+	})
+	return string(b)
+}
+
+// renderFull 渲染一条记忆的完整内容（markdown，给 LLM 读）。
+func (r *Registry) renderFull(e *longterm.Entry, a getArgs) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s（%s｜%s）\n", e.Title, e.Type, e.Status)
+	if e.Summary != "" {
+		b.WriteString("> " + e.Summary + "\n")
+	}
+	if len(e.Aliases) > 0 {
+		b.WriteString("别名：" + strings.Join(e.Aliases, " / ") + "\n")
+	}
+	if len(e.Tags) > 0 {
+		b.WriteString("标签：" + strings.Join(e.Tags, " / ") + "\n")
+	}
+	switch e.Type {
+	case domain.MemoryProduct:
+		r.renderProduct(&b, e)
+	case domain.MemoryThreat:
+		if t, ok := r.store.GetThreat(e.Title); ok {
+			renderList(&b, "典型表现（客户语言对照）", t.TypicalSigns)
+			renderList(&b, "关联产品", t.RelatedProducts)
+		}
+	case domain.MemoryCompliance:
+		if c, ok := r.store.GetCompliance(e.Title); ok {
+			renderList(&b, "具体要求", c.Requirements)
+			renderList(&b, "关联产品", c.RelatedProducts)
+		}
+	case domain.MemoryIndustry:
+		if i, ok := r.store.GetIndustry(e.Title); ok {
+			renderList(&b, "典型痛点", i.TypicalPains)
+			renderList(&b, "常见需求", i.CommonNeeds)
+		}
+	case domain.MemoryCustomer:
+		if c, err := r.store.GetCustomerProfile(e.Title); err == nil {
+			b.WriteString("\n## 客户画像\n")
+			if c.Industry != "" {
+				fmt.Fprintf(&b, "- 行业：%s\n", c.Industry)
+			}
+			if c.Scale != "" {
+				fmt.Fprintf(&b, "- 规模：%s\n", c.Scale)
+			}
+			if len(c.TechStack) > 0 {
+				b.WriteString("- 技术栈：" + strings.Join(c.TechStack, "、") + "\n")
+			}
+			if len(c.ExistingSecurity) > 0 {
+				b.WriteString("- 已有安全能力：" + strings.Join(c.ExistingSecurity, "、") + "\n")
+			}
+			if len(c.PainPoints) > 0 {
+				b.WriteString("- 已知痛点：" + strings.Join(c.PainPoints, "、") + "\n")
+			}
+			if c.ProcurementPref != "" {
+				fmt.Fprintf(&b, "- 采购偏好：%s\n", c.ProcurementPref)
+			}
+		}
+	case domain.MemoryUser:
+		if u, err := r.store.GetUserProfile(e.Title); err == nil {
+			b.WriteString("\n## 使用者画像\n")
+			fmt.Fprintf(&b, "- 级别：%s（历史判断准确率 %.2f）\n", u.Level, u.Accuracy)
+			if len(u.Expertise) > 0 {
+				b.WriteString("- 擅长领域：" + strings.Join(u.Expertise, "、") + "\n")
+			}
+		}
+	}
+	b.WriteString(renderBody(e.Content, a.Section, a.BodyOffset))
+	return b.String()
+}
+
+// renderProduct 渲染产品条目：主页给结构化精华 + 子文档导航；子文档指回主页。
+func (r *Registry) renderProduct(b *strings.Builder, e *longterm.Entry) {
+	if e.Product != "" {
+		fmt.Fprintf(b, "\n所属产品：%s（主页 memory_get 可读）\n", e.Product)
+		return
+	}
+	p, err := r.store.GetProduct(e.Title)
+	if err != nil {
+		return
+	}
+	if p.FullName != "" {
+		fmt.Fprintf(b, "\n%s", p.FullName)
+		if p.Category != "" {
+			fmt.Fprintf(b, "｜%s", p.Category)
+		}
+		b.WriteString("\n")
+	}
+	if len(p.Capabilities) > 0 {
+		b.WriteString("\n## 能力（置信度）\n")
+		for _, c := range p.Capabilities {
+			line := fmt.Sprintf("- **%s** [%.1f]", c.Name, c.Confidence)
+			if c.Description != "" {
+				line += "：" + c.Description
+			}
+			if len(c.Keywords) > 0 {
+				line += "（关键词：" + strings.Join(c.Keywords, "/") + "）"
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+	renderList(b, "适用场景", p.Scenarios)
+	renderList(b, "能力边界（推荐前必读）", p.Limitations)
+	if len(p.Competitors) > 0 {
+		b.WriteString("\n## 竞品对比\n")
+		for _, c := range p.Competitors {
+			fmt.Fprintf(b, "- vs %s：%s\n", c.Name, c.Compare)
+		}
+	}
+	if children := r.store.ListChildren(e.Title); len(children) > 0 {
+		b.WriteString("\n## 相关文档（memory_get 可读）\n")
+		for _, c := range children {
+			line := "- " + c.Title
+			if c.Summary != "" {
+				line += "：" + c.Summary
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+}
+
+func renderList(b *strings.Builder, header string, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n## %s\n", header)
+	for _, it := range items {
+		b.WriteString("- " + it + "\n")
+	}
+}
+
+// ── 正文分级分页：短文全文 / 长文章节目录 / section 精读 / offset 兜底 ──
+
+const (
+	bodyFullLimit = 4000 // rune：正文不超此值直接全文返回
+	readWindow    = 4000 // rune：offset 续读单次窗口
+	sectionCap    = 8000 // rune：单次章节输出上限
+	tocCap        = 60   // 章节目录最多列出的标题数
+)
+
+// renderBody 按正文长度与参数分级返回：
+//   - 带 section → 章节精读（无论长短）
+//   - 带 body_offset > 0 → 偏移续读（无章节结构时的兜底）
+//   - 短文（≤ bodyFullLimit）→ 全文
+//   - 长文无参数 → 章节目录（LLM 选章后再来）
+func renderBody(body, section string, offset int) string {
+	if body == "" {
+		return ""
+	}
+	total := len([]rune(body))
+	secs := parseSections(body)
+	switch {
+	case section != "":
+		if content, ru, ok := findSection(secs, body, section); ok {
+			return fmt.Sprintf("\n## 正文·%s\n\n%s", section, capRunes(content, ru, sectionCap))
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "\n## 正文\n\n（未找到章节「%s」。可用章节：）\n", section)
+		writeTOC(&b, secs)
+		return b.String()
+	case offset > 0:
+		r := []rune(body)
+		if offset >= len(r) {
+			return fmt.Sprintf("\n（body_offset=%d 超出正文长度 %d）\n", offset, len(r))
+		}
+		end := min(offset+readWindow, len(r))
+		b := fmt.Sprintf("\n## 正文 [%d-%d/%d]\n\n%s\n", offset, end, len(r), string(r[offset:end]))
+		if end < len(r) {
+			b += fmt.Sprintf("（已截断，body_offset=%d 续读）\n", end)
+		}
+		return b
+	case total <= bodyFullLimit:
+		return "\n## 正文\n\n" + body + "\n"
+	default:
+		var b strings.Builder
+		fmt.Fprintf(&b, "\n## 正文目录（全文 %d 字超长，用 section 参数读指定章节；无章节结构用 body_offset）\n", total)
+		writeTOC(&b, secs)
+		if len(secs) == 0 {
+			// 无标题结构的长文：给开头一段 + 引导 offset 续读
+			b.WriteString(fmt.Sprintf("\n（无章节结构，先给前 %d 字）\n\n%s\n（可用 body_offset 续读）\n", bodyFullLimit, firstNRunes(body, bodyFullLimit)))
+		}
+		return b.String()
+	}
+}
+
+// docSection 是正文里的一个章节（markdown 标题 #/##/###）。
+type docSection struct {
+	level int
+	title string
+	start int // 字节偏移：标题行行首
+	end   int // 字节偏移：下一标题行行首（或文末）
+}
+
+// parseSections 扫描 markdown 标题，记录每章字节区间（章节即分页单元）。
+func parseSections(body string) []docSection {
+	var secs []docSection
+	off := 0
+	for _, line := range strings.Split(body, "\n") {
+		if lvl, t, ok := headingOf(line); ok {
+			if len(secs) > 0 {
+				secs[len(secs)-1].end = off
+			}
+			secs = append(secs, docSection{level: lvl, title: t, start: off, end: len(body)})
+		}
+		off += len(line) + 1 // +1 补偿分掉的 '\n'
+	}
+	return secs
+}
+
+// headingOf 解析一行是否为 1-3 级 markdown 标题。
+func headingOf(line string) (level int, title string, ok bool) {
+	s := strings.TrimRight(line, " \t")
+	n := 0
+	for n < len(s) && s[n] == '#' {
+		n++
+	}
+	if n < 1 || n > 3 {
+		return 0, "", false
+	}
+	rest := strings.TrimSpace(s[n:])
+	if rest == "" {
+		return 0, "", false
+	}
+	return n, rest, true
+}
+
+// findSection 按名找章（先精确后包含），返回章节内容与其 rune 起始偏移（截断提示用）。
+func findSection(secs []docSection, body, name string) (content string, runeStart int, ok bool) {
+	for _, pass := range []bool{true, false} {
+		for _, s := range secs {
+			match := s.title == name
+			if !pass {
+				match = strings.Contains(s.title, name) || strings.Contains(name, s.title)
+			}
+			if match {
+				return body[s.start:s.end], len([]rune(body[:s.start])), true
+			}
+		}
+	}
+	return "", 0, false
+}
+
+// capRunes 超限截断，尾部给出续读提示（body_offset 从全文算）。
+func capRunes(s string, runeStart, limit int) string {
+	r := []rune(s)
+	if len(r) <= limit {
+		return s + "\n"
+	}
+	return string(r[:limit]) + fmt.Sprintf("\n（本章超长已截断，body_offset=%d 从全文续读）\n", runeStart+limit)
+}
+
+// writeTOC 输出章节目录（带层级缩进，超出上限截断提示）。
+func writeTOC(b *strings.Builder, secs []docSection) {
+	n := min(len(secs), tocCap)
+	for _, s := range secs[:n] {
+		b.WriteString(strings.Repeat("  ", max(s.level-1, 0)) + "- " + s.title + "\n")
+	}
+	if len(secs) > tocCap {
+		fmt.Fprintf(b, "- …（共 %d 章，仅列前 %d）\n", len(secs), tocCap)
+	}
+}
+
+// firstNRunes 取前 n 个 rune（超出加省略号）。
+func firstNRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // ── memory_ensure ─────────────────────────────────────────────

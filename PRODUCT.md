@@ -27,7 +27,7 @@ web
 
 ## Capabilities and Constraints
 
-自主 Agent 循环（LLM + function calling）、长期 Wiki 记忆（确定性检索）、短期 Checkpoint 链、6 个记忆 FC 工具 + 权限矩阵 + 待审核机制、模型管理（注册/路由/回退）、SQLite 历史持久化、后台任务域（固化/Lint/标题）、Channel 抽象（HTTP + 钉钉 stub）、SSE 全轨迹流式（思考/工具/内容）。
+自主 Agent 循环（LLM + function calling）、长期 Wiki 记忆（确定性检索）、短期 Checkpoint 链、7 个记忆 FC 工具 + 权限矩阵 + 待审核机制、模型管理（注册/路由/回退）、SQLite 历史持久化、后台任务域（固化/Lint/标题）、Channel 抽象（HTTP + 钉钉 stub）、SSE 全轨迹流式（思考/工具/内容）。
 
 约束：OpenAI 兼容网关（当前用 baizhi 网关 deepseek-v4-pro）；不做 RAG；产品记忆 AI 只读；一期无登录鉴权。
 
