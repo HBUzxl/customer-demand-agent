@@ -1627,7 +1627,7 @@ input[type="checkbox"].checkbox:focus-visible {
 .composer {
   display: flex;
   gap: 8px;
-  align-items: flex-end;
+  align-items: center;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-lg);
@@ -1657,8 +1657,9 @@ input[type="checkbox"].checkbox:focus-visible {
 }
 .composer .send {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  align-self: flex-end; /* 多行时按钮贴底；单行时文字块由 align-items:center 垂直居中 */
+  width: 32px;
+  height: 32px;
   padding: 0;
   border-radius: var(--r-sm);
   display: inline-flex;
