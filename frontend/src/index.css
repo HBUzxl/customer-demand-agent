@@ -1248,21 +1248,14 @@ input[type="checkbox"].checkbox:focus-visible {
 }
 /* 不同轮次的思考块之间加分隔，体现真实执行时序 */
 .trace-box .t-think + .t-think,
-.trace-box .tt + .t-think,
-.trace-box .t-note + .t-think {
+.trace-box .tt + .t-think {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed var(--border);
 }
-/* 中间说明（工具调用之间模型输出的自然语言过渡） */
-.trace-box .t-note {
-  color: var(--text-dim);
-  white-space: pre-wrap;
-  font-size: 12.5px;
-  line-height: 1.7;
-  border-left: 2px solid var(--border-strong);
-  padding: 2px 0 2px 10px;
-  margin: 4px 0 10px;
+/* 中间正文块（content 主体，工具调用之间的自然语言说明——A1+B1：不折叠直接显示） */
+.mid-content {
+  margin: 6px 0 12px;
 }
 .trace-box .tt {
   margin-bottom: 10px;

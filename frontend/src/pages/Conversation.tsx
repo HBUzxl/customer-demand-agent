@@ -26,6 +26,31 @@ type ToolSeg = { kind: "tool"; tc: ToolTrace };
 type TextSeg = { kind: "text"; text: string };
 type Seg = ReasoningSeg | ToolSeg | TextSeg;
 
+// BodyBlock 是渲染层对 Seg 的分组：连续的「思考+工具」归并成一个可折叠的
+// 过程块，text 段独立成正文块——content 是主体直接显示，思考/工具折叠（A1+B1）。
+type ProcessBlock = { kind: "process"; segs: (ReasoningSeg | ToolSeg)[] };
+type BodyBlock = ProcessBlock | { kind: "text"; text: string };
+
+// groupSegs 把 segs 按时序切分为正文块与过程块（保持交错顺序）。
+function groupSegs(segs: Seg[]): BodyBlock[] {
+  const blocks: BodyBlock[] = [];
+  let proc: ProcessBlock | null = null;
+  for (const s of segs) {
+    if (s.kind === "text") {
+      if (proc) {
+        blocks.push(proc);
+        proc = null;
+      }
+      if (s.text.trim()) blocks.push({ kind: "text", text: s.text });
+    } else {
+      if (!proc) proc = { kind: "process", segs: [] };
+      proc.segs.push(s);
+    }
+  }
+  if (proc) blocks.push(proc);
+  return blocks;
+}
+
 interface ChatMsg {
   id: string; // 稳定渲染 key（"m{seq}" 或 uid()）
   seq?: number; // 持久化序号（编辑重发截断用，本地新消息无）
@@ -691,8 +716,8 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
-// renderSegs 按时间顺序渲染分段：思考块 / 工具时间线（连续工具归并一条轨）/ 中间说明。
-function renderSegs(segs: Seg[], streaming: boolean) {
+// renderProcess 渲染过程块内的思考段与工具时间线（text 段已作为正文块提出）。
+function renderProcess(segs: (ReasoningSeg | ToolSeg)[], active: boolean) {
   const out: React.ReactNode[] = [];
   let i = 0;
   let k = 0;
@@ -702,76 +727,97 @@ function renderSegs(segs: Seg[], streaming: boolean) {
       out.push(
         <div className="t-think" key={k++}>
           {s.text}
-          {streaming && i === segs.length - 1 && <span className="cursor" />}
+          {active && i === segs.length - 1 && <span className="cursor" />}
         </div>,
       );
       i++;
-    } else if (s.kind === "tool") {
+    } else {
       const group: ToolTrace[] = [];
       while (i < segs.length && segs[i].kind === "tool") {
         group.push((segs[i] as ToolSeg).tc);
         i++;
       }
       out.push(<ToolTimeline key={k++} tools={group} />);
-    } else {
-      if (s.text.trim())
-        out.push(
-          <div className="t-note" key={k++}>
-            {s.text}
-          </div>,
-        );
-      i++;
     }
   }
   return out;
 }
 
-function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }) {
+// ProcessFold 是可折叠的过程块（思考 + 工具调用）。active=true 表示该块
+// 正在流式进行中（标题"思考中"、自动展开、尾部光标）。
+function ProcessFold({ segs, active }: { segs: (ReasoningSeg | ToolSeg)[]; active: boolean }) {
   const [open, setOpen] = useState(false);
-  // 轨迹框贴底跟随：用户手动上滚即接管（sticky=false），滚回底部恢复跟随。
   const boxRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef(true);
   useEffect(() => {
     const el = boxRef.current;
     if (el && stickyRef.current) el.scrollTop = el.scrollHeight;
-  }, [m.segs, open]);
+  }, [segs, open]);
   function onBoxScroll() {
     const el = boxRef.current;
     if (!el) return;
     stickyRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
   }
+  const thinkCount = segs.filter((s) => s.kind === "reasoning").length;
+  const toolCount = segs.filter((s) => s.kind === "tool").length;
+  const expanded = open || active;
+  return (
+    <>
+      <div
+        className={`trace-toggle${active ? " thinking" : ""}`}
+        onClick={() => setOpen((x) => !x)}
+      >
+        <span className="dot" />
+        {active ? "思考中…" : "执行过程"}
+        {thinkCount > 0 && ` · ${thinkCount} 次思考`}
+        {toolCount > 0 && ` · ${toolCount} 次工具调用`}
+        <span style={{ marginLeft: 2 }}>{open ? "▾" : "▸"}</span>
+      </div>
+      {expanded && (
+        <div className="trace-box" ref={boxRef} onScroll={onBoxScroll}>
+          {renderProcess(segs, active)}
+        </div>
+      )}
+    </>
+  );
+}
+
+function AssistantMsg({ m, onSend }: { m: ChatMsg; onSend: (t: string) => void }) {
   const segs = m.segs || [];
   const trailingText =
     segs.length > 0 && segs[segs.length - 1].kind === "text"
       ? (segs[segs.length - 1] as TextSeg)
       : null;
-  // 流式中末尾 text 段实时充当主回答（下方渲染）；其余段入轨迹。
-  const traceSegs = m.streaming && trailingText ? segs.slice(0, -1) : segs;
-  const hasTrace = traceSegs.length > 0;
-  const toolCount = segs.filter((s) => s.kind === "tool").length;
+  // 末尾 text 段流式时实时充当最终回答（下方渲染）；其余段按时序交错渲染——
+  // content 作为正文块直接显示，思考/工具归并为可折叠的过程块（A1+B1+C1）。
+  const bodySegs = m.streaming && trailingText ? segs.slice(0, -1) : segs;
+  const blocks = groupSegs(bodySegs);
+  // 最后一个过程块是流式进行中的那个（标题"思考中" + 光标）
+  let lastProcessIdx = -1;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].kind === "process") {
+      lastProcessIdx = i;
+      break;
+    }
+  }
   const answerText = m.text || trailingText?.text || "";
   return (
     <div className="msg assistant msg-wrap" style={{ position: "relative" }}>
       <CopyBtn text={answerText} />
       <div className="avatar">需求分析助手</div>
       <div className="body">
-        {hasTrace && (
-          <>
-            <div
-              className={`trace-toggle${m.streaming ? " thinking" : ""}`}
-              onClick={() => setOpen((x) => !x)}
-            >
-              <span className="dot" />
-              {m.streaming ? "思考中…" : "执行过程"}
-              {toolCount > 0 && ` · ${toolCount} 次工具调用`}
-              <span style={{ marginLeft: 2 }}>{open ? "▾" : "▸"}</span>
+        {blocks.map((b, i) =>
+          b.kind === "process" ? (
+            <ProcessFold
+              key={`p${i}`}
+              segs={b.segs}
+              active={!!m.streaming && i === lastProcessIdx}
+            />
+          ) : (
+            <div className="mid-content" key={`t${i}`}>
+              <MarkdownView>{b.text}</MarkdownView>
             </div>
-            {(open || m.streaming) && (
-              <div className="trace-box" ref={boxRef} onScroll={onBoxScroll}>
-                {renderSegs(traceSegs, !!m.streaming)}
-              </div>
-            )}
-          </>
+          ),
         )}
         {m.askUser && (
           <div className="ask-card">
