@@ -196,6 +196,22 @@ func (w *WikiStore) GetUserProfile(name string) (*UserProfile, error) {
 	return nil, fmt.Errorf("使用者画像 %q 不存在", name)
 }
 
+// GetUserProfileByUserID 按绑定身份用户 id 获取使用者画像（多租户：Agent 按
+// 登录用户解析本租户使用者画像，替代全局 default_user）。
+func (w *WikiStore) GetUserProfileByUserID(userID string) (*UserProfile, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("使用者画像: user_id 为空")
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	for _, u := range w.users {
+		if u.UserID == userID {
+			return u, nil
+		}
+	}
+	return nil, fmt.Errorf("使用者画像 %q 不存在", userID)
+}
+
 // AllKnowledge 打包全量已验证知识（注入 system prompt）。
 func (w *WikiStore) AllKnowledge() *KnowledgeBundle {
 	return &KnowledgeBundle{
@@ -294,6 +310,11 @@ func (w *WikiStore) ListEntry(typeStr string, offset, limit int) []*Entry {
 		}
 	}
 	sort.Strings(titles)
+	// 参数范围校验（P0-08）：负 offset 会触发切片越界 panic（Go 负索引 slice 直接
+	// panic）——memory_list 工具传入恶意/畸形 offset 时不能打死 Run goroutine。
+	if offset < 0 {
+		offset = 0
+	}
 	if offset > len(titles) {
 		offset = len(titles)
 	}
@@ -361,7 +382,7 @@ func (w *WikiStore) UpsertEntry(e *Entry) error {
 		e.typed = &frontmatter{
 			Type: string(mt), Title: e.Title, Status: string(e.Status),
 			Summary: e.Summary, Aliases: e.Aliases, Tags: e.Tags,
-			Category: e.Category, Product: e.Product,
+			Category: e.Category, Product: e.Product, UserID: e.UserID,
 		}
 	}
 	// P6 时效性：同 title 覆盖且正文实质变更 → 旧版本归档留痕
@@ -385,6 +406,68 @@ func (w *WikiStore) UpsertEntry(e *Entry) error {
 	w.rebuildIndex()
 	w.mu.Unlock()
 	return nil
+}
+
+// SubmitRevision 提交对已验证条目的待审修订（P0-07）。与原 Upsert 覆盖不同：
+// 活跃的 verified 版本保持原样继续对 Agent 生效，修订挂在 revisions 表
+// （磁盘 .revision-<ts>.md）；人工批准后原子替换、拒绝则丢弃。
+// 同一 title 已存在 pending revision 时，新修订覆盖旧修订（latest wins）。
+func (w *WikiStore) SubmitRevision(e *Entry) error {
+	if e.Title == "" {
+		return fmt.Errorf("title 不能为空")
+	}
+	mt := e.Type
+	if _, ok := domain.ParseMemoryType(string(mt)); !ok {
+		return fmt.Errorf("未知 type: %q", mt)
+	}
+	e.Status = StatusPendingReview
+	if e.FilePath == "" {
+		e.FilePath = w.revisionPathFor(mt, e.Title)
+	}
+	// typed 填充（与 UpsertEntry 一致）：优先从 Content frontmatter 解析结构化
+	// 字段（observe 追加时 frontmatter 保留，结构化字段不丢），否则最小构造。
+	if e.typed == nil && e.Content != "" {
+		if fm, _, ok := splitFrontmatter(e.Content); ok {
+			var f frontmatter
+			if err := yaml.Unmarshal([]byte(fm), &f); err == nil {
+				if f.Title == "" {
+					f.Title = e.Title
+				}
+				e.typed = &f
+			}
+		}
+	}
+	if e.typed == nil {
+		e.typed = &frontmatter{
+			Type: string(mt), Title: e.Title, Status: string(StatusPendingReview),
+			Summary: e.Summary, Aliases: e.Aliases, Tags: e.Tags,
+			Category: e.Category, Product: e.Product,
+		}
+	}
+	e.typed.Status = string(StatusPendingReview)
+	e.typed.RevisionOf = e.Title // 标记为某已验证条目的修订
+	e.RevisionOf = e.Title       // Entry 字段透出（PendingReviews/审核队列用）
+
+	if err := w.writePage(e); err != nil {
+		return fmt.Errorf("写回磁盘: %w", err)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.revisions[mt] == nil {
+		w.revisions[mt] = make(map[string]*Entry)
+	}
+	if old, exists := w.revisions[mt][e.Title]; exists && old.FilePath != "" && old.FilePath != e.FilePath {
+		_ = os.Remove(old.FilePath) // 旧修订被新修订替换
+	}
+	w.revisions[mt][e.Title] = e
+	return nil
+}
+
+// revisionPathFor 计算 pending revision 的磁盘路径（<title>.revision-<ts>.md）。
+func (w *WikiStore) revisionPathFor(mt domain.MemoryType, title string) string {
+	sub := typedSubdir(mt)
+	name := sanitizeFileName(title) + fmt.Sprintf(".revision-%d.md", time.Now().UnixNano())
+	return filepath.Join(w.dir, sub, name)
 }
 
 // archiveSupersededLocked 把被覆盖的旧条目归档为历史版本文件。调用方需持写锁。
@@ -415,6 +498,8 @@ func trimExt(p string) string {
 }
 
 // DeleteEntry 软删除（归档）或物理删除一条记忆。
+// 删除时若存在同 title 的 pending revision（P0-07），一并丢弃（修订针对的
+// 活跃条目都不存在了，修订无意义）。
 func (w *WikiStore) DeleteEntry(typeStr, title string, archive bool) error {
 	mt, ok := domain.ParseMemoryType(typeStr)
 	if !ok {
@@ -422,7 +507,15 @@ func (w *WikiStore) DeleteEntry(typeStr, title string, archive bool) error {
 	}
 	w.mu.Lock()
 	e, exists := w.entries[mt][title]
+	var revFile string
+	if rev, hasRev := w.revisions[mt][title]; hasRev {
+		revFile = rev.FilePath
+		delete(w.revisions[mt], title)
+	}
 	w.mu.Unlock()
+	if revFile != "" {
+		_ = os.Remove(revFile)
+	}
 	if !exists {
 		return fmt.Errorf("%s/%s 不存在", typeStr, title)
 	}
@@ -468,6 +561,8 @@ func (w *WikiStore) deleteTyped(mt domain.MemoryType, title string) {
 }
 
 // PendingReviews 返回全部待审核条目（供审核系统）。
+// 含两类：AI 新建的 pending_review 条目 + 已验证条目的 pending revision
+// （P0-07：后者经 RevisionOf 标记，批准=原子替换原版本）。
 func (w *WikiStore) PendingReviews() []*Entry {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -480,17 +575,82 @@ func (w *WikiStore) PendingReviews() []*Entry {
 			}
 		}
 	}
+	for _, bucket := range w.revisions {
+		for _, rev := range bucket {
+			cp := *rev
+			out = append(out, &cp)
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	return out
 }
 
-// ApproveEntry 将待审核条目标记为已验证。
+// ApproveEntry 将待审核条目标记为已验证。若该 title 存在 pending revision
+// （P0-07）：以修订内容原子替换活跃条目（保持 verified），删除修订文件。
 func (w *WikiStore) ApproveEntry(typeStr, title string) error {
-	return w.setEntryStatus(typeStr, title, StatusVerified)
+	mt, ok := domain.ParseMemoryType(typeStr)
+	if !ok {
+		return fmt.Errorf("未知 type: %q", typeStr)
+	}
+	w.mu.Lock()
+	rev, isRev := w.revisions[mt][title]
+	if !isRev {
+		w.mu.Unlock()
+		return w.setEntryStatus(typeStr, title, StatusVerified)
+	}
+	// 修订审批：用修订内容替换活跃条目，保留活跃条目 FilePath（写回原位）。
+	var newEntry Entry
+	if cur, exists := w.entries[mt][title]; exists {
+		newEntry = *rev
+		newEntry.FilePath = cur.FilePath
+	} else {
+		newEntry = *rev
+		newEntry.FilePath = w.pathFor(mt, title)
+	}
+	newEntry.Status = StatusVerified
+	newEntry.RevisionOf = ""
+	if newEntry.typed != nil {
+		newEntry.typed.RevisionOf = ""
+	}
+	revFile := rev.FilePath
+	w.mu.Unlock()
+
+	if err := w.writePage(&newEntry); err != nil {
+		return err
+	}
+	if revFile != "" {
+		_ = os.Remove(revFile)
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.revisions[mt], title)
+	w.entries[mt][title] = &newEntry
+	w.buildTyped(&newEntry)
+	w.rebuildIndex()
+	return nil
 }
 
-// RejectEntry 拒绝待审核条目（物理删除）。
+// RejectEntry 拒绝待审核条目。若存在 pending revision：丢弃修订（原 verified
+// 版本不受影响）；否则物理删除待审条目。
 func (w *WikiStore) RejectEntry(typeStr, title string) error {
+	mt, ok := domain.ParseMemoryType(typeStr)
+	if !ok {
+		return fmt.Errorf("未知 type: %q", typeStr)
+	}
+	w.mu.Lock()
+	rev, isRev := w.revisions[mt][title]
+	revFile := ""
+	if isRev {
+		revFile = rev.FilePath
+		delete(w.revisions[mt], title)
+	}
+	w.mu.Unlock()
+	if isRev {
+		if revFile != "" {
+			_ = os.Remove(revFile)
+		}
+		return nil
+	}
 	return w.DeleteEntry(typeStr, title, false)
 }
 
@@ -537,9 +697,14 @@ func (w *WikiStore) genericSearch(query string, mt domain.MemoryType, limit int)
 			scores[hit] += weight
 		}
 	}
-	// 无 query 或无命中：返回该类型全部（用于 AllKnowledge 类场景）
+	// 空 query：返回该类型全部（用于 AllKnowledge 类场景——产品目录/基线注入）。
+	// 非空 query 零命中必须返回 0 条（P0-01）：把无关条目伪装成命中是最大的幻觉
+	// 放大器，近期零命中 Lint 也要能真实触发。
 	if len(scores) == 0 {
-		return w.allHits(mt, limit)
+		if len(terms) == 0 {
+			return w.allHits(mt, limit)
+		}
+		return nil
 	}
 	out := make([]scoredHit, 0, len(scores))
 	for h, s := range scores {
@@ -669,11 +834,14 @@ func sanitizeFileName(s string) string {
 }
 
 // writePage 将 entry 序列化为 frontmatter + markdown 写回磁盘。
+// 原子写：同目录临时文件 + fsync + rename，避免进程中断产生半文件（§11.3）。
+// 权限：目录 0700、文件 0600（租户数据面，防止同机其他账号读）。
 func (w *WikiStore) writePage(e *Entry) error {
 	if e.FilePath == "" {
 		return fmt.Errorf("缺少 FilePath")
 	}
-	if err := os.MkdirAll(filepath.Dir(e.FilePath), 0o755); err != nil {
+	dir := filepath.Dir(e.FilePath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	f := e.typed
@@ -686,6 +854,9 @@ func (w *WikiStore) writePage(e *Entry) error {
 	f.Tags = e.Tags
 	f.Status = string(e.Status)
 	f.Summary = e.Summary
+	if e.Type == domain.MemoryUser {
+		f.UserID = e.UserID
+	}
 	if e.Type == domain.MemoryCustomer && f.UpdatedAt == "" {
 		f.UpdatedAt = time.Now().Format(time.RFC3339)
 	}
@@ -705,5 +876,26 @@ func (w *WikiStore) writePage(e *Entry) error {
 	b.WriteString("---\n\n")
 	b.WriteString(body)
 	b.WriteString("\n")
-	return os.WriteFile(e.FilePath, []byte(b.String()), 0o644)
+
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // rename 成功后 no-op
+	if _, err := tmp.Write([]byte(b.String())); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), e.FilePath)
 }

@@ -85,6 +85,7 @@ type CustomerProfile struct {
 // UserProfile 是一个使用者（销售）画像。
 type UserProfile struct {
 	Name      string   `json:"name"`      // 销售姓名
+	UserID    string   `json:"user_id"`   // 绑定身份用户 id（多租户：按身份解析画像）
 	Level     string   `json:"level"`     // 初级/中级/高级
 	Expertise []string `json:"expertise"` // 擅长领域
 	Accuracy  float64  `json:"accuracy"`  // 历史判断准确率
@@ -95,7 +96,8 @@ type UserProfile struct {
 // 不同记忆类型共享这个扁平结构，便于 memory_search/memory_list 跨类型检索。
 type Entry struct {
 	Type         domain.MemoryType `json:"type"`
-	Title        string            `json:"title"` // 唯一标识
+	Title        string            `json:"title"`             // 唯一标识
+	UserID       string            `json:"user_id,omitempty"` // 使用者画像绑定的身份用户 id
 	Aliases      []string          `json:"aliases"`
 	Tags         []string          `json:"tags"`
 	Summary      string            `json:"summary"`                 // 摘要
@@ -106,6 +108,7 @@ type Entry struct {
 	ValidAt      string            `json:"valid_at,omitempty"`      // P6 时效：事实生效时刻
 	InvalidAt    string            `json:"invalid_at,omitempty"`    // P6 时效：失效时刻（被新版本替代）
 	SupersededBy string            `json:"superseded_by,omitempty"` // P6 时效：替代本条目的新版本
+	RevisionOf   string            `json:"revision_of,omitempty"`   // P0-07：本条是某已验证条目的待审修订（原版本仍生效）
 	Relevance    float64           `json:"relevance,omitempty"`     // 检索时填充
 	FilePath     string            `json:"-"`                       // 对应的磁盘文件（写回用）
 	typed        *frontmatter      `json:"-"`                       // frontmatter 结构化字段（类型化解析用）

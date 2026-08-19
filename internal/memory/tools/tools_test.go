@@ -147,6 +147,42 @@ func TestDefinitions(t *testing.T) {
 	_ = os.Stdout
 }
 
+func TestAgentDefinitionsAndExecutionRespectTenantRole(t *testing.T) {
+	r, store := newTestRegistry(t)
+	analyst := &domain.TenantScope{TenantID: "t1", UserID: "u1", Roles: []string{domain.RoleAnalyst}}
+	manager := &domain.TenantScope{TenantID: "t1", UserID: "u2", Roles: []string{domain.RoleAdmin}}
+
+	names := func(defs []domain.Tool) map[string]bool {
+		out := make(map[string]bool, len(defs))
+		for _, d := range defs {
+			out[d.Function.Name] = true
+		}
+		return out
+	}
+	analystDefs := names(r.DefinitionsFor(analyst))
+	if analystDefs["memory_ensure"] || analystDefs["memory_observe"] || analystDefs["memory_delete"] {
+		t.Fatalf("analyst 只能看到读工具，got %+v", analystDefs)
+	}
+	managerDefs := names(r.DefinitionsFor(manager))
+	if !managerDefs["memory_ensure"] || !managerDefs["memory_observe"] || managerDefs["memory_delete"] {
+		t.Fatalf("manager 应可写但模型永不获得 delete，got %+v", managerDefs)
+	}
+
+	args := rawJSON(map[string]any{"type": "customer", "title": "越权客户", "content": "x"})
+	if _, err := r.ExecuteFor(analyst, "memory_ensure", args); err == nil {
+		t.Fatal("即使伪造工具调用，analyst 写入也应被执行层拒绝")
+	}
+	if _, err := store.GetEntry("customer", "越权客户"); err == nil {
+		t.Fatal("被拒的越权写入不应产生数据")
+	}
+	if _, err := r.ExecuteFor(manager, "memory_ensure", args); err != nil {
+		t.Fatalf("manager 写入应成功: %v", err)
+	}
+	if _, err := r.ExecuteFor(manager, "memory_delete", rawJSON(map[string]any{"type": "customer", "title": "越权客户"})); err == nil {
+		t.Fatal("模型侧 delete 对 manager 也必须拒绝")
+	}
+}
+
 func rawJSON(m map[string]any) json.RawMessage {
 	b, _ := json.Marshal(m)
 	return b
@@ -154,8 +190,9 @@ func rawJSON(m map[string]any) json.RawMessage {
 
 var _ domain.MemoryType // keep import
 
-// TestEnsureOverwriteVerifiedDemotes P10：AI ensure 覆盖已 verified 条目时，
-// threat/compliance/industry 必须降级回 pending（改动重新过审，防审核被绕过）。
+// TestEnsureOverwriteVerifiedDemotes P0-07：AI 覆盖已 verified 受控知识时，
+// 生成 pending revision——活跃条目保持 verified 继续生效（Agent 检索不到半成品），
+// 审核队列出现修订；批准后原子替换、拒绝则保持原样。
 func TestEnsureOverwriteVerifiedDemotes(t *testing.T) {
 	r, store := newTestRegistry(t)
 	// 人工先建一条 verified 威胁（模拟已审核通过）
@@ -171,12 +208,89 @@ func TestEnsureOverwriteVerifiedDemotes(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
+	// 活跃条目保持 verified、内容不变（原版本继续生效）
 	e, err := store.GetEntry("threat", "已审威胁")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.Status != longterm.StatusPendingReview {
-		t.Fatalf("AI 覆盖 verified 条目必须降级 pending，got %s", e.Status)
+	if e.Status != longterm.StatusVerified {
+		t.Fatalf("活跃条目应保持 verified，got %s", e.Status)
+	}
+	if !strings.Contains(e.Content, "原始内容") {
+		t.Fatalf("活跃条目内容不应被未审修订改动，got %q", e.Content)
+	}
+	// 审核队列出现修订
+	pending := store.PendingReviews()
+	if len(pending) != 1 || pending[0].Title != "已审威胁" || pending[0].RevisionOf == "" {
+		t.Fatalf("应出现一条 pending revision，got %+v", pending)
+	}
+	// 批准 → 原子替换为修订内容，保持 verified
+	if err := store.ApproveEntry("threat", "已审威胁"); err != nil {
+		t.Fatal(err)
+	}
+	e, _ = store.GetEntry("threat", "已审威胁")
+	if !strings.Contains(e.Content, "AI 改写的内容") {
+		t.Fatalf("批准后应为修订内容，got %q", e.Content)
+	}
+	if e.Status != longterm.StatusVerified {
+		t.Fatalf("批准后应保持 verified，got %s", e.Status)
+	}
+	if len(store.PendingReviews()) != 0 {
+		t.Fatal("批准后审核队列应清空")
+	}
+}
+
+// TestObserveVerifiedKnowledgeCreatesPendingRevision P0-07 验收：对已验证
+// threat/compliance/industry 追加观察必须生成 pending revision，不得保持 verified
+// 直接生效；拒绝修订时原版本不受影响。customer 观察不受审（AI 全权）。
+func TestObserveVerifiedKnowledgeCreatesPendingRevision(t *testing.T) {
+	r, store := newTestRegistry(t)
+	// 已验证威胁（模拟审核通过）
+	if err := store.UpsertEntry(&longterm.Entry{
+		Type: domain.MemoryThreat, Title: "已审威胁", Status: longterm.StatusVerified,
+		Content: "原始内容",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// observe 追加
+	out, err := r.Execute("memory_observe", rawJSON(map[string]any{
+		"type": "threat", "title": "已审威胁", "content": "客户观察到新现象", "relevance": "high",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"needs_review":true`) {
+		t.Fatalf("observe 已验证受控知识应 needs_review:true，got %s", out)
+	}
+	// 活跃条目保持 verified + 原内容
+	e, _ := store.GetEntry("threat", "已审威胁")
+	if e.Status != longterm.StatusVerified || !strings.Contains(e.Content, "原始内容") {
+		t.Fatalf("活跃条目应保持 verified 原内容，got status=%s content=%q", e.Status, e.Content)
+	}
+	// 审核队列含修订
+	pending := store.PendingReviews()
+	if len(pending) != 1 || pending[0].RevisionOf == "" {
+		t.Fatalf("应出现 pending revision，got %+v", pending)
+	}
+	// 拒绝修订 → 原版本不受影响，队列清空
+	if err := store.RejectEntry("threat", "已审威胁"); err != nil {
+		t.Fatal(err)
+	}
+	e, _ = store.GetEntry("threat", "已审威胁")
+	if e.Status != longterm.StatusVerified || !strings.Contains(e.Content, "原始内容") {
+		t.Fatalf("拒绝后原版本应保持，got %q", e.Content)
+	}
+	if len(store.PendingReviews()) != 0 {
+		t.Fatal("拒绝后审核队列应清空")
+	}
+	// customer observe：无审核，直接生效
+	if _, err := r.Execute("memory_observe", rawJSON(map[string]any{
+		"type": "customer", "title": "某客户", "content": "客户观察", "relevance": "medium",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.PendingReviews()) != 0 {
+		t.Fatalf("customer observe 不应进审核队列，got %d", len(store.PendingReviews()))
 	}
 }
 

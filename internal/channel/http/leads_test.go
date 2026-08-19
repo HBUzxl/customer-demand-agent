@@ -16,7 +16,7 @@ import (
 // platform 为 nil 时模拟「未接入」态（SetLeads 不注入）。
 func newLeadsTestServer(t *testing.T, platform http.HandlerFunc) *httptest.Server {
 	t.Helper()
-	srv := httpapi.NewMinimal(nil, nil, nil, nil)
+	srv := httpapi.NewMinimal(nil, nil)
 	if platform != nil {
 		mp := httptest.NewServer(platform)
 		t.Cleanup(mp.Close)
@@ -88,7 +88,7 @@ func TestLeadsDashboardList(t *testing.T) {
 
 // 平台连不上 → 502 + VPN 口径（面板用户可行动的提示）。
 func TestLeadsDashboardTransportError(t *testing.T) {
-	srv := httpapi.NewMinimal(nil, nil, nil, nil)
+	srv := httpapi.NewMinimal(nil, nil)
 	srv.SetLeads(leads.New(leads.Options{
 		BaseURL: "http://127.0.0.1:1", APIKey: "k",
 		Timeout: 200 * time.Millisecond, RatePerMin: 1_000_000, Burst: 100,

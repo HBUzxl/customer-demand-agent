@@ -1,0 +1,179 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 长
+        - generic [ref=e7]: 需求分析 · 长亭
+      - button "切换侧栏" [ref=e8] [cursor=pointer]:
+        - img [ref=e9]
+    - button "新建对话" [ref=e11] [cursor=pointer]:
+      - img [ref=e12]
+      - generic [ref=e14]: 新建对话
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: 最近对话
+        - link "全部" [ref=e18] [cursor=pointer]:
+          - /url: /history
+      - textbox "搜索会话…" [ref=e19]
+      - button "跨境电商雷池反爬防护评估 11 小时前 更多操作 跨境电商雷池反爬防护评估" [ref=e59] [cursor=pointer]:
+        - generic [ref=e60]: 跨境电商雷池反爬防护评估
+        - generic [ref=e61]: 11 小时前
+        - button "更多操作 跨境电商雷池反爬防护评估" [ref=e62]:
+          - img [ref=e63]
+      - button "测试企业官网挂马需过等保三级 测试企业 11 小时前 更多操作 测试企业官网挂马需过等保三级" [ref=e65] [cursor=pointer]:
+        - generic [ref=e66]: 测试企业官网挂马需过等保三级
+        - generic [ref=e67]:
+          - generic "测试企业" [ref=e68]
+          - text: 11 小时前
+        - button "更多操作 测试企业官网挂马需过等保三级" [ref=e69]:
+          - img [ref=e70]
+      - button "官网挂马需过等保三级 11 小时前 更多操作 官网挂马需过等保三级" [ref=e72] [cursor=pointer]:
+        - generic [ref=e73]: 官网挂马需过等保三级
+        - generic [ref=e74]: 11 小时前
+        - button "更多操作 官网挂马需过等保三级" [ref=e75]:
+          - img [ref=e76]
+      - button "官网挂马需过等保三级 12 小时前 更多操作 官网挂马需过等保三级" [ref=e78] [cursor=pointer]:
+        - generic [ref=e79]: 官网挂马需过等保三级
+        - generic [ref=e80]: 12 小时前
+        - button "更多操作 官网挂马需过等保三级" [ref=e81]:
+          - img [ref=e82]
+      - button "官网被挂马需过等保三级 12 小时前 更多操作 官网被挂马需过等保三级" [ref=e84] [cursor=pointer]:
+        - generic [ref=e85]: 官网被挂马需过等保三级
+        - generic [ref=e86]: 12 小时前
+        - button "更多操作 官网被挂马需过等保三级" [ref=e87]:
+          - img [ref=e88]
+      - button "不用了 12 小时前 更多操作 不用了" [ref=e90] [cursor=pointer]:
+        - generic [ref=e91]: 不用了
+        - generic [ref=e92]: 12 小时前
+        - button "更多操作 不用了" [ref=e93]:
+          - img [ref=e94]
+      - button "官网被挂马，要过等保三级 3 天前 更多操作 官网被挂马，要过等保三级" [ref=e96] [cursor=pointer]:
+        - generic [ref=e97]: 官网被挂马，要过等保三级
+        - generic [ref=e98]: 3 天前
+        - button "更多操作 官网被挂马，要过等保三级" [ref=e99]:
+          - img [ref=e100]
+      - button "大促网站CC攻击应急与等保合规 3 天前 更多操作 大促网站CC攻击应急与等保合规" [ref=e102] [cursor=pointer]:
+        - generic [ref=e103]: 大促网站CC攻击应急与等保合规
+        - generic [ref=e104]: 3 天前
+        - button "更多操作 大促网站CC攻击应急与等保合规" [ref=e105]:
+          - img [ref=e106]
+      - button "大促网站被 CC 打慢，过等保二级 3 天前 更多操作 大促网站被 CC 打慢，过等保二级" [ref=e108] [cursor=pointer]:
+        - generic [ref=e109]: 大促网站被 CC 打慢，过等保二级
+        - generic [ref=e110]: 3 天前
+        - button "更多操作 大促网站被 CC 打慢，过等保二级" [ref=e111]:
+          - img [ref=e112]
+    - generic [ref=e21]:
+      - link "商机面板" [ref=e22] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e23]
+        - generic [ref=e25]: 商机面板
+      - link "记忆库" [ref=e26] [cursor=pointer]:
+        - /url: /memory
+        - img [ref=e27]
+        - generic [ref=e29]: 记忆库
+      - link "成员管理" [ref=e30] [cursor=pointer]:
+        - /url: /members
+        - img [ref=e31]
+        - generic [ref=e33]: 成员管理
+      - link "用户管理" [ref=e34] [cursor=pointer]:
+        - /url: /admin/users
+        - img [ref=e35]
+        - generic [ref=e37]: 用户管理
+      - link "观测台" [ref=e38] [cursor=pointer]:
+        - /url: /observe
+        - img [ref=e39]
+        - generic [ref=e41]: 观测台
+      - link "设置" [ref=e42] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e43]
+        - generic [ref=e45]: 设置
+      - generic [ref=e46]:
+        - generic "平台管理员 · admin@chaitin.com" [ref=e47]:
+          - generic [ref=e48]: 平
+          - generic [ref=e49]:
+            - generic [ref=e50]: 平台管理员
+            - generic [ref=e51]:
+              - text: Legacy 存量工作空间
+              - generic "租户 ID：21fc7cd11e3f5313758a5569eb8a9400" [ref=e52]: · 21fc7cd1
+              - text: owner平台管理
+        - generic [ref=e53]:
+          - button "改密" [ref=e54] [cursor=pointer]
+          - button "退出" [ref=e55] [cursor=pointer]
+  - main [ref=e56]:
+    - generic [ref=e114]:
+      - generic [ref=e115]:
+        - heading "用户管理" [level=2] [ref=e116]
+        - generic [ref=e117]: ADMIN
+        - button "+ 新建租户" [ref=e119] [cursor=pointer]
+      - generic [ref=e120]: 平台用户、租户与成员关系全生命周期管理。删除采用停用/软删除，历史业务数据保留。
+      - generic [ref=e121]:
+        - button "用户" [ref=e122] [cursor=pointer]
+        - button "租户" [ref=e123] [cursor=pointer]
+      - table [ref=e125]:
+        - rowgroup [ref=e126]:
+          - row "名称 租户 ID Slug 状态 成员数 创建人 创建时间 操作" [ref=e127]:
+            - columnheader "名称" [ref=e128]
+            - columnheader "租户 ID" [ref=e129]
+            - columnheader "Slug" [ref=e130]
+            - columnheader "状态" [ref=e131]
+            - columnheader "成员数" [ref=e132]
+            - columnheader "创建人" [ref=e133]
+            - columnheader "创建时间" [ref=e134]
+            - columnheader "操作" [ref=e135]
+        - rowgroup [ref=e136]:
+          - row "内测 · 096bee5a 096bee5a tenant-096bee5a 正常 1 dongzhen.xiong2@chaitin.com 2026/8/18 18:32:43 管理成员 编辑 停用 删除" [ref=e137]:
+            - cell "内测 · 096bee5a" [ref=e138]
+            - cell "096bee5a" [ref=e139]
+            - cell "tenant-096bee5a" [ref=e140]
+            - cell "正常" [ref=e141]
+            - cell "1" [ref=e142]
+            - cell "dongzhen.xiong2@chaitin.com" [ref=e143]
+            - cell "2026/8/18 18:32:43" [ref=e144]
+            - cell "管理成员 编辑 停用 删除" [ref=e145]:
+              - button "管理成员" [active] [ref=e146] [cursor=pointer]
+              - button "编辑" [ref=e147] [cursor=pointer]
+              - button "停用" [ref=e148] [cursor=pointer]
+              - button "删除" [ref=e149] [cursor=pointer]
+          - row "内测 36968e84 tenant 正常 1 dongzhen.xiong@chaitin.com 2026/8/18 18:24:18 管理成员 编辑 停用 删除" [ref=e150]:
+            - cell "内测" [ref=e151]
+            - cell "36968e84" [ref=e152]
+            - cell "tenant" [ref=e153]
+            - cell "正常" [ref=e154]
+            - cell "1" [ref=e155]
+            - cell "dongzhen.xiong@chaitin.com" [ref=e156]
+            - cell "2026/8/18 18:24:18" [ref=e157]
+            - cell "管理成员 编辑 停用 删除" [ref=e158]:
+              - button "管理成员" [ref=e159] [cursor=pointer]
+              - button "编辑" [ref=e160] [cursor=pointer]
+              - button "停用" [ref=e161] [cursor=pointer]
+              - button "删除" [ref=e162] [cursor=pointer]
+          - row "Legacy 存量工作空间 21fc7cd1 legacy 正常 1 — 2026/8/18 18:20:13 管理成员 编辑 停用 删除" [ref=e163]:
+            - cell "Legacy 存量工作空间" [ref=e164]
+            - cell "21fc7cd1" [ref=e165]
+            - cell "legacy" [ref=e166]
+            - cell "正常" [ref=e167]
+            - cell "1" [ref=e168]
+            - cell "—" [ref=e169]
+            - cell "2026/8/18 18:20:13" [ref=e170]
+            - cell "管理成员 编辑 停用 删除" [ref=e171]:
+              - button "管理成员" [ref=e172] [cursor=pointer]
+              - button "编辑" [ref=e173] [cursor=pointer]
+              - button "停用" [ref=e174] [cursor=pointer]
+              - button "删除" [ref=e175] [cursor=pointer]
+      - dialog "租户成员" [ref=e176]:
+        - generic [ref=e177]:
+          - text: 内测 · 096bee5a 的成员
+          - generic [ref=e178]: 共 1 人
+          - button "+ 添加成员" [ref=e179] [cursor=pointer]
+        - generic [ref=e181]:
+          - generic [ref=e182]:
+            - generic [ref=e183]: 熊冬震 2
+            - generic [ref=e184]: dongzhen.xiong2@chaitin.com
+          - combobox [ref=e185]:
+            - option "所有者" [selected]
+            - option "管理员"
+            - option "分析人员"
+            - option "审核人员"
+          - generic [ref=e186]: 正常
+          - button "移除" [ref=e187] [cursor=pointer]
+        - button "关闭" [ref=e189] [cursor=pointer]

@@ -72,7 +72,6 @@ func (s *Server) handleConfigGet(w http.ResponseWriter, r *http.Request) {
 type configPutReq struct {
 	Models             []model.ModelConfig `json:"models"`
 	Router             *model.RouterConfig `json:"router"`
-	DefaultUser        *string             `json:"default_user,omitempty"`
 	LLMTimeoutSec      *int                `json:"llm_timeout_sec,omitempty"`
 	AgentMaxIterations *int                `json:"agent_max_iterations,omitempty"`
 	LeadManager        *LeadManagerView    `json:"lead_manager,omitempty"` // 可选：商机平台配置（重启生效）
@@ -113,7 +112,7 @@ func (s *Server) handleConfigPut(w http.ResponseWriter, r *http.Request) {
 		existingKey := map[string]string{}
 		existingEndpoint := map[string]string{}
 		for _, name := range s.registry.Names() {
-			if c, err := s.registry.Get(name); err == nil {
+			if c, err := s.registry.GetModel(name); err == nil {
 				existingKey[name] = c.APIKey
 				existingEndpoint[name] = c.Endpoint
 			}
@@ -129,16 +128,14 @@ func (s *Server) handleConfigPut(w http.ResponseWriter, r *http.Request) {
 			}
 			merged[i] = m
 		}
-		_ = s.resetRegistry()
-		for _, m := range merged {
-			if err := s.registry.Register(m); err != nil {
-				writeError(w, http.StatusBadRequest, "注册模型 %s: %v", m.Name, err)
-				return
-			}
-		}
 	}
-	if req.Router != nil {
-		s.modelMgr.SetRouter(req.Router)
+	effectiveModels := s.store.Get().Models
+	if req.Models != nil {
+		effectiveModels = merged
+	}
+	if err := validateConfigPut(req, effectiveModels); err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
 	}
 	// 回写配置文件（合并后的含密钥模型 + 路由），保留 server/wiki/history 设置
 	if err := s.store.Update(func(cfg *config.Config) {
@@ -151,33 +148,109 @@ func (s *Server) handleConfigPut(w http.ResponseWriter, r *http.Request) {
 		if lmNew != nil {
 			cfg.LeadManager = *lmNew // 重启生效（不做热切换，同 jiying 语义）
 		}
-		// console-config：行为参数可选合并（热生效——Agent/Registry 即时重配）
-		if req.DefaultUser != nil {
-			cfg.DefaultUser = *req.DefaultUser
-		}
+		// console-config：行为参数可选合并（热生效——Agent/Registry 即时重配）。
+		// 当前使用者来自登录身份，不再接受全局 default_user 配置。
 		if req.LLMTimeoutSec != nil && *req.LLMTimeoutSec > 0 {
 			cfg.LLMTimeoutSec = *req.LLMTimeoutSec
-			s.registry.SetTimeout(time.Duration(*req.LLMTimeoutSec) * time.Second)
 		}
 		if req.AgentMaxIterations != nil && *req.AgentMaxIterations > 0 {
 			cfg.AgentMaxIterations = *req.AgentMaxIterations
-			s.agent.SetMaxIterations(*req.AgentMaxIterations)
 		}
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "回写配置文件: %v", err)
 		return
 	}
+	// 持久化成功后再切换运行态。所有可能失败的参数校验已在上方完成，避免
+	// 400/500 响应后 Registry/Router 只更新了一半。
+	if req.Models != nil {
+		_ = s.resetRegistry()
+		for _, m := range merged {
+			_ = s.registry.Register(m) // validateConfigPut 已校验 name，注册不会失败。
+		}
+	}
+	if req.Router != nil {
+		s.modelMgr.SetRouter(req.Router)
+	}
+	if req.LLMTimeoutSec != nil {
+		s.registry.SetTimeout(time.Duration(*req.LLMTimeoutSec) * time.Second)
+	}
+	if req.AgentMaxIterations != nil && s.runtimes != nil {
+		s.runtimes.SetAgentMaxIterations(*req.AgentMaxIterations)
+	}
 	// 响应同样不回传真实密钥（已设置显示占位）
-	for i := range merged {
-		if merged[i].APIKey != "" {
-			merged[i].APIKey = "********"
+	responseModels := s.registry.All()
+	for i := range responseModels {
+		if responseModels[i].APIKey != "" {
+			responseModels[i].APIKey = "********"
 		}
 	}
 	writeJSON(w, http.StatusOK, configResponse{
-		Models:      merged,
+		Models:      responseModels,
 		Router:      s.modelMgr.Router(),
 		LeadManager: maskedLeadManager(s.store.Get().LeadManager),
 	})
+}
+
+func validateConfigPut(req configPutReq, models []model.ModelConfig) error {
+	if req.LLMTimeoutSec != nil && (*req.LLMTimeoutSec < 1 || *req.LLMTimeoutSec > 3600) {
+		return fmt.Errorf("llm_timeout_sec 必须在 1..3600 之间")
+	}
+	if req.AgentMaxIterations != nil && (*req.AgentMaxIterations < 1 || *req.AgentMaxIterations > 50) {
+		return fmt.Errorf("agent_max_iterations 必须在 1..50 之间")
+	}
+	if req.LeadManager != nil {
+		v := req.LeadManager
+		if v.TimeoutSec < 0 || v.TimeoutSec > 3600 || v.RatePerMin < 0 || v.RatePerMin > 600 || v.Burst < 0 || v.Burst > 100 {
+			return fmt.Errorf("lead_manager 数值超出允许范围")
+		}
+	}
+	names := make(map[string]struct{}, len(models))
+	for i, m := range models {
+		if strings.TrimSpace(m.Name) == "" {
+			return fmt.Errorf("models[%d].name 不能为空", i)
+		}
+		if _, exists := names[m.Name]; exists {
+			return fmt.Errorf("模型名称 %q 重复", m.Name)
+		}
+		names[m.Name] = struct{}{}
+		if m.Endpoint == "" || m.Model == "" {
+			return fmt.Errorf("模型 %q 的 endpoint/model 不能为空", m.Name)
+		}
+		u, err := url.Parse(m.Endpoint)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("模型 %q 的 endpoint 非法", m.Name)
+		}
+		switch m.Proto() {
+		case model.ProtocolOpenAIChat, model.ProtocolOpenAIResponse, model.ProtocolAnthropic:
+		default:
+			return fmt.Errorf("模型 %q 的 protocol 不受支持", m.Name)
+		}
+		if m.Temperature < 0 || m.Temperature > 2 || m.MaxTokens < 0 || m.MaxTokens > 1_000_000 ||
+			m.ContextWindow < 0 || m.TimeoutSec < 0 || m.TimeoutSec > 3600 || m.MaxRetries < 0 || m.MaxRetries > 10 {
+			return fmt.Errorf("模型 %q 的数值参数超出允许范围", m.Name)
+		}
+	}
+	if req.Router == nil {
+		return nil
+	}
+	rc := req.Router
+	if rc.Fallback.MaxRetries < 0 || rc.Fallback.MaxRetries > 10 || rc.Fallback.BackoffMs < 0 || rc.Fallback.BackoffMs > 60_000 {
+		return fmt.Errorf("router.fallback 数值超出允许范围")
+	}
+	refs := []string{rc.Default}
+	for _, name := range rc.Routes {
+		refs = append(refs, name)
+	}
+	refs = append(refs, rc.Fallback.Chain...)
+	for _, name := range refs {
+		if name == "" {
+			continue
+		}
+		if _, ok := names[name]; !ok {
+			return fmt.Errorf("router 引用了未注册模型 %q", name)
+		}
+	}
+	return nil
 }
 
 // resetRegistry clears all registered models (for full-replace config).
@@ -190,11 +263,22 @@ func (s *Server) resetRegistry() error {
 
 // handleSessionList: GET /api/sessions?limit=&offset=
 // handleSessionsSearch: GET /api/sessions/search?q=&limit= —— 会话搜索
-// （标题命中优先 + 消息内容命中带 snippet）。
+// （标题命中优先 + 消息内容命中带 snippet）。作用域化：非租户 admin 只见自己
+// 的会话，跨租户会话在本租户库中不存在（§9.3）。
 func (s *Server) handleSessionsSearch(w http.ResponseWriter, r *http.Request) {
+	sc, err := s.sc(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	rt, err := s.rt(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
 	q := r.URL.Query().Get("q")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	hits, err := s.history.SearchSessions(q, limit)
+	hits, err := rt.History.SearchSessions(&sc, q, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "搜索会话: %v", err)
 		return
@@ -206,21 +290,31 @@ func (s *Server) handleSessionsSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
+	sc, err := s.sc(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	rt, err := s.rt(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	items, err := s.history.ListSessions(limit, offset)
+	items, err := rt.History.ListSessions(&sc, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
-	// F0：附带运行状态（侧栏运行指示）
+	// F0：附带运行状态（侧栏运行指示）——按 RunKey 查询（租户隔离）
 	type itemWithRun struct {
 		history.SessionListItem
 		Running bool `json:"running"`
 	}
 	out := make([]itemWithRun, len(items))
 	for i, it := range items {
-		out[i] = itemWithRun{SessionListItem: it, Running: s.runs.Running(it.SessionID)}
+		out[i] = itemWithRun{SessionListItem: it, Running: s.runs.Running(domain.RunKey{TenantID: sc.TenantID, SessionID: it.SessionID})}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"count": len(out), "items": out})
 }
@@ -228,9 +322,19 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 // handleSessionGet: GET /api/sessions/{id}?branch=main|b1-xxx
 // branch 空=全分支汇总（admin 用），否则只返回该分支的消息+工具+checkpoint。
 func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
+	sc, err := s.sc(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	rt, err := s.rt(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
 	id := r.PathValue("id")
 	branch := r.URL.Query().Get("branch")
-	det, err := s.history.GetSession(id, branch)
+	det, err := rt.History.GetSession(&sc, id, branch)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "%v", err)
 		return
@@ -240,8 +344,51 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 
 // handleSessionDelete: DELETE /api/sessions/{id}
 func (s *Server) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
+	sc, err := s.sc(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	rt, err := s.rt(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
 	id := r.PathValue("id")
-	if err := s.history.DeleteSession(id); err != nil {
+	key := domain.RunKey{TenantID: sc.TenantID, SessionID: id}
+	if s.runs.Running(key) {
+		writeError(w, http.StatusConflict, "会话仍在运行，请先取消运行后再删除")
+		return
+	}
+	if err := rt.History.DeleteSession(&sc, id); err != nil {
+		writeError(w, http.StatusNotFound, "%v", err)
+		return
+	}
+	s.runs.DropSession(key)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleSessionRename: PATCH /api/sessions/{id}  body {title}
+// 用户手动重命名（置 title_pinned，防自动标题覆盖）。越权/不存在 404。
+func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
+	sc, err := s.sc(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	rt, err := s.rt(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	var body struct {
+		Title string `json:"title"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "请求体无效: %v", err)
+		return
+	}
+	if err := rt.History.RenameSession(&sc, r.PathValue("id"), body.Title); err != nil {
 		writeError(w, http.StatusNotFound, "%v", err)
 		return
 	}
@@ -317,7 +464,7 @@ func (s *Server) handleConfigTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "latency_ms": latency, "reply": resp.Message.Content})
 }
 
-// handleListModels: POST /api/models —— 代理网关的 /models 拉可用模型列表。
+// handleListModels: POST /api/platform/models —— 代理网关的 /models 拉可用模型列表。
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	var req probeReq
 	if err := decodeBody(r, &req); err != nil {
@@ -527,19 +674,29 @@ func normalizeOrigin(u *url.URL) string {
 	return scheme + "://" + host + ":" + port
 }
 
-// handleTasksList: GET /api/tasks —— 后台任务列表（观测台）。
+// handleTasksList: GET /api/tasks —— 后台任务列表（观测台，按租户过滤）。
 func (s *Server) handleTasksList(w http.ResponseWriter, r *http.Request) {
 	if s.tasks == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": s.tasks.List(50)})
+	sc, err := s.sc(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": s.tasks.List(&sc, 50)})
 }
 
 // handleTaskConsolidate: POST /api/tasks/consolidate {type,title} —— 手动触发固化。
 func (s *Server) handleTaskConsolidate(w http.ResponseWriter, r *http.Request) {
 	if s.tasks == nil {
 		writeError(w, http.StatusServiceUnavailable, "后台任务未启用")
+		return
+	}
+	sc, err := s.sc(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
 		return
 	}
 	var req struct {
@@ -554,8 +711,10 @@ func (s *Server) handleTaskConsolidate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "type/title 不能为空")
 		return
 	}
-	t := s.tasks.Submit(fmt.Sprintf("cons-%d", time.Now().UnixNano()), taskbg.TaskConsolidate, req.Type+"/"+req.Title)
-	writeJSON(w, http.StatusAccepted, t)
+	t := s.tasks.Submit(&sc, fmt.Sprintf("cons-%d", time.Now().UnixNano()), taskbg.TaskConsolidate,
+		taskbg.TaskResource{Type: req.Type, TypeID: req.Title})
+	// 序列化锁下快照：Submit 返回活对象，worker 并发写 Status/Result/DoneAt（race）
+	writeJSON(w, http.StatusAccepted, s.tasks.Snapshot(t))
 }
 
 // handleTaskLint: POST /api/tasks/lint —— 手动触发 Wiki Lint。
@@ -564,6 +723,13 @@ func (s *Server) handleTaskLint(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "后台任务未启用")
 		return
 	}
-	t := s.tasks.Submit(fmt.Sprintf("lint-%d", time.Now().UnixNano()), taskbg.TaskLint, "全库扫描")
-	writeJSON(w, http.StatusAccepted, t)
+	sc, err := s.sc(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	t := s.tasks.Submit(&sc, fmt.Sprintf("lint-%d", time.Now().UnixNano()), taskbg.TaskLint,
+		taskbg.TaskResource{Type: "all"})
+	// 序列化锁下快照：Submit 返回活对象，worker 并发写 Status/Result/DoneAt（race）
+	writeJSON(w, http.StatusAccepted, s.tasks.Snapshot(t))
 }

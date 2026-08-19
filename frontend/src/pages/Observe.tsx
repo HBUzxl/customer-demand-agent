@@ -1,8 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  observeHealth,
+  observeLLMAudit,
+  observeTasks,
+  subscribePlatformLogs,
+  taskLint,
+} from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
+import Icon from "../components/Icon";
 
 /**
  * 观测台（C2）：后台任务 + 日志 tail（SSE）+ LLM 调用审计 + 系统健康。
- * 「后端在干什么」的统一视图。
+ * 「后端在干什么」的统一视图。多租户：观测台为平台功能（§7.5）——LLM 审计与
+ * 原始日志走 /api/platform/**，仅平台管理员可见；租户用户由导航与页面双重隐藏。
  */
 
 interface Task {
@@ -32,6 +42,7 @@ interface Health {
 }
 
 export default function Observe() {
+  const { isPlatformAdmin } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [audit, setAudit] = useState<Audit[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
@@ -39,12 +50,13 @@ export default function Observe() {
   const [live, setLive] = useState(true);
   const logRef = useRef<HTMLDivElement>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
+    if (!isPlatformAdmin) return; // 平台功能：租户用户不拉取平台数据（避免无谓 403）
     try {
       const [t, a, h] = await Promise.all([
-        fetch("/api/tasks").then((r) => r.json()),
-        fetch("/api/console/llm-audit").then((r) => r.json()),
-        fetch("/api/console/health").then((r) => r.json()),
+        observeTasks<{ items?: Task[] }>(),
+        observeLLMAudit<{ items?: Audit[] }>(),
+        observeHealth<Health>(),
       ]);
       setTasks(t.items || []);
       setAudit(a.items || []);
@@ -52,42 +64,36 @@ export default function Observe() {
     } catch {
       /* 后端不可达 */
     }
-  }
+  }, [isPlatformAdmin]);
 
   useEffect(() => {
-    load();
+    if (!isPlatformAdmin) return; // 平台功能：租户用户不拉取平台数据
+    void load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [isPlatformAdmin, load]);
 
   useEffect(() => {
     if (!live) return;
-    const ac = new AbortController();
-    (async () => {
-      const res = await fetch("/api/console/logs", { signal: ac.signal });
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buf.indexOf("\n\n")) >= 0) {
-          const raw = buf.slice(0, idx);
-          buf = buf.slice(idx + 2);
-          if (raw.startsWith("data:")) {
-            setLogs((ls) => [...ls.slice(-200), raw.slice(5).trim()]);
-          }
-        }
-      }
-    })().catch(() => {});
-    return () => ac.abort();
-  }, [live]);
+    if (!isPlatformAdmin) return; // 平台功能：租户用户不订阅平台日志
+    return subscribePlatformLogs((line) => setLogs((ls) => [...ls.slice(-200), line]));
+  }, [live, isPlatformAdmin]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [logs]);
+
+  // 平台功能：非平台管理员直接访问也拒绝展示（导航已隐藏，双保险）
+  if (!isPlatformAdmin) {
+    return (
+      <div className="page">
+        <div className="panel">
+          <h3>观测台</h3>
+          <p className="muted">观测台为平台管理功能（§7.5），仅平台管理员可查看。</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -96,7 +102,8 @@ export default function Observe() {
         <span className="crumb">OBSERVE</span>
         <div className="page-actions">
           <button className={`btn sm ${live ? "" : "ghost"}`} onClick={() => setLive((x) => !x)}>
-            {live ? "◉ 日志直播中" : "○ 日志已暂停"}
+            <i className={`run-dot${live ? "" : " off"}`} />
+            {live ? "日志直播中" : "日志已暂停"}
           </button>
         </div>
       </div>
@@ -108,10 +115,7 @@ export default function Observe() {
         {/* 后台任务 */}
         <div className="ob-panel">
           <h3>后台任务</h3>
-          <button
-            className="btn ghost sm"
-            onClick={() => fetch("/api/tasks/lint", { method: "POST" }).then(load)}
-          >
+          <button className="btn ghost sm" onClick={() => taskLint().then(load)}>
             运行 Wiki Lint
           </button>
           {tasks.length === 0 && <div className="ob-empty">暂无任务</div>}
@@ -119,7 +123,13 @@ export default function Observe() {
             <div key={t.id} className="ob-task">
               <div className="ob-task-head">
                 <span className={`ob-status ${t.status}`}>
-                  {t.status === "running" ? "◉" : t.status === "done" ? "✓" : "✗"}
+                  {t.status === "running" ? (
+                    <i className="run-dot" />
+                  ) : t.status === "done" ? (
+                    <Icon name="check" size={12} />
+                  ) : (
+                    <Icon name="cross" size={12} />
+                  )}
                 </span>
                 <span className="ob-task-type">{t.type}</span>
                 <span className="ob-task-detail">{t.detail}</span>
@@ -136,7 +146,9 @@ export default function Observe() {
           {audit.length === 0 && <div className="ob-empty">暂无调用</div>}
           {audit.slice(0, 15).map((a, i) => (
             <div key={i} className="ob-audit">
-              <span className={`ob-audit-ok ${a.ok ? "ok" : "no"}`}>{a.ok ? "✓" : "✗"}</span>
+              <span className={`ob-audit-ok ${a.ok ? "ok" : "no"}`}>
+                <Icon name={a.ok ? "check" : "cross"} size={12} />
+              </span>
               <span className="ob-audit-model">{a.model}</span>
               {a.fallback && <span className="ob-audit-fb">回退</span>}
               <span className="ob-audit-task">{a.task}</span>
@@ -163,7 +175,9 @@ export default function Observe() {
                 <div className="cc-label">运行中</div>
               </div>
               <div className="cc-stat">
-                <div className="cc-num">{health.status === "ok" ? "✓" : health.status}</div>
+                <div className="cc-num">
+                  {health.status === "ok" ? <Icon name="check" size={13} /> : health.status}
+                </div>
                 <div className="cc-label">服务状态</div>
               </div>
             </div>

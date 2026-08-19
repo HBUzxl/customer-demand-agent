@@ -1,0 +1,110 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 长
+        - generic [ref=e7]: 需求分析 · 长亭
+      - button "切换侧栏" [ref=e8] [cursor=pointer]:
+        - img [ref=e9]
+    - button "新建对话" [ref=e11] [cursor=pointer]:
+      - img [ref=e12]
+      - generic [ref=e14]: 新建对话
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: 最近对话
+        - link "全部" [ref=e18] [cursor=pointer]:
+          - /url: /history
+      - textbox "搜索会话…" [ref=e19]
+      - button "官网挂马需过等保三级 刚刚 更多操作 官网挂马需过等保三级" [ref=e20] [cursor=pointer]:
+        - generic [ref=e21]: 官网挂马需过等保三级
+        - generic [ref=e22]: 刚刚
+        - button "更多操作 官网挂马需过等保三级" [ref=e23]:
+          - img [ref=e24]
+      - button "官网被挂马需过等保三级 刚刚 更多操作 官网被挂马需过等保三级" [ref=e26] [cursor=pointer]:
+        - generic [ref=e27]: 官网被挂马需过等保三级
+        - generic [ref=e28]: 刚刚
+        - button "更多操作 官网被挂马需过等保三级" [ref=e29]:
+          - img [ref=e30]
+      - button "跨境电商WAF反爬虫评估 刚刚 更多操作 跨境电商WAF反爬虫评估" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: 跨境电商WAF反爬虫评估
+        - generic [ref=e34]: 刚刚
+        - button "更多操作 跨境电商WAF反爬虫评估" [ref=e35]:
+          - img [ref=e36]
+      - button "不用了 刚刚 更多操作 不用了" [ref=e38] [cursor=pointer]:
+        - generic [ref=e39]: 不用了
+        - generic [ref=e40]: 刚刚
+        - button "更多操作 不用了" [ref=e41]:
+          - img [ref=e42]
+      - button "官网被挂马，要过等保三级 3 天前 更多操作 官网被挂马，要过等保三级" [ref=e44] [cursor=pointer]:
+        - generic [ref=e45]: 官网被挂马，要过等保三级
+        - generic [ref=e46]: 3 天前
+        - button "更多操作 官网被挂马，要过等保三级" [ref=e47]:
+          - img [ref=e48]
+      - button "大促网站CC攻击应急与等保合规 3 天前 更多操作 大促网站CC攻击应急与等保合规" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51]: 大促网站CC攻击应急与等保合规
+        - generic [ref=e52]: 3 天前
+        - button "更多操作 大促网站CC攻击应急与等保合规" [ref=e53]:
+          - img [ref=e54]
+      - button "大促网站被 CC 打慢，过等保二级 3 天前 更多操作 大促网站被 CC 打慢，过等保二级" [ref=e56] [cursor=pointer]:
+        - generic [ref=e57]: 大促网站被 CC 打慢，过等保二级
+        - generic [ref=e58]: 3 天前
+        - button "更多操作 大促网站被 CC 打慢，过等保二级" [ref=e59]:
+          - img [ref=e60]
+    - generic [ref=e62]:
+      - link "商机面板" [ref=e63] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e64]
+        - generic [ref=e66]: 商机面板
+      - link "记忆库" [ref=e67] [cursor=pointer]:
+        - /url: /memory
+        - img [ref=e68]
+        - generic [ref=e70]: 记忆库
+      - link "成员管理" [ref=e71] [cursor=pointer]:
+        - /url: /members
+        - img [ref=e72]
+        - generic [ref=e74]: 成员管理
+      - link "用户管理" [ref=e75] [cursor=pointer]:
+        - /url: /admin/users
+        - img [ref=e76]
+        - generic [ref=e78]: 用户管理
+      - link "观测台" [ref=e79] [cursor=pointer]:
+        - /url: /observe
+        - img [ref=e80]
+        - generic [ref=e82]: 观测台
+      - link "设置" [ref=e83] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e84]
+        - generic [ref=e86]: 设置
+      - generic [ref=e87]:
+        - generic "平台管理员 · admin@chaitin.com" [ref=e88]:
+          - generic [ref=e89]: 平
+          - generic [ref=e90]:
+            - generic [ref=e91]: 平台管理员
+            - generic [ref=e92]:
+              - text: Legacy 存量工作空间
+              - generic "租户 ID：21fc7cd11e3f5313758a5569eb8a9400" [ref=e93]: · 21fc7cd1
+              - text: owner平台管理
+        - generic [ref=e94]:
+          - button "改密" [ref=e95] [cursor=pointer]
+          - button "退出" [ref=e96] [cursor=pointer]
+  - main [ref=e97]:
+    - generic [ref=e99]:
+      - heading "需求分析助手" [level=1] [ref=e100]
+      - paragraph [ref=e101]: 粘贴客户沟通原文，或直接描述场景。我会理解需求、匹配长亭产品、判断可行性——也可以直接跟我聊。
+      - generic [ref=e103]:
+        - textbox "输入消息，回车发送（Shift+回车换行）…" [ref=e104]
+        - button "发送" [disabled] [ref=e105]:
+          - img [ref=e106]
+      - generic [ref=e108]:
+        - button "商机 · 高价值线索 查一下当前的 MQL 高价值线索，挑一条最值得跟的，看看详情，结合我们产品能力给个跟进建议" [ref=e109] [cursor=pointer]:
+          - generic [ref=e110]: 商机 · 高价值线索
+          - generic [ref=e111]: 查一下当前的 MQL 高价值线索，挑一条最值得跟的，看看详情，结合我们产品能力给个跟进建议
+        - button "电商 · CC 攻击 大促网站被 CC 打慢，过等保二级" [ref=e112] [cursor=pointer]:
+          - generic [ref=e113]: 电商 · CC 攻击
+          - generic [ref=e114]: 大促网站被 CC 打慢，过等保二级
+        - button "政务 · 挂马篡改 官网被挂马，要过等保三级" [ref=e115] [cursor=pointer]:
+          - generic [ref=e116]: 政务 · 挂马篡改
+          - generic [ref=e117]: 官网被挂马，要过等保三级
+        - button "金融 · API 滥用 接口被恶意调用，数据泄露风险" [ref=e118] [cursor=pointer]:
+          - generic [ref=e119]: 金融 · API 滥用
+          - generic [ref=e120]: 接口被恶意调用，数据泄露风险

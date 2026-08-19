@@ -17,15 +17,18 @@ import (
 )
 
 // Assembler 把长期知识 + 短期 checkpoint + 用户输入拼成 messages。
+// knowledge 是 longterm.Store 接口（Composite）——多租户下每个租户独立的
+// 复合记忆注入（产品目录取系统基线，客户/使用者取本租户覆盖层）。
 type Assembler struct {
-	knowledge    *longterm.WikiStore
-	userName     string // 当前使用者（销售），用于分级输出
+	knowledge    longterm.Store
+	userName     string // legacy 无登录作用域渠道的使用者名回退
 	template     string // 外置模板（C3：prompts/system.md；缺失回退内置拼接）
 	leadsEnabled bool   // 商机平台已接入（注入数据源身份行；未接入不注入，模型无感知）
 }
 
-// New 创建拼装器。userName 是当前使用者名（影响输出风格，见 memory-system.md 分级输出）。
-func New(knowledge *longterm.WikiStore, userName string) *Assembler {
+// New 创建拼装器。Web 多租户按登录 scope.UserID 解析使用者；userName 仅供
+// 无登录作用域的 legacy 渠道回退（影响输出风格，见 memory-system.md 分级输出）。
+func New(knowledge longterm.Store, userName string) *Assembler {
 	return &Assembler{knowledge: knowledge, userName: userName, template: loadTemplate()}
 }
 
@@ -92,8 +95,10 @@ func (a *Assembler) TemplateRaw() string {
 }
 
 // Assemble 根据 op 拼装完整的 messages 数组。
-func (a *Assembler) Assemble(op domain.CheckpointOp, ctx *domain.SessionContext, userInput string) []domain.Message {
-	sys := domain.Message{Role: domain.RoleSystem, Content: a.systemPrompt(op)}
+// scope 提供当前登录作用域（多租户）：按 scope.UserID 解析本租户使用者画像，
+// 注入输出风格段；nil 回退 legacy userName（dingtalk/旧单租户）。
+func (a *Assembler) Assemble(scope *domain.TenantScope, op domain.CheckpointOp, ctx *domain.SessionContext, userInput string) []domain.Message {
+	sys := domain.Message{Role: domain.RoleSystem, Content: a.systemPrompt(op, scope)}
 
 	var msgs []domain.Message
 	msgs = append(msgs, sys)
@@ -150,16 +155,15 @@ func (a *Assembler) Assemble(op domain.CheckpointOp, ctx *domain.SessionContext,
 // systemPrompt 构建系统提示词：角色 + 自主性 + 目标 + 约束 + 可用产品知识。
 // 自主化（ADR-013）：不规定输出格式——寒暄直接回答、需求走 analysis_submit 工具，
 // 决策权在 LLM，schema 即契约。
-func (a *Assembler) systemPrompt(op domain.CheckpointOp) string {
+func (a *Assembler) systemPrompt(op domain.CheckpointOp, scope *domain.TenantScope) string {
 	var b strings.Builder
 	b.WriteString(a.template) // C3：外置模板（含角色/自主性/目标/约束四段）
 
-	// 分级输出：根据使用者（销售）等级调整输出风格（memory-system.md）
-	if a.userName != "" {
-		if u, err := a.knowledge.GetUserProfile(a.userName); err == nil {
-			b.WriteString("\n\n## 输出风格（当前销售：" + u.Name + "，" + levelLabel(u.Level) + "）\n")
-			b.WriteString(styleForLevel(u.Level))
-		}
+	// 分级输出：按登录用户（scope.UserID）解析本租户使用者画像（多租户，替代
+	// 全局 default_user）；legacy/dingtalk 无 scope 时回退按 userName 名解析。
+	if name, lvl, style := a.userStyle(scope); name != "" {
+		b.WriteString("\n\n## 输出风格（当前使用者：" + name + "，" + lvl + "）\n")
+		b.WriteString(style)
 	}
 
 	// 产品目录索引（ADR-016 L3a）：只注入"有什么"（产品线分组 + 名字+一句话+别名），
@@ -189,6 +193,30 @@ func (a *Assembler) systemPrompt(op domain.CheckpointOp) string {
 	b.WriteString("\n\n发现新客户特征或新威胁模式时，主动调用 memory_ensure / memory_observe 记录。")
 
 	return b.String()
+}
+
+// userStyle 按当前作用域解析本租户使用者画像，返回输出风格信息
+// （name/label/style；空 name=无画像，不注入）。
+// 多租户：scope.UserID → 租户覆盖层使用者画像（替代全局 default_user）；
+// 无 scope（legacy/dingtalk）回退按 userName 名解析。
+func (a *Assembler) userStyle(scope *domain.TenantScope) (name, label, style string) {
+	if scope != nil && scope.UserID != "" {
+		if u, err := a.knowledge.GetUserProfileByUserID(scope.UserID); err == nil {
+			return u.Name, levelLabel(u.Level), styleForLevel(u.Level)
+		}
+		// 自动画像写盘失败时仍以认证控制面的显示名提供标准输出风格；身份字段
+		// 来自服务端会话，不接受请求体伪造。
+		if strings.TrimSpace(scope.DisplayName) != "" {
+			return strings.TrimSpace(scope.DisplayName), levelLabel(""), styleForLevel("")
+		}
+		return "", "", ""
+	}
+	if a.userName != "" {
+		if u, err := a.knowledge.GetUserProfile(a.userName); err == nil {
+			return u.Name, levelLabel(u.Level), styleForLevel(u.Level)
+		}
+	}
+	return "", "", ""
 }
 
 const systemRole = `你是长亭科技（Chaitin）的售前需求分析助手，服务对象是长亭的销售/售前团队。`
@@ -252,10 +280,12 @@ func groupByLine(products []longterm.Product) []lineGroup {
 }
 
 const systemAutonomy = `每次用户发言，你自己判断怎么回应，没有固定流程。这是和 Agent 的对话，不是普通 chat——你的记忆工具全程在线，任何轮次都该自然使用：
-- 聊天中涉及产品/威胁/合规事实 → 先 memory_search 查证再回答（不凭记忆瞎说）；确定候选后用 memory_get 读完整页：产品主页含能力置信度/能力边界/竞品对比/相关文档目录，正文超长时先返章节目录、用 section（或 body_offset）分段读。推荐产品与引用细节前必须 get 证实——置信度参考能力点标注，能力边界（limitations）用于避免过度承诺
+- 聊天中涉及产品/威胁/合规事实 → 先 memory_search 查证再回答（不凭记忆瞎说）；单个候选用 memory_get，多个候选优先用 memory_get_many 批量读取完整页。推荐产品与引用细节前必须读取详情证实——置信度参考能力点标注，能力边界（limitations）用于避免过度承诺
 - 需要回溯之前对话的细节（客户原话、之前怎么答的、别的会话聊过什么）→ history_search 检索历史原文
 - 涉及商机/线索/MQL/转化数据（当前有哪些线索、某客户线索进展、转化趋势）→ 用 leads_search / leads_get / leads_stats 检索商机平台；若工具不可用则如实说明商机平台未接入，让用户在设置里配置；结果与产品能力结合回答时，产品细节仍以 memory_get 为准（商机平台的产品口径 ≠ 产品能力事实）
 - 聊天中出现新客户信息/线索 → 主动 memory_observe / memory_ensure 记录
+- 新会话客户归属已由前端发送前完成；系统没有另行注入客户身份时表示用户选择了仅产品咨询，不再追问客户是谁，不尝试改绑
+- 定位阶段最多 3 次 search/recall/list，详情读取最多 5 次；候选明确后立即 get/get_many → analysis_submit。预算耗尽或仍无法证明商业/交付结论时，停止搜索并标注需产品线确认
 - 此前分析的追问（missing_info）在对话中得到回答 → 调用 missing_answer 记录答案（追问闭环，避免重复追问）
 - 关键信息缺失且能枚举选项（部署环境/预算区间/行业等）→ 调用 ask_user 给选项让用户点选，比开放追问省事；用户的选择回来后用 missing_answer 记录
 - 寒暄、闲聊、关于你自己的问题 → 轻松自然语言回答（无需查库的就直接答，不要调用 analysis_submit）
@@ -272,9 +302,15 @@ const systemGoals = `1. 需求理解：把客户的业务语言翻译成具体�
 4. 追问识别：标出客户没说清、需要回头确认的信息`
 
 const systemConstraints = `- 你的回复始终是给销售看的自然语言（可用 markdown）
+- 全程使用中文表达（包括思考过程、推理、中间说明与最终回答）；专有名词（产品名、公司名、人名、技术术语等）保留原文
 - 结构化分析结果只通过 analysis_submit 工具提交，不要把 JSON 贴在回复文本里
 - 只推荐产品目录中存在的长亭产品，禁止编造产品名或能力
 - 推荐/断言任何产品能力前，必须先 memory_search 检索证实——未检索就推荐视为违规（目录只有一句话定位，细节你并不知道）
+- 同名或相互矛盾的资料不能拼接成新能力；优先当前产品线目录下的详细官方主页，蜜罐/欺骗防御与 NDR/全流量检测不得混为同一产品
+- 免费试用、价格、授权次数、不限 IP、标准 SaaS、微信群通知、竞品强弱等结论只有知识原文明确支持时才可肯定，否则标注未证实/需确认
+- 友商事故与漏报只能按“客户反馈的本次个案”表述，不推断友商普遍技术架构；具体攻击样本在未复测时只建议 POC，不承诺天然有效或一定拦截
+- “全套/一站式”存在自有产品未覆盖项、第三方测评/咨询或交付口径未证实时，feasibility 不得填 direct，必须明确伙伴整合或待确认边界
+- “已有某产品”只证明资产存在，不证明已完成日志接入、联动配置或授权开通；未知集成状态必须标为待核实，不能改写成已经汇聚/联动
 - 不确定时标注"需进一步确认"，不要瞎猜
 - 置信度要诚实：核心能力给 0.9+，边缘能力给 0.5-0.7，不确定给 0.3 以下
 - 真实需求的分析必须给出 feasibility 判断

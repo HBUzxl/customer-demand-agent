@@ -3,6 +3,7 @@ package longterm
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"customer-demand-agent/internal/domain"
@@ -61,6 +62,38 @@ description: 下一代 WAF
 	}
 	if _, err := store.GetProduct("不存在"); err == nil {
 		t.Fatal("GetProduct 不存在 should error")
+	}
+}
+
+func TestLoadDuplicateTitlePrefersDeeperAuthoritativePage(t *testing.T) {
+	dir := t.TempDir()
+	writeTestPage(t, dir, "产品记忆", "谛听", `---
+type: product
+title: 谛听
+description: 旧版错误的 NDR 定位
+---
+旧版平铺页`)
+	writeTestPage(t, dir, "产品记忆/端点安全", "谛听", `---
+type: product
+title: 谛听
+description: D-Sensor 欺骗防御系统
+---
+蜜罐与欺骗防御权威页`)
+
+	store := NewWikiStore(dir)
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	e, err := store.GetEntry(string(domain.MemoryProduct), "谛听")
+	if err != nil {
+		t.Fatalf("GetEntry: %v", err)
+	}
+	if !strings.Contains(e.Content, "蜜罐与欺骗防御") || strings.Contains(e.Content, "旧版平铺页") {
+		t.Fatalf("同名冲突应选择更深的产品线权威页，got %q (%s)", e.Content, e.FilePath)
+	}
+	p, err := store.GetProduct("谛听")
+	if err != nil || p.Description != "D-Sensor 欺骗防御系统" {
+		t.Fatalf("类型化产品索引也应指向权威页，got %+v, err=%v", p, err)
 	}
 }
 
@@ -174,5 +207,35 @@ Q: 误报怎么办？`)
 	// 无子文档的产品返回空
 	if len(store.ListChildren("不存在的产品")) != 0 {
 		t.Fatal("无子文档应返回空")
+	}
+}
+
+func TestNewUserEntryPersistsIdentityBinding(t *testing.T) {
+	dir := t.TempDir()
+	w := NewWikiStore(dir)
+	if err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	entry := NewUserEntry(UserProfile{
+		Name: "李四", UserID: "user-identity-1", Level: "高级", Expertise: []string{"流量安全"},
+	}, "lisi@example.com", "分析人员")
+	if err := w.UpsertEntry(entry); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded := NewWikiStore(dir)
+	if err := reloaded.Load(); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := reloaded.GetUserProfileByUserID("user-identity-1")
+	if err != nil {
+		t.Fatalf("重载后应按 user_id 找到使用者画像: %v", err)
+	}
+	if profile.Name != "李四" || profile.Level != "高级" {
+		t.Fatalf("使用者画像字段丢失: %+v", profile)
+	}
+	got, err := reloaded.GetEntry("user", "李四")
+	if err != nil || got.UserID != "user-identity-1" {
+		t.Fatalf("通用记忆视图应透出 user_id，got=%+v err=%v", got, err)
 	}
 }

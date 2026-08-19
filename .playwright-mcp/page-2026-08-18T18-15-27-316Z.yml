@@ -1,0 +1,76 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 长
+        - generic [ref=e7]: 需求分析 · 长亭
+      - button "切换侧栏" [ref=e8] [cursor=pointer]:
+        - img [ref=e9]
+    - button "新建对话" [ref=e11] [cursor=pointer]:
+      - img [ref=e12]
+      - generic [ref=e14]: 新建对话
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: 最近对话
+        - link "全部" [ref=e18] [cursor=pointer]:
+          - /url: /history
+      - textbox "搜索会话…" [ref=e19]
+      - generic [ref=e20]: 暂无对话
+    - generic [ref=e21]:
+      - link "商机面板" [ref=e22] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e23]
+        - generic [ref=e25]: 商机面板
+      - link "记忆库" [ref=e26] [cursor=pointer]:
+        - /url: /memory
+        - img [ref=e27]
+        - generic [ref=e29]: 记忆库
+      - link "成员管理" [ref=e30] [cursor=pointer]:
+        - /url: /members
+        - img [ref=e31]
+        - generic [ref=e33]: 成员管理
+      - link "用户管理" [ref=e34] [cursor=pointer]:
+        - /url: /admin/users
+        - img [ref=e35]
+        - generic [ref=e37]: 用户管理
+      - link "观测台" [ref=e38] [cursor=pointer]:
+        - /url: /observe
+        - img [ref=e39]
+        - generic [ref=e41]: 观测台
+      - link "设置" [ref=e42] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e43]
+        - generic [ref=e45]: 设置
+      - generic [ref=e46]:
+        - generic "平台管理员 · admin@chaitin.com" [ref=e47]:
+          - generic [ref=e48]: 平
+          - generic [ref=e49]:
+            - generic [ref=e50]: 平台管理员
+            - generic [ref=e51]:
+              - text: Legacy 存量工作空间
+              - generic "租户 ID：21fc7cd11e3f5313758a5569eb8a9400" [ref=e52]: · 21fc7cd1
+              - text: owner平台管理
+        - generic [ref=e53]:
+          - button "改密" [ref=e54] [cursor=pointer]
+          - button "退出" [ref=e55] [cursor=pointer]
+  - main [ref=e56]:
+    - generic [ref=e58]:
+      - heading "需求分析助手" [level=1] [ref=e59]
+      - paragraph [ref=e60]: 粘贴客户沟通原文，或直接描述场景。我会理解需求、匹配长亭产品、判断可行性——也可以直接跟我聊。
+      - generic [ref=e62]:
+        - textbox "输入消息，回车发送（Shift+回车换行）…" [ref=e63]
+        - button "发送" [disabled] [ref=e64]:
+          - img [ref=e65]
+      - generic [ref=e67]:
+        - button "商机 · 高价值线索 查一下当前的 MQL 高价值线索，挑一条最值得跟的，看看详情，结合我们产品能力给个跟进建议" [ref=e68] [cursor=pointer]:
+          - generic [ref=e69]: 商机 · 高价值线索
+          - generic [ref=e70]: 查一下当前的 MQL 高价值线索，挑一条最值得跟的，看看详情，结合我们产品能力给个跟进建议
+        - button "电商 · CC 攻击 大促网站被 CC 打慢，过等保二级" [ref=e71] [cursor=pointer]:
+          - generic [ref=e72]: 电商 · CC 攻击
+          - generic [ref=e73]: 大促网站被 CC 打慢，过等保二级
+        - button "政务 · 挂马篡改 官网被挂马，要过等保三级" [ref=e74] [cursor=pointer]:
+          - generic [ref=e75]: 政务 · 挂马篡改
+          - generic [ref=e76]: 官网被挂马，要过等保三级
+        - button "金融 · API 滥用 接口被恶意调用，数据泄露风险" [ref=e77] [cursor=pointer]:
+          - generic [ref=e78]: 金融 · API 滥用
+          - generic [ref=e79]: 接口被恶意调用，数据泄露风险

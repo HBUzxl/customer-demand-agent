@@ -30,7 +30,7 @@ func TestConfigLeadManagerGetMasked(t *testing.T) {
 	}
 
 	// PUT 配置 key → GET 掩码
-	_, _ = do(t, ts, "PUT", "/api/config", map[string]any{
+	_, _ = do(t, ts, "PUT", "/api/platform/config", map[string]any{
 		"lead_manager": map[string]any{
 			"enabled": true, "base_url": "http://mql.internal/mql", "api_key": "lm_pat_secret",
 		},
@@ -58,7 +58,7 @@ func TestConfigLeadManagerPutPartial(t *testing.T) {
 	ts, _ := setupServer(t)
 
 	// 1. 仅 PUT lead_manager（不带 models）→ 模型应保留
-	code, out := do(t, ts, "PUT", "/api/config", map[string]any{
+	code, out := do(t, ts, "PUT", "/api/platform/config", map[string]any{
 		"lead_manager": map[string]any{"enabled": true, "api_key": "lm_pat_k1"},
 	})
 	if code != 200 {
@@ -74,7 +74,7 @@ func TestConfigLeadManagerPutPartial(t *testing.T) {
 	}
 
 	// 2. 再 PUT：key 留空 → 保留已存 key；enabled 关闭
-	_, out = do(t, ts, "PUT", "/api/config", map[string]any{
+	_, out = do(t, ts, "PUT", "/api/platform/config", map[string]any{
 		"lead_manager": map[string]any{"enabled": false, "api_key": ""},
 	})
 	lm := out["lead_manager"].(map[string]any)
@@ -87,7 +87,7 @@ func TestConfigLeadManagerPutPartial(t *testing.T) {
 
 	// 3. 回写文件确实包含 lead_manager（api_key 落盘明文——文件本就是 0600 私密）
 	// setupServer 的 config.json 在临时目录；通过 GET console 再验证 has_key
-	_, out = do(t, ts, "GET", "/api/console/config", nil)
+	_, out = do(t, ts, "GET", "/api/platform/config", nil)
 	clm, ok := out["lead_manager"].(map[string]any)
 	if !ok {
 		t.Fatal("console config 应含 lead_manager")
@@ -107,7 +107,7 @@ func TestConfigLeadManagerPutPartial(t *testing.T) {
 // TestConfigLeadManagerBadURL：非法 base_url → 400 且不落盘。
 func TestConfigLeadManagerBadURL(t *testing.T) {
 	ts, _ := setupServer(t)
-	code, _ := do(t, ts, "PUT", "/api/config", map[string]any{
+	code, _ := do(t, ts, "PUT", "/api/platform/config", map[string]any{
 		"lead_manager": map[string]any{"enabled": true, "base_url": "ftp://bad"},
 	})
 	if code != 400 {
@@ -129,7 +129,7 @@ func TestConfigLeadManagerPersistsToFile(t *testing.T) {
 	_ = os.WriteFile(cfgFile, []byte(`{"models":[{"name":"default","endpoint":"http://localhost:1","api_key":"k","model":"m","temperature":0.3,"max_tokens":8}],"router":{"default":"default","routes":{},"fallback":{"max_retries":1,"backoff_base_ms":10,"chain":null}}}`), 0o600)
 
 	ts2, _ := setupServerWithConfig(t, cfgFile)
-	_, out := do(t, ts2, "PUT", "/api/config", map[string]any{
+	_, out := do(t, ts2, "PUT", "/api/platform/config", map[string]any{
 		"lead_manager": map[string]any{"enabled": true, "api_key": "lm_pat_file"},
 	})
 	if out["lead_manager"] == nil {

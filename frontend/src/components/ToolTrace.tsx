@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { memoryGet, reviewApprove, reviewReject } from "../api/client";
+import Icon from "./Icon";
 
 /**
  * 工具调用轨迹渲染（流式 + 回放共用一条路径）。
@@ -12,9 +14,8 @@ export interface ToolTrace {
   tool: string;
   params: string;
   result?: string;
+  cached?: boolean;
 }
-
-const API_BASE = "/api";
 
 // ── 工具元数据：名称、中文标签、图标 ──────────────────────────────
 
@@ -101,7 +102,7 @@ function JsonNode({ k, v, depth }: { k?: string; v: unknown; depth: number }) {
       {k !== undefined && (
         <div className="jv-line" style={{ paddingLeft: depth * 12 }}>
           <button className="jv-toggle" onClick={() => setOpen((x) => !x)}>
-            {open ? "▾" : "▸"}
+            <Icon name={open ? "chevron-down" : "chevron-right"} size={12} />
           </button>
           <span className="jv-key">{k}</span>:{" "}
           {Array.isArray(v) ? `[${entries.length}]` : `{${entries.length}}`}
@@ -144,7 +145,17 @@ function MemResult({ data }: { data: unknown }) {
   return (
     <div className="tt-mem">
       <button className="tt-mem-count" onClick={() => setOpen((x) => !x)}>
-        {count} 条命中{items.length > 1 ? (open ? " ▴收起" : ` ▸展开全部 ${items.length} 条`) : ""}
+        {count} 条命中
+        {items.length > 1 && (
+          <span style={{ marginLeft: 4 }}>
+            <Icon
+              name={open ? "chevron-up" : "chevron-down"}
+              size={11}
+              style={{ marginRight: 2 }}
+            />
+            {open ? "收起" : `展开全部 ${items.length} 条`}
+          </span>
+        )}
       </button>
       {shown.map((it, i) => (
         <div key={i} className="tt-mem-item">
@@ -192,8 +203,7 @@ function ReviewCard({ type, title }: { type: string; title: string }) {
   const [busy, setBusy] = useState(false);
   // 回放/刷新恢复：挂载时拉条目当前状态（已审过的不重复打扰）
   useEffect(() => {
-    fetch(`${API_BASE}/memory/${type}/${encodeURIComponent(title)}`)
-      .then((r) => (r.ok ? r.json() : null))
+    memoryGet(type, title)
       .then((e) => {
         if (e?.status === "verified") setState("approved");
         else if (e?.status === "pending" || e?.status === "pending_review") setState("pending");
@@ -203,11 +213,8 @@ function ReviewCard({ type, title }: { type: string; title: string }) {
   async function act(approve: boolean) {
     setBusy(true);
     try {
-      const res = await fetch(
-        `${API_BASE}/review/${type}/${encodeURIComponent(title)}/${approve ? "approve" : "reject"}`,
-        { method: "POST" },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (approve) await reviewApprove(type, title);
+      else await reviewReject(type, title);
       setState(approve ? "approved" : "rejected");
     } catch {
       /* 失败保持 pending 可重试 */
@@ -215,8 +222,18 @@ function ReviewCard({ type, title }: { type: string; title: string }) {
       setBusy(false);
     }
   }
-  if (state === "approved") return <div className="rv-done ok">✓ 已通过，知识已生效</div>;
-  if (state === "rejected") return <div className="rv-done no">✗ 已拒绝（归档）</div>;
+  if (state === "approved")
+    return (
+      <div className="rv-done ok">
+        <Icon name="check" size={12} /> 已通过，知识已生效
+      </div>
+    );
+  if (state === "rejected")
+    return (
+      <div className="rv-done no">
+        <Icon name="cross" size={12} /> 已拒绝（归档）
+      </div>
+    );
   if (state === "ignored") return <div className="rv-done">已忽略</div>;
   return (
     <div className="rv-card">
@@ -289,6 +306,7 @@ function ToolStep({ trace, last }: { trace: ToolTrace; last: boolean }) {
           {pType && <span className={`tt-type t-${pType}`}>{TYPE_LABEL[pType] || pType}</span>}
           {pQuery && <span className="tt-query">“{pQuery}”</span>}
           {pTitle && !pQuery && <span className="tt-query">“{pTitle}”</span>}
+          {trace.cached && <span className="tt-hint">已复用本轮结果</span>}
           {isAnalysis && <span className="tt-hint">生成下方分析卡片</span>}
         </div>
         {/* 语义结果优先；未知形状兜底 JSON 树 */}

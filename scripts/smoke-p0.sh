@@ -18,7 +18,7 @@ fail() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 DB="${CDA_HISTORY_DB:-}"
 if [ -z "$DB" ]; then
   # 从运行实例取真实库路径（实例配置决定——XDG 或显式 ./data）
-  DB=$($CURL -s "$BASE/api/console/config" | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['history_db'])" 2>/dev/null || true)
+  DB=$($CURL -s "$BASE/api/platform/config" | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['history_db'])" 2>/dev/null || true)
 fi
 if [ -z "$DB" ] || [ ! -f "$DB" ]; then
   DB="data/history.db" # 兜底：实例不可达时项目内默认

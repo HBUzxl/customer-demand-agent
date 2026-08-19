@@ -1,0 +1,160 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 长
+        - generic [ref=e7]: 需求分析 · 长亭
+      - button "切换侧栏" [ref=e8] [cursor=pointer]:
+        - img [ref=e9]
+    - button "新建对话" [ref=e11] [cursor=pointer]:
+      - img [ref=e12]
+      - generic [ref=e14]: 新建对话
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: 最近对话
+        - link "全部" [ref=e18] [cursor=pointer]:
+          - /url: /history
+      - textbox "搜索会话…" [ref=e19]
+      - button "测试企业官网挂马需过等保三级 测试企业 刚刚 更多操作 测试企业官网挂马需过等保三级" [ref=e20] [cursor=pointer]:
+        - generic [ref=e21]: 测试企业官网挂马需过等保三级
+        - generic [ref=e22]:
+          - generic "测试企业" [ref=e23]
+          - text: 刚刚
+        - button "更多操作 测试企业官网挂马需过等保三级" [ref=e24]:
+          - img [ref=e25]
+      - button "官网挂马需过等保三级 刚刚 更多操作 官网挂马需过等保三级" [ref=e27] [cursor=pointer]:
+        - generic [ref=e28]: 官网挂马需过等保三级
+        - generic [ref=e29]: 刚刚
+        - button "更多操作 官网挂马需过等保三级" [ref=e30]:
+          - img [ref=e31]
+      - button "官网挂马需过等保三级 刚刚 更多操作 官网挂马需过等保三级" [ref=e33] [cursor=pointer]:
+        - generic [ref=e34]: 官网挂马需过等保三级
+        - generic [ref=e35]: 刚刚
+        - button "更多操作 官网挂马需过等保三级" [ref=e36]:
+          - img [ref=e37]
+      - button "官网被挂马需过等保三级 刚刚 更多操作 官网被挂马需过等保三级" [ref=e39] [cursor=pointer]:
+        - generic [ref=e40]: 官网被挂马需过等保三级
+        - generic [ref=e41]: 刚刚
+        - button "更多操作 官网被挂马需过等保三级" [ref=e42]:
+          - img [ref=e43]
+      - button "跨境电商WAF反爬虫评估 刚刚 更多操作 跨境电商WAF反爬虫评估" [ref=e45] [cursor=pointer]:
+        - generic [ref=e46]: 跨境电商WAF反爬虫评估
+        - generic [ref=e47]: 刚刚
+        - button "更多操作 跨境电商WAF反爬虫评估" [ref=e48]:
+          - img [ref=e49]
+      - button "不用了 刚刚 更多操作 不用了" [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: 不用了
+        - generic [ref=e53]: 刚刚
+        - button "更多操作 不用了" [ref=e54]:
+          - img [ref=e55]
+      - button "官网被挂马，要过等保三级 3 天前 更多操作 官网被挂马，要过等保三级" [ref=e57] [cursor=pointer]:
+        - generic [ref=e58]: 官网被挂马，要过等保三级
+        - generic [ref=e59]: 3 天前
+        - button "更多操作 官网被挂马，要过等保三级" [ref=e60]:
+          - img [ref=e61]
+      - button "大促网站CC攻击应急与等保合规 3 天前 更多操作 大促网站CC攻击应急与等保合规" [ref=e63] [cursor=pointer]:
+        - generic [ref=e64]: 大促网站CC攻击应急与等保合规
+        - generic [ref=e65]: 3 天前
+        - button "更多操作 大促网站CC攻击应急与等保合规" [ref=e66]:
+          - img [ref=e67]
+      - button "大促网站被 CC 打慢，过等保二级 3 天前 更多操作 大促网站被 CC 打慢，过等保二级" [ref=e69] [cursor=pointer]:
+        - generic [ref=e70]: 大促网站被 CC 打慢，过等保二级
+        - generic [ref=e71]: 3 天前
+        - button "更多操作 大促网站被 CC 打慢，过等保二级" [ref=e72]:
+          - img [ref=e73]
+    - generic [ref=e75]:
+      - link "商机面板" [ref=e76] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e77]
+        - generic [ref=e79]: 商机面板
+      - link "记忆库" [ref=e80] [cursor=pointer]:
+        - /url: /memory
+        - img [ref=e81]
+        - generic [ref=e83]: 记忆库
+      - link "成员管理" [ref=e84] [cursor=pointer]:
+        - /url: /members
+        - img [ref=e85]
+        - generic [ref=e87]: 成员管理
+      - link "用户管理" [ref=e88] [cursor=pointer]:
+        - /url: /admin/users
+        - img [ref=e89]
+        - generic [ref=e91]: 用户管理
+      - link "观测台" [ref=e92] [cursor=pointer]:
+        - /url: /observe
+        - img [ref=e93]
+        - generic [ref=e95]: 观测台
+      - link "设置" [ref=e96] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e97]
+        - generic [ref=e99]: 设置
+      - generic [ref=e100]:
+        - generic "平台管理员 · admin@chaitin.com" [ref=e101]:
+          - generic [ref=e102]: 平
+          - generic [ref=e103]:
+            - generic [ref=e104]: 平台管理员
+            - generic [ref=e105]:
+              - text: Legacy 存量工作空间
+              - generic "租户 ID：21fc7cd11e3f5313758a5569eb8a9400" [ref=e106]: · 21fc7cd1
+              - text: owner平台管理
+        - generic [ref=e107]:
+          - button "改密" [ref=e108] [cursor=pointer]
+          - button "退出" [ref=e109] [cursor=pointer]
+  - main [ref=e110]:
+    - generic [ref=e111]:
+      - generic [ref=e113]:
+        - generic [ref=e114]:
+          - generic [ref=e115]: 你好，简单打个招呼
+          - generic [ref=e116]:
+            - button "⧉" [ref=e117] [cursor=pointer]
+            - button "编辑后重发" [ref=e118] [cursor=pointer]:
+              - img [ref=e119]
+        - generic [ref=e121]:
+          - button "⧉" [ref=e122] [cursor=pointer]
+          - generic [ref=e123]: 需求分析助手
+          - generic [ref=e124]:
+            - generic [ref=e125]:
+              - paragraph [ref=e126]: 你好！我是长亭科技的售前需求分析助手 👋
+              - paragraph [ref=e127]: 销售/售前团队日常可以找我做这些事：
+              - list [ref=e128]:
+                - listitem [ref=e129]:
+                  - strong [ref=e130]: 需求翻译
+                  - text: ：把客户原话（比如"网站老被扫""怕被勒索"）翻译成具体的安全需求
+                - listitem [ref=e131]:
+                  - strong [ref=e132]: 产品匹配
+                  - text: ：对照长亭产品库，标出能覆盖需求的产品、置信度和推荐话术
+                - listitem [ref=e133]:
+                  - strong [ref=e134]: 可行性判断
+                  - text: ：直接能接 / 需要定制 / 需整合第三方 / 不建议接
+                - listitem [ref=e135]:
+                  - strong [ref=e136]: 追问识别
+                  - text: ：标出客户还没说清、需要回头确认的信息
+                - listitem [ref=e137]:
+                  - strong [ref=e138]: 客户与商机管理
+                  - text: ：记录客户画像、回溯历史对话
+              - paragraph [ref=e139]: 你直接甩客户需求原文、场景描述过来就行，我来帮你分析。也可以先随便聊聊产品、威胁、合规相关的问题。
+              - paragraph [ref=e140]: 有什么可以帮你的？
+            - generic [ref=e141]:
+              - generic [ref=e142]:
+                - button "继续" [ref=e143] [cursor=pointer]
+                - button "不用了" [ref=e144] [cursor=pointer]
+              - generic [ref=e145]:
+                - textbox "或直接输入回复…" [ref=e146]
+                - button "发送" [disabled] [ref=e147]
+        - generic [ref=e148]:
+          - generic [ref=e149]: 不用了
+          - generic [ref=e150]:
+            - button "⧉" [ref=e151] [cursor=pointer]
+            - button "编辑后重发" [ref=e152] [cursor=pointer]:
+              - img [ref=e153]
+        - generic [ref=e155]:
+          - button "⧉" [ref=e156] [cursor=pointer]
+          - generic [ref=e157]: 需求分析助手
+          - generic [ref=e159]:
+            - paragraph [ref=e160]: 好的，没问题！👋 需要的时候随时找我，直接甩客户需求原文或场景描述过来就行。
+            - paragraph [ref=e161]: 祝顺利～
+      - generic [ref=e163]:
+        - generic [ref=e164]:
+          - textbox "输入消息，回车发送（Shift+回车换行）…" [ref=e165]
+          - button "发送" [disabled] [ref=e166]:
+            - img [ref=e167]
+        - generic [ref=e169]: 会话 sanity-1 · 回车发送

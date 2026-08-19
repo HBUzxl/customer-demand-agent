@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { MemoryEntry } from "../types";
 
-const TYPES = ["product", "threat", "compliance", "industry", "customer", "user"];
+// 产品由平台系统知识维护，使用者由租户成员身份自动生成；通用表单不允许
+// 手工创建这两类条目，避免伪造系统产品或“幽灵使用者”。
+const TYPES = ["threat", "compliance", "industry", "customer"];
 const typeLabel: Record<string, string> = {
   product: "产品",
   threat: "威胁",
@@ -20,6 +22,8 @@ export interface MemoryValues {
   aliases: string;
 }
 
+// 表单转换器与组件共用 MemoryValues 契约，供编辑页复用。
+// eslint-disable-next-line react-refresh/only-export-components
 export function toValues(e: Partial<MemoryEntry>): MemoryValues {
   return {
     type: e.type || "customer",
@@ -31,6 +35,7 @@ export function toValues(e: Partial<MemoryEntry>): MemoryValues {
   };
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function fromValues(
   v: MemoryValues,
 ): Partial<MemoryEntry> & { type: string; title: string } {
@@ -57,11 +62,13 @@ export default function MemoryForm({
   submitting,
   onSubmit,
   onCancel,
+  lockIdentity = false,
 }: {
   initial: MemoryValues;
   submitting: boolean;
   onSubmit: (v: MemoryValues) => void;
   onCancel: () => void;
+  lockIdentity?: boolean;
 }) {
   const [v, setV] = useState<MemoryValues>(initial);
   const [formErr, setFormErr] = useState("");
@@ -80,8 +87,12 @@ export default function MemoryForm({
       <div className="row" style={{ marginBottom: 12 }}>
         <div style={{ flex: "0 0 150px" }}>
           <label>类型</label>
-          <select value={v.type} onChange={(e) => set({ type: e.target.value })}>
-            {TYPES.map((t) => (
+          <select
+            value={v.type}
+            disabled={lockIdentity}
+            onChange={(e) => set({ type: e.target.value })}
+          >
+            {(lockIdentity && !TYPES.includes(v.type) ? [v.type] : TYPES).map((t) => (
               <option key={t} value={t}>
                 {typeLabel[t]}
               </option>
@@ -92,6 +103,7 @@ export default function MemoryForm({
           <label>标题（唯一标识）</label>
           <input
             value={v.title}
+            disabled={lockIdentity}
             onChange={(e) => set({ title: e.target.value })}
             placeholder="如 雷池 / CC攻击 / 某客户"
           />
@@ -145,7 +157,7 @@ export default function MemoryForm({
           取消
         </button>
         <span className="faint mono" style={{ fontSize: 12 }}>
-          人工写入，跳过 AI 权限校验
+          保存操作会执行后端角色与记忆类型权限校验
         </span>
       </div>
     </div>

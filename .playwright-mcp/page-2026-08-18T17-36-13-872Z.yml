@@ -1,0 +1,100 @@
+- generic [ref=e2]:
+  - complementary [ref=e25]:
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - generic [ref=e28]: 长
+        - generic [ref=e29]: 需求分析 · 长亭
+      - button "切换侧栏" [ref=e30] [cursor=pointer]:
+        - img [ref=e31]
+    - button "新建对话" [ref=e33] [cursor=pointer]:
+      - img [ref=e34]
+      - generic [ref=e36]: 新建对话
+    - generic [ref=e37]:
+      - generic [ref=e38]:
+        - generic [ref=e39]: 最近对话
+        - link "全部" [ref=e40] [cursor=pointer]:
+          - /url: /history
+      - textbox "搜索会话…" [ref=e41]
+      - button "跨境电商WAF反爬虫评估 刚刚 更多操作 跨境电商WAF反爬虫评估" [ref=e42] [cursor=pointer]:
+        - generic [ref=e43]: 跨境电商WAF反爬虫评估
+        - generic [ref=e44]: 刚刚
+        - button "更多操作 跨境电商WAF反爬虫评估" [ref=e45]:
+          - img [ref=e46]
+      - button "不用了 刚刚 更多操作 不用了" [ref=e48] [cursor=pointer]:
+        - generic [ref=e49]: 不用了
+        - generic [ref=e50]: 刚刚
+        - button "更多操作 不用了" [ref=e51]:
+          - img [ref=e52]
+      - button "官网被挂马，要过等保三级 3 天前 更多操作 官网被挂马，要过等保三级" [ref=e54] [cursor=pointer]:
+        - generic [ref=e55]: 官网被挂马，要过等保三级
+        - generic [ref=e56]: 3 天前
+        - button "更多操作 官网被挂马，要过等保三级" [ref=e57]:
+          - img [ref=e58]
+      - button "大促网站CC攻击应急与等保合规 3 天前 更多操作 大促网站CC攻击应急与等保合规" [ref=e60] [cursor=pointer]:
+        - generic [ref=e61]: 大促网站CC攻击应急与等保合规
+        - generic [ref=e62]: 3 天前
+        - button "更多操作 大促网站CC攻击应急与等保合规" [ref=e63]:
+          - img [ref=e64]
+      - button "大促网站被 CC 打慢，过等保二级 3 天前 更多操作 大促网站被 CC 打慢，过等保二级" [ref=e66] [cursor=pointer]:
+        - generic [ref=e67]: 大促网站被 CC 打慢，过等保二级
+        - generic [ref=e68]: 3 天前
+        - button "更多操作 大促网站被 CC 打慢，过等保二级" [ref=e69]:
+          - img [ref=e70]
+    - generic [ref=e72]:
+      - link "商机面板" [ref=e73] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e74]
+        - generic [ref=e76]: 商机面板
+      - link "记忆库" [ref=e77] [cursor=pointer]:
+        - /url: /memory
+        - img [ref=e78]
+        - generic [ref=e80]: 记忆库
+      - link "成员管理" [ref=e81] [cursor=pointer]:
+        - /url: /members
+        - img [ref=e82]
+        - generic [ref=e84]: 成员管理
+      - link "用户管理" [ref=e85] [cursor=pointer]:
+        - /url: /admin/users
+        - img [ref=e86]
+        - generic [ref=e88]: 用户管理
+      - link "观测台" [ref=e89] [cursor=pointer]:
+        - /url: /observe
+        - img [ref=e90]
+        - generic [ref=e92]: 观测台
+      - link "设置" [ref=e93] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e94]
+        - generic [ref=e96]: 设置
+      - generic [ref=e97]:
+        - generic "平台管理员 · admin@chaitin.com" [ref=e98]:
+          - generic [ref=e99]: 平
+          - generic [ref=e100]:
+            - generic [ref=e101]: 平台管理员
+            - generic [ref=e102]:
+              - text: Legacy 存量工作空间
+              - generic "租户 ID：21fc7cd11e3f5313758a5569eb8a9400" [ref=e103]: · 21fc7cd1
+              - text: owner平台管理
+        - generic [ref=e104]:
+          - button "改密" [ref=e105] [cursor=pointer]
+          - button "退出" [ref=e106] [cursor=pointer]
+  - main [ref=e107]:
+    - generic [ref=e109]:
+      - heading "需求分析助手" [level=1] [ref=e110]
+      - paragraph [ref=e111]: 粘贴客户沟通原文，或直接描述场景。我会理解需求、匹配长亭产品、判断可行性——也可以直接跟我聊。
+      - generic [ref=e113]:
+        - textbox "输入消息，回车发送（Shift+回车换行）…" [ref=e114]
+        - button "发送" [disabled] [ref=e115]:
+          - img [ref=e116]
+      - generic [ref=e118]:
+        - button "商机 · 高价值线索 查一下当前的 MQL 高价值线索，挑一条最值得跟的，看看详情，结合我们产品能力给个跟进建议" [ref=e119] [cursor=pointer]:
+          - generic [ref=e120]: 商机 · 高价值线索
+          - generic [ref=e121]: 查一下当前的 MQL 高价值线索，挑一条最值得跟的，看看详情，结合我们产品能力给个跟进建议
+        - button "电商 · CC 攻击 大促网站被 CC 打慢，过等保二级" [ref=e122] [cursor=pointer]:
+          - generic [ref=e123]: 电商 · CC 攻击
+          - generic [ref=e124]: 大促网站被 CC 打慢，过等保二级
+        - button "政务 · 挂马篡改 官网被挂马，要过等保三级" [ref=e125] [cursor=pointer]:
+          - generic [ref=e126]: 政务 · 挂马篡改
+          - generic [ref=e127]: 官网被挂马，要过等保三级
+        - button "金融 · API 滥用 接口被恶意调用，数据泄露风险" [ref=e128] [cursor=pointer]:
+          - generic [ref=e129]: 金融 · API 滥用
+          - generic [ref=e130]: 接口被恶意调用，数据泄露风险

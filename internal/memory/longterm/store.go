@@ -22,6 +22,12 @@ type WikiStore struct {
 	mu      sync.RWMutex
 	entries map[domain.MemoryType]map[string]*Entry // type → title → entry（排除 archived）
 
+	// 待审修订（P0-07）：type → 父条目 title → pending revision。AI 对已验证
+	// 受控知识（threat/compliance/industry）的实质修改不直接覆盖活跃条目，而是
+	// 生成 pending revision 挂在这里——原 verified 版本继续对 Agent 生效，
+	// 人工批准后原子替换、拒绝则丢弃。文件形态 <title>.revision-<ts>.md。
+	revisions map[domain.MemoryType]map[string]*Entry
+
 	// 类型化索引（启动时构建，便于 AllKnowledge / 结构化检索）
 	products    map[string]*Product
 	threats     map[string]*ThreatType
@@ -44,6 +50,7 @@ func NewWikiStore(dir string) *WikiStore {
 	return &WikiStore{
 		dir:         dir,
 		entries:     make(map[domain.MemoryType]map[string]*Entry),
+		revisions:   make(map[domain.MemoryType]map[string]*Entry),
 		products:    make(map[string]*Product),
 		threats:     make(map[string]*ThreatType),
 		compliances: make(map[string]*ComplianceRequirement),
@@ -84,6 +91,11 @@ func (w *WikiStore) Load() error {
 		if strings.Contains(filepath.Base(path), ".superseded-") {
 			return nil
 		}
+		// P0-07 待审修订（.revision-*.md）：不进活跃索引（原 verified 版本继续生效），
+		// 挂在 revisions 表供审核队列/审批。
+		if strings.Contains(filepath.Base(path), ".revision-") {
+			return w.loadRevisionFile(path)
+		}
 		raw, rErr := os.ReadFile(path)
 		if rErr != nil {
 			fmt.Fprintf(os.Stderr, "[wiki] 跳过 %s: %v\n", path, rErr)
@@ -111,6 +123,27 @@ func (w *WikiStore) Load() error {
 	return nil
 }
 
+// loadRevisionFile 加载一份 pending revision 文件（P0-07）到 revisions 表。
+// 启动期单线程调用，无需加锁。
+func (w *WikiStore) loadRevisionFile(path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	entry, pErr := parsePage(string(raw))
+	if pErr != nil || entry.Title == "" {
+		fmt.Fprintf(os.Stderr, "[wiki] 跳过修订 %s: %v\n", path, pErr)
+		return nil
+	}
+	entry.FilePath = path
+	entry.Status = StatusPendingReview
+	if w.revisions[entry.Type] == nil {
+		w.revisions[entry.Type] = make(map[string]*Entry)
+	}
+	w.revisions[entry.Type][entry.Title] = entry
+	return nil
+}
+
 // frontmatter 捕获所有可能字段的超集（按 type 取用）。
 type frontmatter struct {
 	Type    string   `yaml:"type"`
@@ -125,6 +158,9 @@ type frontmatter struct {
 	ValidAt      string `yaml:"valid_at"`
 	InvalidAt    string `yaml:"invalid_at"`
 	SupersededBy string `yaml:"superseded_by"`
+
+	// 修订（P0-07）：revision_of 标记这是某已验证条目的待审修订（批准后原子替换）。
+	RevisionOf string `yaml:"revision_of"`
 
 	// product
 	FullName     string       `yaml:"full_name"`
@@ -159,7 +195,61 @@ type frontmatter struct {
 	Level            string   `yaml:"level"`
 	Expertise        []string `yaml:"expertise"`
 	Accuracy         float64  `yaml:"accuracy"`
+	UserID           string   `yaml:"user_id"`
 	UpdatedAt        string   `yaml:"updated_at"`
+}
+
+// NewCustomerEntry 从租户成员登记表单构造一条结构化客户画像。专用构造器
+// 避免 HTTP 层依赖私有 frontmatter，同时保证行业/规模/现有安全建设等字段可被
+// GetCustomerProfile 和 Agent 客户上下文正确读取，而不只是散落在 Markdown 正文。
+func NewCustomerEntry(p CustomerProfile) *Entry {
+	content := strings.TrimSpace(p.Notes)
+	return &Entry{
+		Type:    domain.MemoryCustomer,
+		Title:   strings.TrimSpace(p.Name),
+		Content: content,
+		Tags:    append([]string(nil), p.Tags...),
+		Summary: strings.TrimSpace(p.Industry),
+		Status:  StatusVerified,
+		typed: &frontmatter{
+			Type:             string(domain.MemoryCustomer),
+			Title:            strings.TrimSpace(p.Name),
+			Tags:             append([]string(nil), p.Tags...),
+			Industry:         strings.TrimSpace(p.Industry),
+			Scale:            strings.TrimSpace(p.Scale),
+			TechStack:        append([]string(nil), p.TechStack...),
+			ExistingSecurity: append([]string(nil), p.ExistingSecurity...),
+			PainPoints:       append([]string(nil), p.PainPoints...),
+			ProcurementPref:  strings.TrimSpace(p.ProcurementPref),
+			Notes:            content,
+			UpdatedAt:        time.Now().UTC().Format(time.RFC3339),
+		},
+	}
+}
+
+// NewUserEntry 为租户成员创建身份绑定的使用者画像。user_id 是稳定关联键；
+// 标题只是人类可读名称，不再通过全局 default_user 选择当前销售。
+func NewUserEntry(p UserProfile, email, role string) *Entry {
+	name := strings.TrimSpace(p.Name)
+	content := "平台成员自动生成的使用者画像。Agent 会按当前登录用户自动加载，无需配置“当前销售”。"
+	return &Entry{
+		Type:    domain.MemoryUser,
+		Title:   name,
+		UserID:  strings.TrimSpace(p.UserID),
+		Content: content,
+		Tags:    append([]string(nil), p.Tags...),
+		Summary: strings.Trim(strings.TrimSpace(role)+" · "+strings.TrimSpace(email), " ·"),
+		Status:  StatusVerified,
+		typed: &frontmatter{
+			Type:      string(domain.MemoryUser),
+			Title:     name,
+			Tags:      append([]string(nil), p.Tags...),
+			UserID:    strings.TrimSpace(p.UserID),
+			Level:     p.Level,
+			Expertise: append([]string(nil), p.Expertise...),
+			Accuracy:  p.Accuracy,
+		},
+	}
 }
 
 // parsePage 解析一份 Markdown 页面为 Entry（+ 类型化字段暂存于 frontmatter）。
@@ -183,6 +273,7 @@ func parsePage(raw string) (*Entry, error) {
 	e := &Entry{
 		Type:    mt,
 		Title:   f.Title,
+		UserID:  f.UserID,
 		Aliases: f.Aliases,
 		Tags:    f.Tags,
 		Summary: f.Summary,
@@ -199,6 +290,8 @@ func parsePage(raw string) (*Entry, error) {
 	}
 	// P6 时效：历史版本链（superseded 归档）的时间字段透出
 	e.ValidAt, e.InvalidAt, e.SupersededBy = f.ValidAt, f.InvalidAt, f.SupersededBy
+	// P0-07：待审修订标记透出
+	e.RevisionOf = f.RevisionOf
 	return e, nil
 }
 
@@ -222,10 +315,32 @@ func splitFrontmatter(raw string) (string, string, bool) {
 }
 
 // addEntry 把 entry 加入内存索引（含类型化解析）。调用方需持锁。
+//
+// 历史版本曾把产品主页平铺在「产品记忆/<产品>.md」，新版知识库按产品线
+// 放在更深的目录。升级时两份文件可能同时存在，且 WalkDir 的字典序会让浅层
+// 旧文件最后加载并覆盖新版正文。相同 type+title 冲突时固定选择目录更深的页面，
+// 让「产品线/产品.md」成为权威页；同深度仍保持后加载覆盖，兼容正常热更新。
 func (w *WikiStore) addEntry(e *Entry) {
 	bucket := w.entries[e.Type]
+	if current := bucket[e.Title]; current != nil && entryPathDepth(w.dir, current.FilePath) > entryPathDepth(w.dir, e.FilePath) {
+		return
+	}
 	bucket[e.Title] = e
 	w.buildTyped(e)
+}
+
+func entryPathDepth(root, path string) int {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return 0
+	}
+	depth := 0
+	for _, part := range strings.Split(filepath.Clean(rel), string(filepath.Separator)) {
+		if part != "" && part != "." {
+			depth++
+		}
+	}
+	return depth
 }
 
 // buildTyped 从 entry 的 frontmatter 字段构建类型化结构体。
@@ -270,7 +385,7 @@ func (w *WikiStore) buildTyped(e *Entry) {
 		w.customers[e.Title] = cp
 	case domain.MemoryUser:
 		w.users[e.Title] = &UserProfile{
-			Name: e.Title, Level: f.Level, Expertise: f.Expertise,
+			Name: e.Title, UserID: f.UserID, Level: f.Level, Expertise: f.Expertise,
 			Accuracy: f.Accuracy, Tags: f.Tags,
 		}
 	}

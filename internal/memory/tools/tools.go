@@ -33,12 +33,14 @@ const (
 )
 
 // Registry 持有全部记忆工具，提供 LLM 工具定义与执行分发。
+// store 是 longterm.Store 接口（Composite：system 只读基线 + 租户覆盖层）——
+// 工具读写经路由层，天然落在正确层（产品读系统、客户写租户、威胁/合规/行业合并）。
 type Registry struct {
-	store *longterm.WikiStore
+	store longterm.Store
 }
 
 // NewRegistry 创建工具注册表。
-func NewRegistry(store *longterm.WikiStore) *Registry {
+func NewRegistry(store longterm.Store) *Registry {
 	return &Registry{store: store}
 }
 
@@ -53,6 +55,26 @@ func (r *Registry) Definitions() []domain.Tool {
 		{Type: "function", Function: recallDef()},
 		{Type: "function", Function: listDef()},
 	}
+}
+
+// DefinitionsFor 返回当前 Agent 轮次可见的最小权限工具集。读取工具对所有
+// 已认证租户成员开放；记忆写入与 HTTP 管理路由保持一致，仅 owner/admin 可用；
+// memory_delete 永不交给模型，删除必须由显式的人类管理操作完成。
+// nil scope 保留 legacy 单租户调用兼容，但同样不向模型暴露删除工具。
+func (r *Registry) DefinitionsFor(scope *domain.TenantScope) []domain.Tool {
+	defs := []domain.Tool{
+		{Type: "function", Function: searchDef()},
+		{Type: "function", Function: getDef()},
+		{Type: "function", Function: recallDef()},
+		{Type: "function", Function: listDef()},
+	}
+	if scope == nil || scope.IsTenantAdmin() {
+		defs = append(defs,
+			domain.Tool{Type: "function", Function: ensureDef()},
+			domain.Tool{Type: "function", Function: observeDef()},
+		)
+	}
+	return defs
 }
 
 // Execute 分发执行一次工具调用，返回结果字符串（回填给 LLM）。
@@ -75,6 +97,20 @@ func (r *Registry) Execute(name string, args json.RawMessage) (string, error) {
 	default:
 		return "", fmt.Errorf("未知工具: %s", name)
 	}
+}
+
+// ExecuteFor 是 Agent 专用的带作用域执行入口。即使模型伪造一个未注册的
+// 工具调用，执行层也会再次授权，不能只依赖 DefinitionsFor 的展示过滤。
+func (r *Registry) ExecuteFor(scope *domain.TenantScope, name string, args json.RawMessage) (string, error) {
+	switch ToolName(name) {
+	case Delete:
+		return "", fmt.Errorf("memory_delete 仅允许通过人工管理界面执行")
+	case Ensure, Observe:
+		if scope != nil && !scope.IsTenantAdmin() {
+			return "", fmt.Errorf("当前角色无权修改租户记忆")
+		}
+	}
+	return r.Execute(name, args)
 }
 
 // ── memory_search ──────────────────────────────────────────────
@@ -309,7 +345,7 @@ func renderBody(body, section string, offset int) string {
 		writeTOC(&b, secs)
 		if len(secs) == 0 {
 			// 无标题结构的长文：给开头一段 + 引导 offset 续读
-			b.WriteString(fmt.Sprintf("\n（无章节结构，先给前 %d 字）\n\n%s\n（可用 body_offset 续读）\n", bodyFullLimit, firstNRunes(body, bodyFullLimit)))
+			fmt.Fprintf(&b, "\n（无章节结构，先给前 %d 字）\n\n%s\n（可用 body_offset 续读）\n", bodyFullLimit, firstNRunes(body, bodyFullLimit))
 		}
 		return b.String()
 	}
@@ -459,6 +495,18 @@ func (r *Registry) execEnsure(args json.RawMessage) (string, error) {
 		Summary: firstLine(a.Content),
 		Status:  status,
 	}
+	// P0-07：对已验证受控知识（threat/compliance/industry）的整体覆盖同样生成
+	// pending revision（原 verified 版本继续生效，批准后原子替换），而不是把活跃
+	// 条目替换成待审版导致知识对 Agent 消失。
+	if mt != domain.MemoryCustomer {
+		if ex, err := r.store.GetEntry(a.Type, a.Title); err == nil && ex.Status == longterm.StatusVerified && needsReview(mt) {
+			if err := r.store.SubmitRevision(e); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf(`{"status":"ok","message":"%s","type":"%s","title":"%s","needs_review":true%s,"note":"已暂存为待审修订——批准后替换原版本，拒绝则保持原样"}`,
+				"已记录（修订待审核，原版本继续生效）", a.Type, a.Title, existingHint), nil
+		}
+	}
 	if err := r.store.UpsertEntry(e); err != nil {
 		return "", err
 	}
@@ -508,9 +556,18 @@ func (r *Registry) execObserve(args json.RawMessage) (string, error) {
 	// F4：先判断是否新建（写入前查——写入后再查永远查得到）
 	existing, getErr := r.store.GetEntry(a.Type, a.Title)
 	isNew := getErr != nil
+	var isReview bool
 	if !isNew {
 		existing.Content = existing.Content + "\n\n" + obsText // 保留原 frontmatter 结构化字段
-		if err := r.store.UpsertEntry(existing); err != nil {
+		// P0-07：对已验证受控知识（threat/compliance/industry）追加观察属实质修改，
+		// 不得保持 verified 直接生效——提交 pending revision，原 verified 版本继续
+		// 对 Agent 生效，人工批准后原子替换、拒绝则丢弃。customer 不受审（AI 全权）。
+		if existing.Status == longterm.StatusVerified && needsReview(mt) {
+			if err := r.store.SubmitRevision(existing); err != nil {
+				return "", err
+			}
+			isReview = true
+		} else if err := r.store.UpsertEntry(existing); err != nil {
 			return "", err
 		}
 	} else {
@@ -525,10 +582,10 @@ func (r *Registry) execObserve(args json.RawMessage) (string, error) {
 		if err := r.store.UpsertEntry(e); err != nil {
 			return "", err
 		}
+		isReview = needsReview(mt)
 	}
-	needsReview := isNew && needsReview(mt)
 	return fmt.Sprintf(`{"status":"ok","message":"已记录观察","relevance":"%s","type":"%s","title":"%s","needs_review":%t}`,
-		rel, a.Type, a.Title, needsReview), nil
+		rel, a.Type, a.Title, isReview), nil
 }
 
 // ── memory_delete ─────────────────────────────────────────────

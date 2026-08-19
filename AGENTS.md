@@ -37,8 +37,9 @@ npm run lint              # eslint（已配，见「已知基线」）
 npm run format:check      # prettier（已配，见「已知基线」）
 
 # 跑起来
-./scripts/run.sh          # 启动后端（自动建 config.json + 播种 wiki）
-./scripts/e2e.sh          # HTTP API 端到端冒烟（需后端先起，无需 LLM）
+./scripts/run.sh                    # 启动后端（自动建 config.json + 播种 wiki）
+bash scripts/e2e-multitenant.sh     # 多租户端到端冒烟（自建 Mock LLM，无需外部服务）
+bash scripts/e2e-legacy-migration.sh # 存量数据迁 Legacy + -setup 冒烟
 ```
 
 ## 配置约定（重要）
@@ -68,8 +69,8 @@ npm run format:check      # prettier（已配，见「已知基线」）
 - **ask_user 工具（F3）**：关键信息可枚举时给选项让用户点选（轮次终止式——done 前发 ask_user 事件，前端选项卡）；答案走 missing_answer 闭环。
 - **内联审核（F4）**：memory_ensure/observe 的 result 带 `needs_review`+条目标识，前端工具轨迹内渲染审批卡（通过/拒绝调现有 review API），/review 页降级为积压兜底。
 - **后台任务域（TaskBackground，P11/ADR-015）**：`internal/taskbg`——Runner（串行+panic 防护+任务列表）+ 固化（observe→LLM 抽结构→pending 人审）+ Lint（孤儿/残缺/别名冲突）+ 标题生成（Run 完成回调）。`GET /api/tasks`、`POST /api/tasks/consolidate|lint`。
-- **观测台（C2）**：`GET /api/console/logs`（LogRing 500 行+SSE tail）、`/console/llm-audit`（Manager 审计环形 100 条）、`/console/health`；前端 `/observe` 页。
-- **配置中心（C1）**：`GET /api/console/config|prompts|memory`（只读，api_key 只出 has_key）；Settings「配置中心」tab。
+- **观测台（C2）**：`GET /api/platform/logs`（LogRing 500 行+SSE tail，platform_admin）、`/api/platform/llm-audit`（Manager 审计环形 100 条，platform_admin）、`/api/console/health`；前端 `/observe` 页（平台功能对租户用户隐藏）。
+- **配置中心（C1）**：`GET /api/platform/config`（完整视图含 data_dir，platform_admin）、`/api/console/prompts|memory`（租户内视图）、租户安全视图 `GET /api/config`（model 别名 + 掩码 key）；Settings「配置中心」tab。
 - **Prompt 外置（C3）**：`prompts/system.md` 四段模板（编辑重启生效，缺失回退内置）；快照归档 `data_dir/prompts-snapshots/`。
 - **事实时效（P6）**：Entry valid_at/invalid_at/superseded_by；覆盖时旧版归档 `.superseded-<ts>.md`（Load 排除，磁盘留痕）。
 - **数据根（P9）**：`CDA_DATA_DIR` > config.data_dir > XDG 默认；旧 ./data 就地兼容；Dockerfile `VOLUME /var/lib/cda`。
@@ -95,9 +96,20 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 - stdlib `log.Printf`。请求日志：`%s %s %s %v`（method, path, ip, duration），在 `logging` 中间件。
 - 启动日志用 `[ok]` / `[warn]` 前缀。**不记 api_key / 敏感配置**。
 
-## 单租户（de-tenancy，2026-08-14 裁决）
+## 多租户（2026-08 实施，权威见 docs/multi-tenant-design.md）
 
-多租户已砍除（ADR-011 废止——无使用场景，单租户内部工具）：代码无 tenant 概念；`X-Tenant-ID` 请求头接受但忽略；SQLite `sessions.tenant_id` 列**保留**（新库 DDL 带 NOT NULL DEFAULT，老库 Open 时表重建补 DEFAULT、历史值原样保留）但**业务路径不读不写**（INSERT 不提及该列、SELECT 不查；仅 Open 时的一次性 schema 迁移代码接触该列）；产品/行业/客户记忆组织级共享语义不变。
+多租户 V1.1 已全栈落地（替代 2026-08-14 的单租户 de-tenancy 裁决）。核心不变量：
+
+- **认证控制面 + 租户独立数据面**（§6）：中央身份库 `control/identity.db`（users/tenants/memberships/auth_sessions）+ 每租户 `tenants/<uuid>/history.db + wiki`。`TenantID` 只由服务端登录态 + Membership 产生，客户端 Header/Query/Body 无法切换租户。
+- **HTTP 路由分组**（§7.5）：公开 `GET /api/health`、`POST /api/auth/register|login`；登录态业务路由（message/sessions/memory/review/tasks）；`/api/platform/**` 仅 `platform_admin`；`GET /api/config` 为租户安全视图（掩码 Key、无 data_dir）。
+- **边界语义**：未登录 401；越权 403；**跨租户资源一律 404**（不泄露存在性）。同名客户/同模式 session_id 互不可见、互不覆盖。
+- **RBAC/协作**：owner 管全部租户角色；admin 只管 analyst/reviewer；同租户会话/画像/记忆共享读，普通成员只写本人会话，owner/admin 可维护全部。platform_admin 做用户/租户/目标 Membership CRUD，但不天然获得业务 Scope。
+- **多工作空间**：已有全局账号可复用到第二租户；登录和 `/auth/me` 返回工作空间列表；切换接口重新校验 Membership 并轮换 CSRF，前端切换后整页重载释放旧租户运行态。
+- **生命周期保护**：用户和租户删除采用停用/软删除；最后可登录 owner、最后 platform_admin、当前活动租户均有服务层保护。
+- **安全基线**：Argon2id PHC 密码；会话 Token 库存 SHA-256；CSRF 轮换 + Origin 校验；登录限流（IP+账号）。系统知识只读共享，所有租户可写数据严格隔离。
+- **存量数据**：旧 `./data`（history.db + wiki）首次启动自动迁入 **Legacy 租户**（slug=legacy）；`-setup` 交互式建平台管理员 + Legacy owner membership（term 不回显，需 tty）。会话/客户/使用者记忆进租户数据面，产品/行业记忆进系统基线。
+- **前端**：AuthProvider + ProtectedRoute；`/login`、`/register`；本地缓存 key 前缀 `cda:<tenant_id>:<user_id>:`（退出清理）；观测台等平台功能对租户用户双重隐藏。
+- **MT 首版禁用**：商机面板（leadsSvc=nil → 引导态）、即应渠道（无可信安装→租户映射，§12.3）。
 
 ## 前后端连接
 
@@ -108,7 +120,8 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 
 - **`go test ./...`**：当前 agent / channel/http / history / memory×4 / config / taskbg / cmd 共 11 个包有测试，**含 mock LLM 全链路集成测试 + 固化 HTTP 端到端**（无需真实 key）。
 - **无测试的包**：config / domain / llm / model / review / api —— 新行为补测试时优先这些。
-- **`./scripts/e2e.sh`**：真实 HTTP 端到端冒烟（健康/配置/记忆 CRUD/审核流/会话），需后端先起。
+- **`./scripts/e2e-multitenant.sh`**：多租户 HTTP 端到端冒烟（自建 Mock LLM + 双租户注册/登录/同名客户隔离/会话/SSE/记忆/任务 + 跨租户 404，无需外部服务，§16 验收）。
+- **`./scripts/e2e-legacy-migration.sh`**：存量数据自动迁入 Legacy 租户 + `-setup` 引导端到端冒烟（伪造旧库 → 迁移 → 管理员登录查旧会话，§6/§16）。
 - 新逻辑**必须带验证行为的测试**（不是空断言）。
 
 ## 初始化状态（本次 /init，2026-08-13）
@@ -144,4 +157,4 @@ LLM 调用层有显式错误分类（`internal/llm/client.go` + `internal/model/
 
 ## 延期项（Deferred）
 
-钉钉 webhook 对接、登录鉴权/RBAC、方案建议书生成、竞品话术、反馈闭环（见 README「延期项」与 ADR）。
+钉钉 webhook 对接、文件上传、录音/ASR、CRM、方案建议书生成、竞品话术、反馈闭环（见 README「延期项」与 ADR）。登录鉴权与 RBAC 已实现，不再属于延期项。

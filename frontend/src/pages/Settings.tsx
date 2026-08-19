@@ -1,5 +1,16 @@
 import { useEffect, useState } from "react";
-import { configGet, configPut, configTest, leadManagerPut, listModels } from "../api/client";
+import type { ReactNode } from "react";
+import {
+  configGet,
+  configPut,
+  configPutBehavior,
+  configTest,
+  leadManagerPut,
+  listModels,
+  platformConsoleConfig,
+} from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
+import Icon from "../components/Icon";
 import type { ConfigResponse, LeadManagerConfig, ModelConfig } from "../types";
 
 type Cat = "models" | "routing" | "console" | "about";
@@ -23,6 +34,7 @@ const TASK_TYPES = [
 ];
 
 export default function Settings() {
+  const { isPlatformAdmin } = useAuth();
   const [cfg, setCfg] = useState<ConfigResponse | null>(null);
   const [cat, setCat] = useState<Cat>("models");
   const [loading, setLoading] = useState(true);
@@ -30,9 +42,11 @@ export default function Settings() {
   const [testing, setTesting] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState("");
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState<ReactNode>("");
   // fetchModels 下拉弹窗：idx + 该模型返回的可选列表
   const [fetchPicker, setFetchPicker] = useState<{ idx: number; models: string[] } | null>(null);
+  // 配置中心为平台管理功能（§7.5）：租户用户隐藏该 tab
+  const cats = CATS.filter((c) => isPlatformAdmin || c.id !== "console");
 
   useEffect(() => {
     configGet()
@@ -76,7 +90,13 @@ export default function Settings() {
         protocol: m.protocol,
         model: m.model,
       });
-      if (r.ok) setMsg(`✓ 测试通过（${r.latency_ms}ms）：${(r.reply || "").slice(0, 80)}`);
+      if (r.ok)
+        setMsg(
+          <>
+            <Icon name="check" size={12} /> 测试通过（{r.latency_ms}ms）：
+            {(r.reply || "").slice(0, 80)}
+          </>,
+        );
       else setError(`测试失败（${r.latency_ms}ms）：${r.error}`);
     } catch (e) {
       setError("测试失败：" + (e instanceof Error ? e.message : String(e)));
@@ -126,7 +146,7 @@ export default function Settings() {
       <h1>设置</h1>
       <div className="settings-cols">
         <aside className="settings-nav">
-          {CATS.map((c) => (
+          {cats.map((c) => (
             <button
               key={c.id}
               className={cat === c.id ? "active" : ""}
@@ -140,7 +160,7 @@ export default function Settings() {
         <div className="settings-content">
           {msg && (
             <div
-              className="panel"
+              className="panel s-msg"
               style={{
                 borderColor: "var(--green)",
                 color: "var(--green)",
@@ -152,67 +172,158 @@ export default function Settings() {
             </div>
           )}
           {error && <div className="error">! {error}</div>}
+          {!isPlatformAdmin && (
+            <div className="panel muted" style={{ marginBottom: 14, fontSize: 12.5 }}>
+              当前为只读视图：模型与路由为平台级配置，由平台管理员维护（§7.5）。
+            </div>
+          )}
 
-          {cat === "models" && (
-            <>
-              <h2>模型配置</h2>
-              <div className="s-group" style={{ marginTop: 12 }}>
-                {cfg.models.map((m, i) => (
-                  <ModelCard
-                    key={i}
-                    m={m}
-                    testing={testing}
-                    fetching={fetching}
-                    onPatch={(p) => updateModel(i, p)}
-                    onRemove={() =>
-                      setCfg({ ...cfg, models: cfg.models.filter((_, j) => j !== i) })
+          {/* 模型/路由编辑：平台管理员可改；租户用户 fieldset 整体禁用（只读） */}
+          <fieldset className="s-edit" disabled={!isPlatformAdmin}>
+            {cat === "models" && (
+              <>
+                <h2>模型配置</h2>
+                <div className="s-group" style={{ marginTop: 12 }}>
+                  {cfg.models.map((m, i) => (
+                    <ModelCard
+                      key={i}
+                      m={m}
+                      testing={testing}
+                      fetching={fetching}
+                      onPatch={(p) => updateModel(i, p)}
+                      onRemove={() =>
+                        setCfg({ ...cfg, models: cfg.models.filter((_, j) => j !== i) })
+                      }
+                      onTest={() => testModel(m)}
+                      onFetch={() => fetchModels(m, i)}
+                    />
+                  ))}
+                  <button
+                    className="btn ghost sm"
+                    onClick={() =>
+                      setCfg({
+                        ...cfg,
+                        models: [
+                          ...cfg.models,
+                          {
+                            name: `模型 ${cfg.models.length + 1}`,
+                            endpoint: "",
+                            api_key: "",
+                            protocol: "openai-chat",
+                            model: "",
+                            temperature: 0.3,
+                            max_tokens: 4096,
+                          },
+                        ],
+                      })
                     }
-                    onTest={() => testModel(m)}
-                    onFetch={() => fetchModels(m, i)}
-                  />
-                ))}
-                <button
-                  className="btn ghost sm"
-                  onClick={() =>
-                    setCfg({
-                      ...cfg,
-                      models: [
-                        ...cfg.models,
-                        {
-                          name: `模型 ${cfg.models.length + 1}`,
-                          endpoint: "",
-                          api_key: "",
-                          protocol: "openai-chat",
-                          model: "",
-                          temperature: 0.3,
-                          max_tokens: 4096,
-                        },
-                      ],
-                    })
-                  }
-                >
-                  + 添加模型
-                </button>
-              </div>
-              <div className="s-group">
-                <div className="s-gtitle">回退链（失败后依次尝试）</div>
-                {(cfg.router.fallback.chain ?? []).map((name, idx) => (
-                  <div className="s-row" key={idx}>
-                    <div className="s-name mono" style={{ fontSize: 12 }}>
-                      {idx + 1}.
+                  >
+                    + 添加模型
+                  </button>
+                </div>
+                <div className="s-group">
+                  <div className="s-gtitle">回退链（失败后依次尝试）</div>
+                  {(cfg.router.fallback.chain ?? []).map((name, idx) => (
+                    <div className="s-row" key={idx}>
+                      <div className="s-name mono" style={{ fontSize: 12 }}>
+                        {idx + 1}.
+                      </div>
+                      <div className="s-ctrl">
+                        <select
+                          value={name}
+                          style={{ minWidth: 160 }}
+                          onChange={(e) => {
+                            const chain = [...(cfg.router.fallback.chain ?? [])];
+                            chain[idx] = e.target.value;
+                            setCfg({
+                              ...cfg,
+                              router: {
+                                ...cfg.router,
+                                fallback: { ...cfg.router.fallback, chain },
+                              },
+                            });
+                          }}
+                        >
+                          {cfg.models.map((m) => (
+                            <option key={m.name} value={m.name}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn ghost sm"
+                          title="移除该跳"
+                          onClick={() => {
+                            const chain = (cfg.router.fallback.chain ?? []).filter(
+                              (_, j) => j !== idx,
+                            );
+                            setCfg({
+                              ...cfg,
+                              router: {
+                                ...cfg.router,
+                                fallback: { ...cfg.router.fallback, chain },
+                              },
+                            });
+                          }}
+                        >
+                          <Icon name="cross" size={14} />
+                        </button>
+                      </div>
                     </div>
+                  ))}
+                  <div className="s-row">
+                    <div className="s-name" />
                     <div className="s-ctrl">
                       <select
-                        value={name}
+                        value=""
                         style={{ minWidth: 160 }}
                         onChange={(e) => {
-                          const chain = [...(cfg.router.fallback.chain ?? [])];
-                          chain[idx] = e.target.value;
+                          if (!e.target.value) return;
+                          const chain = [...(cfg.router.fallback.chain ?? []), e.target.value];
                           setCfg({
                             ...cfg,
                             router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
                           });
                         }}
+                      >
+                        <option value="">+ 添加回退模型…</option>
+                        {cfg.models
+                          .filter((m) => !(cfg.router.fallback.chain ?? []).includes(m.name))
+                          .map((m) => (
+                            <option key={m.name} value={m.name}>
+                              {m.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 18 }}>
+                  <button className="btn primary" disabled={saving} onClick={() => save(cfg)}>
+                    {saving ? "保存中…" : "保存"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {cat === "routing" && (
+              <>
+                <h2>路由</h2>
+                <p className="faint" style={{ fontSize: 13, marginBottom: 16 }}>
+                  给不同任务类型指定模型。未指定的任务走默认模型。
+                </p>
+                <div className="s-group">
+                  <div className="s-row">
+                    <div>
+                      <div className="s-name">默认模型</div>
+                      <div className="s-desc">兜底：未单独指定的任务走这个</div>
+                    </div>
+                    <div className="s-ctrl">
+                      <select
+                        value={cfg.router.default}
+                        onChange={(e) =>
+                          setCfg({ ...cfg, router: { ...cfg.router, default: e.target.value } })
+                        }
                       >
                         {cfg.models.map((m) => (
                           <option key={m.name} value={m.name}>
@@ -220,243 +331,172 @@ export default function Settings() {
                           </option>
                         ))}
                       </select>
-                      <button
-                        className="btn ghost sm"
-                        title="移除该跳"
-                        onClick={() => {
-                          const chain = (cfg.router.fallback.chain ?? []).filter(
-                            (_, j) => j !== idx,
-                          );
-                          setCfg({
-                            ...cfg,
-                            router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
-                          });
-                        }}
-                      >
-                        ✕
-                      </button>
                     </div>
                   </div>
-                ))}
-                <div className="s-row">
-                  <div className="s-name" />
-                  <div className="s-ctrl">
-                    <select
-                      value=""
-                      style={{ minWidth: 160 }}
-                      onChange={(e) => {
-                        if (!e.target.value) return;
-                        const chain = [...(cfg.router.fallback.chain ?? []), e.target.value];
-                        setCfg({
-                          ...cfg,
-                          router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
-                        });
-                      }}
-                    >
-                      <option value="">+ 添加回退模型…</option>
-                      {cfg.models
-                        .filter((m) => !(cfg.router.fallback.chain ?? []).includes(m.name))
-                        .map((m) => (
-                          <option key={m.name} value={m.name}>
-                            {m.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <div style={{ marginTop: 18 }}>
-                <button className="btn primary" disabled={saving} onClick={() => save(cfg)}>
-                  {saving ? "保存中…" : "保存"}
-                </button>
-              </div>
-            </>
-          )}
 
-          {cat === "routing" && (
-            <>
-              <h2>路由</h2>
-              <p className="faint" style={{ fontSize: 13, marginBottom: 16 }}>
-                给不同任务类型指定模型。未指定的任务走默认模型。
-              </p>
-              <div className="s-group">
-                <div className="s-row">
-                  <div>
-                    <div className="s-name">默认模型</div>
-                    <div className="s-desc">兜底：未单独指定的任务走这个</div>
-                  </div>
-                  <div className="s-ctrl">
-                    <select
-                      value={cfg.router.default}
-                      onChange={(e) =>
-                        setCfg({ ...cfg, router: { ...cfg.router, default: e.target.value } })
-                      }
-                    >
-                      {cfg.models.map((m) => (
-                        <option key={m.name} value={m.name}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {TASK_TYPES.map((t) => (
-                  <div className="s-row" key={t.id}>
-                    <div>
-                      <div className="s-name">{t.label}</div>
-                      <div className="s-desc">{t.desc}</div>
+                  {TASK_TYPES.map((t) => (
+                    <div className="s-row" key={t.id}>
+                      <div>
+                        <div className="s-name">{t.label}</div>
+                        <div className="s-desc">{t.desc}</div>
+                      </div>
+                      <div className="s-ctrl">
+                        <select
+                          value={cfg.router.routes[t.id] || ""}
+                          onChange={(e) =>
+                            setCfg({
+                              ...cfg,
+                              router: {
+                                ...cfg.router,
+                                routes: { ...cfg.router.routes, [t.id]: e.target.value },
+                              },
+                            })
+                          }
+                        >
+                          <option value="">跟随默认</option>
+                          {cfg.models.map((m) => (
+                            <option key={m.name} value={m.name}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
+                  ))}
+                </div>
+
+                <div className="s-group">
+                  <div className="s-gtitle">回退</div>
+                  <div className="s-row">
+                    <div className="s-name">最大重试次数</div>
                     <div className="s-ctrl">
-                      <select
-                        value={cfg.router.routes[t.id] || ""}
+                      <input
+                        type="number"
+                        style={{ minWidth: 100 }}
+                        value={cfg.router.fallback.max_retries}
                         onChange={(e) =>
                           setCfg({
                             ...cfg,
                             router: {
                               ...cfg.router,
-                              routes: { ...cfg.router.routes, [t.id]: e.target.value },
+                              fallback: {
+                                ...cfg.router.fallback,
+                                max_retries: parseInt(e.target.value),
+                              },
                             },
                           })
                         }
-                      >
-                        <option value="">跟随默认</option>
-                        {cfg.models.map((m) => (
-                          <option key={m.name} value={m.name}>
-                            {m.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
                   </div>
-                ))}
-              </div>
-
-              <div className="s-group">
-                <div className="s-gtitle">回退</div>
-                <div className="s-row">
-                  <div className="s-name">最大重试次数</div>
-                  <div className="s-ctrl">
-                    <input
-                      type="number"
-                      style={{ minWidth: 100 }}
-                      value={cfg.router.fallback.max_retries}
-                      onChange={(e) =>
-                        setCfg({
-                          ...cfg,
-                          router: {
-                            ...cfg.router,
-                            fallback: {
-                              ...cfg.router.fallback,
-                              max_retries: parseInt(e.target.value),
+                  <div className="s-row">
+                    <div className="s-name">退避基数（毫秒）</div>
+                    <div className="s-ctrl">
+                      <input
+                        type="number"
+                        style={{ minWidth: 100 }}
+                        value={cfg.router.fallback.backoff_base_ms}
+                        onChange={(e) =>
+                          setCfg({
+                            ...cfg,
+                            router: {
+                              ...cfg.router,
+                              fallback: {
+                                ...cfg.router.fallback,
+                                backoff_base_ms: parseInt(e.target.value),
+                              },
                             },
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="s-row">
-                  <div className="s-name">退避基数（毫秒）</div>
-                  <div className="s-ctrl">
-                    <input
-                      type="number"
-                      style={{ minWidth: 100 }}
-                      value={cfg.router.fallback.backoff_base_ms}
-                      onChange={(e) =>
-                        setCfg({
-                          ...cfg,
-                          router: {
-                            ...cfg.router,
-                            fallback: {
-                              ...cfg.router.fallback,
-                              backoff_base_ms: parseInt(e.target.value),
-                            },
-                          },
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="s-group">
-                <div className="s-gtitle">回退链（失败后依次尝试）</div>
-                {(cfg.router.fallback.chain ?? []).map((name, idx) => (
-                  <div className="s-row" key={idx}>
-                    <div className="s-name mono" style={{ fontSize: 12 }}>
-                      {idx + 1}.
+                          })
+                        }
+                      />
                     </div>
+                  </div>
+                </div>
+                <div className="s-group">
+                  <div className="s-gtitle">回退链（失败后依次尝试）</div>
+                  {(cfg.router.fallback.chain ?? []).map((name, idx) => (
+                    <div className="s-row" key={idx}>
+                      <div className="s-name mono" style={{ fontSize: 12 }}>
+                        {idx + 1}.
+                      </div>
+                      <div className="s-ctrl">
+                        <select
+                          value={name}
+                          style={{ minWidth: 160 }}
+                          onChange={(e) => {
+                            const chain = [...(cfg.router.fallback.chain ?? [])];
+                            chain[idx] = e.target.value;
+                            setCfg({
+                              ...cfg,
+                              router: {
+                                ...cfg.router,
+                                fallback: { ...cfg.router.fallback, chain },
+                              },
+                            });
+                          }}
+                        >
+                          {cfg.models.map((m) => (
+                            <option key={m.name} value={m.name}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn ghost sm"
+                          title="移除该跳"
+                          onClick={() => {
+                            const chain = (cfg.router.fallback.chain ?? []).filter(
+                              (_, j) => j !== idx,
+                            );
+                            setCfg({
+                              ...cfg,
+                              router: {
+                                ...cfg.router,
+                                fallback: { ...cfg.router.fallback, chain },
+                              },
+                            });
+                          }}
+                        >
+                          <Icon name="cross" size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="s-row">
+                    <div className="s-name" />
                     <div className="s-ctrl">
                       <select
-                        value={name}
+                        value=""
                         style={{ minWidth: 160 }}
                         onChange={(e) => {
-                          const chain = [...(cfg.router.fallback.chain ?? [])];
-                          chain[idx] = e.target.value;
+                          if (!e.target.value) return;
+                          const chain = [...(cfg.router.fallback.chain ?? []), e.target.value];
                           setCfg({
                             ...cfg,
                             router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
                           });
                         }}
                       >
-                        {cfg.models.map((m) => (
-                          <option key={m.name} value={m.name}>
-                            {m.name}
-                          </option>
-                        ))}
+                        <option value="">+ 添加回退模型…</option>
+                        {cfg.models
+                          .filter((m) => !(cfg.router.fallback.chain ?? []).includes(m.name))
+                          .map((m) => (
+                            <option key={m.name} value={m.name}>
+                              {m.name}
+                            </option>
+                          ))}
                       </select>
-                      <button
-                        className="btn ghost sm"
-                        title="移除该跳"
-                        onClick={() => {
-                          const chain = (cfg.router.fallback.chain ?? []).filter(
-                            (_, j) => j !== idx,
-                          );
-                          setCfg({
-                            ...cfg,
-                            router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
-                          });
-                        }}
-                      >
-                        ✕
-                      </button>
                     </div>
                   </div>
-                ))}
-                <div className="s-row">
-                  <div className="s-name" />
-                  <div className="s-ctrl">
-                    <select
-                      value=""
-                      style={{ minWidth: 160 }}
-                      onChange={(e) => {
-                        if (!e.target.value) return;
-                        const chain = [...(cfg.router.fallback.chain ?? []), e.target.value];
-                        setCfg({
-                          ...cfg,
-                          router: { ...cfg.router, fallback: { ...cfg.router.fallback, chain } },
-                        });
-                      }}
-                    >
-                      <option value="">+ 添加回退模型…</option>
-                      {cfg.models
-                        .filter((m) => !(cfg.router.fallback.chain ?? []).includes(m.name))
-                        .map((m) => (
-                          <option key={m.name} value={m.name}>
-                            {m.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
                 </div>
-              </div>
-              <div style={{ marginTop: 18 }}>
-                <button className="btn primary" disabled={saving} onClick={() => save(cfg)}>
-                  {saving ? "保存中…" : "保存"}
-                </button>
-              </div>
-            </>
-          )}
+                <div style={{ marginTop: 18 }}>
+                  <button className="btn primary" disabled={saving} onClick={() => save(cfg)}>
+                    {saving ? "保存中…" : "保存"}
+                  </button>
+                </div>
+              </>
+            )}
+          </fieldset>
 
           {/* 获取模型下拉（fetchPicker 状态下在顶部绘制：复用 ConfirmDialog 布局但装载 select）*/}
           {fetchPicker && (
@@ -697,7 +737,7 @@ interface ConsoleData {
     fallback: { max_retries: number; backoff_base_ms: number; chain: string[] };
   };
   data: { data_dir: string; wiki_dir: string; history_db: string };
-  behavior: { agent_max_iterations: number; default_user: string; llm_timeout_sec: number };
+  behavior: { agent_max_iterations: number; llm_timeout_sec: number };
   lead_manager?: { enabled: boolean; base_url: string; has_key: boolean; active: boolean };
 }
 
@@ -707,28 +747,22 @@ function ConsoleCenter() {
   const [savingBehavior, setSavingBehavior] = useState(false);
   const [saveErr, setSaveErr] = useState("");
   useEffect(() => {
-    fetch("/api/console/config")
-      .then((r) => r.json())
-      .then((d: ConsoleData) => {
+    platformConsoleConfig<ConsoleData>()
+      .then((d) => {
         setCfg(d);
         setBehavior(d.behavior);
       })
-      .catch(() => {});
+      .catch((e) => setSaveErr(e instanceof Error ? e.message : String(e)));
   }, []);
   async function saveBehavior() {
     if (!behavior) return;
     setSavingBehavior(true);
+    setSaveErr("");
     try {
-      const res = await fetch("/api/config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          default_user: behavior.default_user,
-          llm_timeout_sec: behavior.llm_timeout_sec,
-          agent_max_iterations: behavior.agent_max_iterations,
-        }),
+      await configPutBehavior({
+        llm_timeout_sec: behavior.llm_timeout_sec,
+        agent_max_iterations: behavior.agent_max_iterations,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
       setSaveErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -736,7 +770,8 @@ function ConsoleCenter() {
     }
   }
 
-  if (!cfg || !behavior) return <div className="loading">加载中…</div>;
+  if (!cfg || !behavior)
+    return <div className={saveErr ? "error-box" : "loading"}>{saveErr || "加载中…"}</div>;
   return (
     <>
       <h2>配置中心（只读）</h2>
@@ -772,14 +807,9 @@ function ConsoleCenter() {
             }
           />
         </label>
-        <label>
-          当前销售（分级输出）
-          <input
-            value={behavior.default_user}
-            placeholder="如：小明（中级）"
-            onChange={(e) => setBehavior({ ...behavior, default_user: e.target.value })}
-          />
-        </label>
+        <div className="muted" style={{ fontSize: 13 }}>
+          输出风格会按当前登录用户自动加载本租户使用者画像，无需单独指定“当前销售”。
+        </div>
         <label>
           LLM 全局超时（秒）
           <input
@@ -822,7 +852,7 @@ function LeadManagerGroup() {
       .then((c) => {
         if (c.lead_manager) setLm(c.lead_manager);
       })
-      .catch(() => {});
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, []);
   async function save() {
     if (!lm) return;
@@ -839,7 +869,7 @@ function LeadManagerGroup() {
       setSaving(false);
     }
   }
-  if (!lm) return null;
+  if (!lm) return err ? <div className="error-box">{err}</div> : null;
   return (
     <>
       <h3 className="cc-h">商机平台（Lead Manager）</h3>

@@ -33,11 +33,18 @@ func (p *AgentProcessor) SetOnEvent(fn func(agent.Event)) {
 func (p *AgentProcessor) Process(ctx context.Context, in *api.InboundMessage) (*api.OutboundMessage, error) {
 	sessionID := in.SessionID
 	if p.history != nil && sessionID != "" {
-		_ = p.history.EnsureSession(sessionID, firstLine(in.Content), "")
+		// 仅新会话落占位标题；已有会话不覆盖（标题由 G4 后台任务按累计提问归纳）。
+		title := ""
+		if exists, _ := p.history.SessionExists(sessionID); !exists {
+			title = firstLine(in.Content)
+		}
+		_ = p.history.EnsureSession("", sessionID, title, "")
 		_, _ = p.history.AppendMessage(sessionID, "user", in.Content, "")
 	}
 
-	content, analysis, trace, err := p.ag.Message(ctx, sessionID, in.Content, p.onEvent)
+	// nil scope：legacy/异步渠道（即应/钉钉）单租户路径（多租户下不启用），
+	// assembler 回退按 userName 解析输出风格。
+	content, analysis, trace, err := p.ag.Message(ctx, nil, sessionID, "", in.Content, p.onEvent)
 	if err != nil {
 		return nil, err
 	}

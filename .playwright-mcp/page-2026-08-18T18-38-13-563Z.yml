@@ -1,0 +1,255 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 长
+        - generic [ref=e7]: 需求分析 · 长亭
+      - button "切换侧栏" [ref=e8] [cursor=pointer]:
+        - img [ref=e9]
+    - button "新建对话" [ref=e11] [cursor=pointer]:
+      - img [ref=e12]
+      - generic [ref=e14]: 新建对话
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: 最近对话
+        - link "全部" [ref=e18] [cursor=pointer]:
+          - /url: /history
+      - textbox "搜索会话…" [ref=e19]
+      - button "跨境电商雷池反爬防护评估 刚刚 更多操作 跨境电商雷池反爬防护评估" [ref=e20] [cursor=pointer]:
+        - generic [ref=e21]: 跨境电商雷池反爬防护评估
+        - generic [ref=e22]: 刚刚
+        - button "更多操作 跨境电商雷池反爬防护评估" [ref=e23]:
+          - img [ref=e24]
+      - button "测试企业官网挂马需过等保三级 测试企业 刚刚 更多操作 测试企业官网挂马需过等保三级" [ref=e26] [cursor=pointer]:
+        - generic [ref=e27]: 测试企业官网挂马需过等保三级
+        - generic [ref=e28]:
+          - generic "测试企业" [ref=e29]
+          - text: 刚刚
+        - button "更多操作 测试企业官网挂马需过等保三级" [ref=e30]:
+          - img [ref=e31]
+      - button "官网挂马需过等保三级 刚刚 更多操作 官网挂马需过等保三级" [ref=e33] [cursor=pointer]:
+        - generic [ref=e34]: 官网挂马需过等保三级
+        - generic [ref=e35]: 刚刚
+        - button "更多操作 官网挂马需过等保三级" [ref=e36]:
+          - img [ref=e37]
+      - button "官网挂马需过等保三级 刚刚 更多操作 官网挂马需过等保三级" [ref=e39] [cursor=pointer]:
+        - generic [ref=e40]: 官网挂马需过等保三级
+        - generic [ref=e41]: 刚刚
+        - button "更多操作 官网挂马需过等保三级" [ref=e42]:
+          - img [ref=e43]
+      - button "官网被挂马需过等保三级 刚刚 更多操作 官网被挂马需过等保三级" [ref=e45] [cursor=pointer]:
+        - generic [ref=e46]: 官网被挂马需过等保三级
+        - generic [ref=e47]: 刚刚
+        - button "更多操作 官网被挂马需过等保三级" [ref=e48]:
+          - img [ref=e49]
+      - button "不用了 1 小时前 更多操作 不用了" [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: 不用了
+        - generic [ref=e53]: 1 小时前
+        - button "更多操作 不用了" [ref=e54]:
+          - img [ref=e55]
+      - button "官网被挂马，要过等保三级 3 天前 更多操作 官网被挂马，要过等保三级" [ref=e57] [cursor=pointer]:
+        - generic [ref=e58]: 官网被挂马，要过等保三级
+        - generic [ref=e59]: 3 天前
+        - button "更多操作 官网被挂马，要过等保三级" [ref=e60]:
+          - img [ref=e61]
+      - button "大促网站CC攻击应急与等保合规 3 天前 更多操作 大促网站CC攻击应急与等保合规" [ref=e63] [cursor=pointer]:
+        - generic [ref=e64]: 大促网站CC攻击应急与等保合规
+        - generic [ref=e65]: 3 天前
+        - button "更多操作 大促网站CC攻击应急与等保合规" [ref=e66]:
+          - img [ref=e67]
+      - button "大促网站被 CC 打慢，过等保二级 3 天前 更多操作 大促网站被 CC 打慢，过等保二级" [ref=e69] [cursor=pointer]:
+        - generic [ref=e70]: 大促网站被 CC 打慢，过等保二级
+        - generic [ref=e71]: 3 天前
+        - button "更多操作 大促网站被 CC 打慢，过等保二级" [ref=e72]:
+          - img [ref=e73]
+    - generic [ref=e75]:
+      - link "商机面板" [ref=e76] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e77]
+        - generic [ref=e79]: 商机面板
+      - link "记忆库" [ref=e80] [cursor=pointer]:
+        - /url: /memory
+        - img [ref=e81]
+        - generic [ref=e83]: 记忆库
+      - link "成员管理" [ref=e84] [cursor=pointer]:
+        - /url: /members
+        - img [ref=e85]
+        - generic [ref=e87]: 成员管理
+      - link "用户管理" [ref=e88] [cursor=pointer]:
+        - /url: /admin/users
+        - img [ref=e89]
+        - generic [ref=e91]: 用户管理
+      - link "观测台" [ref=e92] [cursor=pointer]:
+        - /url: /observe
+        - img [ref=e93]
+        - generic [ref=e95]: 观测台
+      - link "设置" [ref=e96] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e97]
+        - generic [ref=e99]: 设置
+      - generic [ref=e100]:
+        - generic "平台管理员 · admin@chaitin.com" [ref=e101]:
+          - generic [ref=e102]: 平
+          - generic [ref=e103]:
+            - generic [ref=e104]: 平台管理员
+            - generic [ref=e105]:
+              - text: Legacy 存量工作空间
+              - generic "租户 ID：21fc7cd11e3f5313758a5569eb8a9400" [ref=e106]: · 21fc7cd1
+              - text: owner平台管理
+        - generic [ref=e107]:
+          - button "改密" [ref=e108] [cursor=pointer]
+          - button "退出" [ref=e109] [cursor=pointer]
+  - main [ref=e110]:
+    - generic [ref=e111]:
+      - generic [ref=e112]:
+        - heading "对话历史" [level=2] [ref=e113]
+        - generic [ref=e114]: SESSION LOG
+        - link "+ 新对话" [ref=e116] [cursor=pointer]:
+          - /url: /analyze
+      - generic [ref=e117]: 列出全部历史对话。可继续追问或回放完整轨迹。
+      - textbox "搜索标题与对话内容…" [ref=e118]
+      - table [ref=e120]:
+        - rowgroup [ref=e121]:
+          - row "全选 标题 客户 更新" [ref=e122]:
+            - columnheader "全选" [ref=e123]:
+              - checkbox "全选" [ref=e124] [cursor=pointer]
+            - columnheader "标题" [ref=e125]
+            - columnheader "客户" [ref=e126]
+            - columnheader "更新" [ref=e127]
+            - columnheader [ref=e128]
+        - rowgroup [ref=e129]:
+          - row "选择 跨境电商雷池反爬防护评估 跨境电商雷池反爬防护评估 — 2026/8/19 02:25:39 继续 回放 删除" [ref=e130]:
+            - cell "选择 跨境电商雷池反爬防护评估" [ref=e131]:
+              - checkbox "选择 跨境电商雷池反爬防护评估" [ref=e132] [cursor=pointer]
+            - cell "跨境电商雷池反爬防护评估" [ref=e133]:
+              - link "跨境电商雷池反爬防护评估" [ref=e134] [cursor=pointer]:
+                - /url: /analyze/sess-title-e2e-1787074351
+            - cell "—" [ref=e135]
+            - cell "2026/8/19 02:25:39" [ref=e136]
+            - cell "继续 回放 删除" [ref=e137]:
+              - generic [ref=e138]:
+                - link "继续" [ref=e139] [cursor=pointer]:
+                  - /url: /analyze/sess-title-e2e-1787074351
+                - link "回放" [ref=e140] [cursor=pointer]:
+                  - /url: /history/sess-title-e2e-1787074351
+                - button "删除" [ref=e141] [cursor=pointer]
+          - row "选择 测试企业官网挂马需过等保三级 测试企业官网挂马需过等保三级 测试企业 2026/8/19 02:04:13 继续 回放 删除" [ref=e142]:
+            - cell "选择 测试企业官网挂马需过等保三级" [ref=e143]:
+              - checkbox "选择 测试企业官网挂马需过等保三级" [ref=e144] [cursor=pointer]
+            - cell "测试企业官网挂马需过等保三级" [ref=e145]:
+              - link "测试企业官网挂马需过等保三级" [ref=e146] [cursor=pointer]:
+                - /url: /analyze/sess_319c579f089c6d19
+            - cell "测试企业" [ref=e147]
+            - cell "2026/8/19 02:04:13" [ref=e148]
+            - cell "继续 回放 删除" [ref=e149]:
+              - generic [ref=e150]:
+                - link "继续" [ref=e151] [cursor=pointer]:
+                  - /url: /analyze/sess_319c579f089c6d19
+                - link "回放" [ref=e152] [cursor=pointer]:
+                  - /url: /history/sess_319c579f089c6d19
+                - button "删除" [ref=e153] [cursor=pointer]
+          - row "选择 官网挂马需过等保三级 官网挂马需过等保三级 — 2026/8/19 01:59:02 继续 回放 删除" [ref=e154]:
+            - cell "选择 官网挂马需过等保三级" [ref=e155]:
+              - checkbox "选择 官网挂马需过等保三级" [ref=e156] [cursor=pointer]
+            - cell "官网挂马需过等保三级" [ref=e157]:
+              - link "官网挂马需过等保三级" [ref=e158] [cursor=pointer]:
+                - /url: /analyze/sess_64f8565fec3c397c
+            - cell "—" [ref=e159]
+            - cell "2026/8/19 01:59:02" [ref=e160]
+            - cell "继续 回放 删除" [ref=e161]:
+              - generic [ref=e162]:
+                - link "继续" [ref=e163] [cursor=pointer]:
+                  - /url: /analyze/sess_64f8565fec3c397c
+                - link "回放" [ref=e164] [cursor=pointer]:
+                  - /url: /history/sess_64f8565fec3c397c
+                - button "删除" [ref=e165] [cursor=pointer]
+          - row "选择 官网挂马需过等保三级 官网挂马需过等保三级 — 2026/8/19 01:51:28 继续 回放 删除" [ref=e166]:
+            - cell "选择 官网挂马需过等保三级" [ref=e167]:
+              - checkbox "选择 官网挂马需过等保三级" [ref=e168] [cursor=pointer]
+            - cell "官网挂马需过等保三级" [ref=e169]:
+              - link "官网挂马需过等保三级" [ref=e170] [cursor=pointer]:
+                - /url: /analyze/sess_e50eed5cd4f4b8fd
+            - cell "—" [ref=e171]
+            - cell "2026/8/19 01:51:28" [ref=e172]
+            - cell "继续 回放 删除" [ref=e173]:
+              - generic [ref=e174]:
+                - link "继续" [ref=e175] [cursor=pointer]:
+                  - /url: /analyze/sess_e50eed5cd4f4b8fd
+                - link "回放" [ref=e176] [cursor=pointer]:
+                  - /url: /history/sess_e50eed5cd4f4b8fd
+                - button "删除" [ref=e177] [cursor=pointer]
+          - row "选择 官网被挂马需过等保三级 官网被挂马需过等保三级 — 2026/8/19 01:43:26 继续 回放 删除" [ref=e178]:
+            - cell "选择 官网被挂马需过等保三级" [ref=e179]:
+              - checkbox "选择 官网被挂马需过等保三级" [ref=e180] [cursor=pointer]
+            - cell "官网被挂马需过等保三级" [ref=e181]:
+              - link "官网被挂马需过等保三级" [ref=e182] [cursor=pointer]:
+                - /url: /analyze/sess_407f781f6ba3a29a
+            - cell "—" [ref=e183]
+            - cell "2026/8/19 01:43:26" [ref=e184]
+            - cell "继续 回放 删除" [ref=e185]:
+              - generic [ref=e186]:
+                - link "继续" [ref=e187] [cursor=pointer]:
+                  - /url: /analyze/sess_407f781f6ba3a29a
+                - link "回放" [ref=e188] [cursor=pointer]:
+                  - /url: /history/sess_407f781f6ba3a29a
+                - button "删除" [ref=e189] [cursor=pointer]
+          - row "选择 不用了 不用了 — 2026/8/19 01:20:46 继续 回放 删除" [ref=e190]:
+            - cell "选择 不用了" [ref=e191]:
+              - checkbox "选择 不用了" [ref=e192] [cursor=pointer]
+            - cell "不用了" [ref=e193]:
+              - link "不用了" [ref=e194] [cursor=pointer]:
+                - /url: /analyze/loop-sanity-1
+            - cell "—" [ref=e195]
+            - cell "2026/8/19 01:20:46" [ref=e196]
+            - cell "继续 回放 删除" [ref=e197]:
+              - generic [ref=e198]:
+                - link "继续" [ref=e199] [cursor=pointer]:
+                  - /url: /analyze/loop-sanity-1
+                - link "回放" [ref=e200] [cursor=pointer]:
+                  - /url: /history/loop-sanity-1
+                - button "删除" [ref=e201] [cursor=pointer]
+          - row "选择 官网被挂马，要过等保三级 官网被挂马，要过等保三级 — 2026/8/15 20:48:20 继续 回放 删除" [ref=e202]:
+            - cell "选择 官网被挂马，要过等保三级" [ref=e203]:
+              - checkbox "选择 官网被挂马，要过等保三级" [ref=e204] [cursor=pointer]
+            - cell "官网被挂马，要过等保三级" [ref=e205]:
+              - link "官网被挂马，要过等保三级" [ref=e206] [cursor=pointer]:
+                - /url: /analyze/sess_c35a1a1fbea43141
+            - cell "—" [ref=e207]
+            - cell "2026/8/15 20:48:20" [ref=e208]
+            - cell "继续 回放 删除" [ref=e209]:
+              - generic [ref=e210]:
+                - link "继续" [ref=e211] [cursor=pointer]:
+                  - /url: /analyze/sess_c35a1a1fbea43141
+                - link "回放" [ref=e212] [cursor=pointer]:
+                  - /url: /history/sess_c35a1a1fbea43141
+                - button "删除" [ref=e213] [cursor=pointer]
+          - row "选择 大促网站CC攻击应急与等保合规 大促网站CC攻击应急与等保合规 — 2026/8/15 20:38:42 继续 回放 删除" [ref=e214]:
+            - cell "选择 大促网站CC攻击应急与等保合规" [ref=e215]:
+              - checkbox "选择 大促网站CC攻击应急与等保合规" [ref=e216] [cursor=pointer]
+            - cell "大促网站CC攻击应急与等保合规" [ref=e217]:
+              - link "大促网站CC攻击应急与等保合规" [ref=e218] [cursor=pointer]:
+                - /url: /analyze/sess_a9ef213afe9f86f2
+            - cell "—" [ref=e219]
+            - cell "2026/8/15 20:38:42" [ref=e220]
+            - cell "继续 回放 删除" [ref=e221]:
+              - generic [ref=e222]:
+                - link "继续" [ref=e223] [cursor=pointer]:
+                  - /url: /analyze/sess_a9ef213afe9f86f2
+                - link "回放" [ref=e224] [cursor=pointer]:
+                  - /url: /history/sess_a9ef213afe9f86f2
+                - button "删除" [ref=e225] [cursor=pointer]
+          - row "选择 大促网站被 CC 打慢，过等保二级 大促网站被 CC 打慢，过等保二级 — 2026/8/15 20:36:09 继续 回放 删除" [ref=e226]:
+            - cell "选择 大促网站被 CC 打慢，过等保二级" [ref=e227]:
+              - checkbox "选择 大促网站被 CC 打慢，过等保二级" [ref=e228] [cursor=pointer]
+            - cell "大促网站被 CC 打慢，过等保二级" [ref=e229]:
+              - link "大促网站被 CC 打慢，过等保二级" [ref=e230] [cursor=pointer]:
+                - /url: /analyze/sess_c1a344fc728a6706
+            - cell "—" [ref=e231]
+            - cell "2026/8/15 20:36:09" [ref=e232]
+            - cell "继续 回放 删除" [ref=e233]:
+              - generic [ref=e234]:
+                - link "继续" [ref=e235] [cursor=pointer]:
+                  - /url: /analyze/sess_c1a344fc728a6706
+                - link "回放" [ref=e236] [cursor=pointer]:
+                  - /url: /history/sess_c1a344fc728a6706
+                - button "删除" [ref=e237] [cursor=pointer]

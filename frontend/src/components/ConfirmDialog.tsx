@@ -37,7 +37,7 @@ export default function ConfirmDialog({
 
   if (!open) return null;
   return (
-    <div className="cd-mask" onClick={onCancel} role="presentation">
+    <div className="cd-mask top" onClick={onCancel} role="presentation">
       <div
         className="cd-box"
         role="alertdialog"

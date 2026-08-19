@@ -6,6 +6,45 @@ import (
 	"testing"
 )
 
+func TestStoreGetReturnsDeepSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := s.Get()
+	snap.DefaultUser = "外部修改"
+	snap.Router.Routes["analysis"] = "外部模型"
+	if len(snap.Models) > 0 {
+		snap.Models[0].Name = "外部模型"
+	}
+	got := s.Get()
+	if got.DefaultUser == "外部修改" || got.Router.Routes["analysis"] == "外部模型" ||
+		(len(got.Models) > 0 && got.Models[0].Name == "外部模型") {
+		t.Fatal("Get 返回值不应共享 Store 内部状态")
+	}
+}
+
+func TestStoreFailedUpdateKeepsPreviousSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badTarget := filepath.Join(t.TempDir(), "existing-dir")
+	if err := os.MkdirAll(badTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.path = badTarget // write 的 rename 不能覆盖现有目录，稳定触发失败。
+	before := s.Get().DefaultUser
+	if err := s.Update(func(c *Config) { c.DefaultUser = "不应提交" }); err == nil {
+		t.Fatal("写盘失败场景应返回错误")
+	}
+	if got := s.Get().DefaultUser; got != before {
+		t.Fatalf("写盘失败后内存配置不应变化: got %q want %q", got, before)
+	}
+}
+
 // TestApplyDefaultsLegacyDataNoFallback P9 迁移语义：老 ./data 不再决定
 // 数据根（迁移由 main.seedWiki 负责）——默认布局始终指向 XDG 数据根。
 func TestApplyDefaultsLegacyDataNoFallback(t *testing.T) {

@@ -56,6 +56,42 @@ func TestSearchBigramMatchesKeyword(t *testing.T) {
 	}
 }
 
+// TestSearchNonEmptyMissReturnsZero P0-01：非空检索零命中必须返回 0 条，
+// 不得回退为该类型全量目录（把无关条目伪装成命中是最大的幻觉放大器，
+// 近期零命中 Lint 也要能真实触发）。
+func TestSearchNonEmptyMissReturnsZero(t *testing.T) {
+	w := NewWikiStore(t.TempDir())
+	if err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	for _, mk := range []struct{ title, summary string }{
+		{"雷池", "Web 应用防火墙"},
+		{"SQL注入", "常见 Web 攻击手法"},
+	} {
+		mt := domain.MemoryProduct
+		if mk.title == "SQL注入" {
+			mt = domain.MemoryThreat
+		}
+		if err := w.UpsertEntry(&Entry{
+			Type: mt, Title: mk.title, Summary: mk.summary, Status: StatusVerified,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 与现有条目完全无关的非空查询 → 零命中
+	hits := w.SearchEntry("量子引力黑洞奇点", "product", 10)
+	if len(hits) != 0 {
+		t.Fatalf("非空零命中应返回 0 条，got %d (%v)", len(hits), hits)
+	}
+	if hits = w.SearchEntry("量子引力黑洞奇点", "", 10); len(hits) != 0 {
+		t.Fatalf("跨类型非空零命中应返回 0 条，got %d", len(hits))
+	}
+	// 空 query 语义保留（AllKnowledge 注入场景仍返回全量）
+	if hits = w.SearchEntry("", "product", 10); len(hits) == 0 {
+		t.Fatal("空 query 应返回全量目录（AllKnowledge 依赖）")
+	}
+}
+
 // TestSearchWeightTitleBeatsSummary 字段权重：标题命中 > 摘要命中。
 func TestSearchWeightTitleBeatsSummary(t *testing.T) {
 	w := NewWikiStore(t.TempDir())
@@ -81,6 +117,32 @@ func TestSearchWeightTitleBeatsSummary(t *testing.T) {
 	}
 	if hits[0].Title != "等保三级" {
 		t.Fatalf("标题命中应排最前，got %s", hits[0].Title)
+	}
+}
+
+// TestListEntryOffsetClampNoPanic P0-08：恶意/畸形 offset（负值、超界）传给
+// memory_list 时不得触发切片越界 panic 打死 Run goroutine——负索引 slice 在
+// Go 里直接 panic，必须钳制到合法区间。
+func TestListEntryOffsetClampNoPanic(t *testing.T) {
+	w := NewWikiStore(t.TempDir())
+	if err := w.Load(); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		if err := w.UpsertEntry(&Entry{
+			Type: domain.MemoryProduct, Title: "产品" + string(rune('A'+i)),
+			Summary: "x", Status: StatusVerified,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 负 offset 不再 panic，返回首段
+	if hits := w.ListEntry("product", -5, 3); len(hits) != 3 {
+		t.Fatalf("负 offset 应钳制为 0 并返回前 limit 条，got %d", len(hits))
+	}
+	// 超界 offset 返回空且不 panic
+	if hits := w.ListEntry("product", 100, 3); len(hits) != 0 {
+		t.Fatalf("超界 offset 应返回空，got %d", len(hits))
 	}
 }
 

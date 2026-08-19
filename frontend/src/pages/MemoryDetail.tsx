@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { memoryGet, memoryList, memoryUpsert, memoryDelete } from "../api/client";
 import type { MemoryEntry } from "../types";
 import MemoryForm, { toValues, fromValues, type MemoryValues } from "../components/MemoryForm";
 import MarkdownView from "../components/MarkdownView";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { useAuth } from "../auth/AuthProvider";
+import { ROLE_ADMIN, ROLE_OWNER } from "../types";
 
 const typeLabel: Record<string, string> = {
   product: "产品",
@@ -25,6 +27,7 @@ export default function MemoryDetail() {
   const { type = "", title = "" } = useParams<{ type: string; title: string }>();
   const decodedTitle = decodeURIComponent(title);
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [entry, setEntry] = useState<MemoryEntry | null>(null);
   const [subDocs, setSubDocs] = useState<MemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +37,7 @@ export default function MemoryDetail() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -49,10 +52,10 @@ export default function MemoryDetail() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [decodedTitle, type]);
   useEffect(() => {
-    load();
-  }, [type, decodedTitle]);
+    void load();
+  }, [load]);
 
   async function onSubmit(v: MemoryValues) {
     setSubmitting(true);
@@ -63,7 +66,7 @@ export default function MemoryDetail() {
       setEditing(false);
       if (e.title !== decodedTitle || e.type !== type)
         navigate(`/memory/${e.type}/${encodeURIComponent(e.title)}`, { replace: true });
-      else load();
+      else void load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -106,6 +109,11 @@ export default function MemoryDetail() {
     );
 
   const isMainProduct = type === "product" && !entry.product;
+  const isTenantManager = !!user?.roles.some((r) => r === ROLE_OWNER || r === ROLE_ADMIN);
+  const isOwnUserProfile = entry.type === "user" && entry.user_id === user?.user_id;
+  const canEdit =
+    entry.type !== "product" && (isTenantManager || (entry.type === "user" && isOwnUserProfile));
+  const canArchive = isTenantManager && entry.type !== "product" && entry.type !== "user";
   // 售前可见的子文档（排除 internal/engineering = pending_review），排除自身
   const docs = subDocs.filter((d) => d.status !== "pending_review" && d.title !== decodedTitle);
 
@@ -137,10 +145,14 @@ export default function MemoryDetail() {
           </span>
         )}
         <div className="page-actions">
-          <button className="btn ghost sm" onClick={() => setEditing((x) => !x)}>
-            {editing ? "取消" : "编辑"}
-          </button>
-          {entry.type !== "product" && entry.type !== "user" && (
+          {canEdit ? (
+            <button className="btn ghost sm" onClick={() => setEditing((x) => !x)}>
+              {editing ? "取消" : "编辑"}
+            </button>
+          ) : (
+            <span className="badge">只读</span>
+          )}
+          {canArchive && (
             <button className="btn ghost sm" onClick={handleArchive}>
               归档
             </button>
@@ -188,6 +200,7 @@ export default function MemoryDetail() {
         <MemoryForm
           initial={toValues(entry)}
           submitting={submitting}
+          lockIdentity={entry.type === "user"}
           onSubmit={onSubmit}
           onCancel={() => setEditing(false)}
         />
@@ -219,20 +232,6 @@ export default function MemoryDetail() {
         open={!!confirmArchive}
         title={`归档 ${entry?.title ?? ""}？`}
         body="归档后不再参与检索，可从记忆库恢复。"
-        confirmText="归档"
-        danger={false}
-        onConfirm={doArchive}
-        onCancel={() => setConfirmArchive(false)}
-      />
-      {archErr && (
-        <div className="err-banner" onClick={() => setArchErr("")}>
-          {archErr}（点击关闭）
-        </div>
-      )}
-      <ConfirmDialog
-        open={!!confirmArchive}
-        title={`归档 ${entry?.title ?? ""}？`}
-        body="归档后不再参与检索。"
         confirmText="归档"
         danger={false}
         onConfirm={doArchive}

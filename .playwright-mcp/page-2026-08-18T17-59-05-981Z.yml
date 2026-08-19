@@ -1,0 +1,237 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 长
+        - generic [ref=e7]: 需求分析 · 长亭
+      - button "切换侧栏" [ref=e8] [cursor=pointer]:
+        - img [ref=e9]
+    - button "新建对话" [ref=e11] [cursor=pointer]:
+      - img [ref=e12]
+      - generic [ref=e14]: 新建对话
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: 最近对话
+        - link "全部" [ref=e18] [cursor=pointer]:
+          - /url: /history
+      - textbox "搜索会话…" [ref=e19]
+      - button "官网被挂马，要过等保三级 刚刚 更多操作 官网被挂马，要过等保三级" [ref=e393] [cursor=pointer]:
+        - generic [ref=e122]: 官网被挂马，要过等保三级
+        - generic [ref=e123]: 刚刚
+        - button "更多操作 官网被挂马，要过等保三级" [ref=e125]:
+          - img [ref=e126]
+      - button "官网挂马需过等保三级 刚刚 更多操作 官网挂马需过等保三级" [ref=e20] [cursor=pointer]:
+        - generic [ref=e21]: 官网挂马需过等保三级
+        - generic [ref=e22]: 刚刚
+        - button "更多操作 官网挂马需过等保三级" [ref=e23]:
+          - img [ref=e24]
+      - button "官网被挂马需过等保三级 刚刚 更多操作 官网被挂马需过等保三级" [ref=e26] [cursor=pointer]:
+        - generic [ref=e27]: 官网被挂马需过等保三级
+        - generic [ref=e28]: 刚刚
+        - button "更多操作 官网被挂马需过等保三级" [ref=e29]:
+          - img [ref=e30]
+      - button "跨境电商WAF反爬虫评估 刚刚 更多操作 跨境电商WAF反爬虫评估" [ref=e32] [cursor=pointer]:
+        - generic [ref=e33]: 跨境电商WAF反爬虫评估
+        - generic [ref=e34]: 刚刚
+        - button "更多操作 跨境电商WAF反爬虫评估" [ref=e35]:
+          - img [ref=e36]
+      - button "不用了 刚刚 更多操作 不用了" [ref=e38] [cursor=pointer]:
+        - generic [ref=e39]: 不用了
+        - generic [ref=e40]: 刚刚
+        - button "更多操作 不用了" [ref=e41]:
+          - img [ref=e42]
+      - button "官网被挂马，要过等保三级 3 天前 更多操作 官网被挂马，要过等保三级" [ref=e44] [cursor=pointer]:
+        - generic [ref=e45]: 官网被挂马，要过等保三级
+        - generic [ref=e46]: 3 天前
+        - button "更多操作 官网被挂马，要过等保三级" [ref=e47]:
+          - img [ref=e48]
+      - button "大促网站CC攻击应急与等保合规 3 天前 更多操作 大促网站CC攻击应急与等保合规" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51]: 大促网站CC攻击应急与等保合规
+        - generic [ref=e52]: 3 天前
+        - button "更多操作 大促网站CC攻击应急与等保合规" [ref=e53]:
+          - img [ref=e54]
+      - button "大促网站被 CC 打慢，过等保二级 3 天前 更多操作 大促网站被 CC 打慢，过等保二级" [ref=e56] [cursor=pointer]:
+        - generic [ref=e57]: 大促网站被 CC 打慢，过等保二级
+        - generic [ref=e58]: 3 天前
+        - button "更多操作 大促网站被 CC 打慢，过等保二级" [ref=e59]:
+          - img [ref=e60]
+    - generic [ref=e62]:
+      - link "商机面板" [ref=e63] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e64]
+        - generic [ref=e66]: 商机面板
+      - link "记忆库" [ref=e67] [cursor=pointer]:
+        - /url: /memory
+        - img [ref=e68]
+        - generic [ref=e70]: 记忆库
+      - link "成员管理" [ref=e71] [cursor=pointer]:
+        - /url: /members
+        - img [ref=e72]
+        - generic [ref=e74]: 成员管理
+      - link "用户管理" [ref=e75] [cursor=pointer]:
+        - /url: /admin/users
+        - img [ref=e76]
+        - generic [ref=e78]: 用户管理
+      - link "观测台" [ref=e79] [cursor=pointer]:
+        - /url: /observe
+        - img [ref=e80]
+        - generic [ref=e82]: 观测台
+      - link "设置" [ref=e83] [cursor=pointer]:
+        - /url: /settings
+        - img [ref=e84]
+        - generic [ref=e86]: 设置
+      - generic [ref=e87]:
+        - generic "平台管理员 · admin@chaitin.com" [ref=e88]:
+          - generic [ref=e89]: 平
+          - generic [ref=e90]:
+            - generic [ref=e91]: 平台管理员
+            - generic [ref=e92]:
+              - text: Legacy 存量工作空间
+              - generic "租户 ID：21fc7cd11e3f5313758a5569eb8a9400" [ref=e93]: · 21fc7cd1
+              - text: owner平台管理
+        - generic [ref=e94]:
+          - button "改密" [ref=e95] [cursor=pointer]
+          - button "退出" [ref=e96] [cursor=pointer]
+  - main [ref=e97]:
+    - generic [ref=e98]:
+      - generic [ref=e128]:
+        - generic [ref=e129]:
+          - generic [ref=e130]: 官网被挂马，要过等保三级
+          - generic [ref=e131]:
+            - button "⧉" [ref=e132] [cursor=pointer]
+            - button "编辑后重发" [ref=e394] [cursor=pointer]:
+              - img [ref=e395]
+        - generic [ref=e133]:
+          - button "⧉" [ref=e134] [cursor=pointer]
+          - generic [ref=e135]: 需求分析助手
+          - generic [ref=e136]:
+            - generic [ref=e137] [cursor=pointer]:
+              - text: 执行过程 · 5 次思考 · 15 次工具调用
+              - generic [ref=e139]: ▸
+            - generic [ref=e397]:
+              - paragraph [ref=e398]: 已帮您把这条线索分析完，结论如下：
+              - heading "需求拆解" [level=2] [ref=e399]
+              - paragraph [ref=e400]: 「官网被挂马 + 要过等保三级」其实是三层需求：
+              - list [ref=e401]:
+                - listitem [ref=e402]:
+                  - strong [ref=e403]: 应急清马
+                  - text: ——服务器上已被写入 webshell/恶意文件，得先找到并清掉
+                - listitem [ref=e404]:
+                  - strong [ref=e405]: 防再被入侵
+                  - text: ——找到被利用的漏洞入口，并在官网前端布防
+                - listitem [ref=e406]:
+                  - strong [ref=e407]: 过等保三级
+                  - text: ——补齐入侵防范、恶意代码防范、日志审计（≥6月）、安全管理中心、漏洞管理等控制项
+              - heading "推荐打法（闭环：发现→清理→防护）" [level=2] [ref=e408]
+              - table [ref=e409]:
+                - rowgroup [ref=e410]:
+                  - row "产品 置信度 干什么用" [ref=e411]:
+                    - columnheader "产品" [ref=e412]
+                    - columnheader "置信度" [ref=e413]
+                    - columnheader "干什么用" [ref=e414]
+                - rowgroup [ref=e415]:
+                  - row "雷池 WAF 0.95 官网前端兜底，拦 SQL 注入/XSS/扫描爬虫，虚拟补丁堵漏洞，等保边界防护+入侵防范" [ref=e416]:
+                    - cell "雷池 WAF" [ref=e417]:
+                      - strong [ref=e418]: 雷池
+                      - text: WAF
+                    - cell "0.95" [ref=e419]
+                    - cell "官网前端兜底，拦 SQL 注入/XSS/扫描爬虫，虚拟补丁堵漏洞，等保边界防护+入侵防范" [ref=e420]
+                  - row "牧云-主机安全 0.9 服务器装 Agent 全盘扫恶意文件清马，持续盯 webshell 复活，对应等保恶意代码防范" [ref=e421]:
+                    - cell "牧云-主机安全" [ref=e422]:
+                      - strong [ref=e423]: 牧云-主机安全
+                    - cell "0.9" [ref=e424]
+                    - cell "服务器装 Agent 全盘扫恶意文件清马，持续盯 webshell 复活，对应等保恶意代码防范" [ref=e425]
+                  - row "洞鉴 0.9 扫官网+主机定位被利用的漏洞入口，出等保漏洞扫描报告" [ref=e426]:
+                    - cell "洞鉴" [ref=e427]:
+                      - strong [ref=e428]: 洞鉴
+                    - cell "0.9" [ref=e429]
+                    - cell "扫官网+主机定位被利用的漏洞入口，出等保漏洞扫描报告" [ref=e430]
+                  - row "万象 SOC 0.8 收口多设备日志、留存≥6月、态势感知，满足等保安全管理中心+日志审计" [ref=e431]:
+                    - cell "万象 SOC" [ref=e432]:
+                      - strong [ref=e433]: 万象
+                      - text: SOC
+                    - cell "0.8" [ref=e434]
+                    - cell "收口多设备日志、留存≥6月、态势感知，满足等保安全管理中心+日志审计" [ref=e435]
+                  - row "谛听 NDR 0.7 若整改方案要求 NDR，旁路抓内网横向移动/入侵，作补充项" [ref=e436]:
+                    - cell "谛听 NDR" [ref=e437]:
+                      - strong [ref=e438]: 谛听
+                      - text: NDR
+                    - cell "0.7" [ref=e439]
+                    - cell "若整改方案要求 NDR，旁路抓内网横向移动/入侵，作补充项" [ref=e440]
+              - paragraph [ref=e441]:
+                - strong [ref=e442]: 可行性判断：直接覆盖（direct）
+                - text: ——长亭产品线可完整支撑"清马 + 防再入 + 等保三级建设"，无需定制或外部整合。
+              - heading "建议话术（可直接发给客户）" [level=2] [ref=e443]
+              - blockquote [ref=e444]:
+                - paragraph [ref=e445]: "\"挂马不是把页面改回来就完事，得先找到服务器上的木马文件清干净，同时堵住被利用的漏洞口。长亭可以用『牧云清马 + 洞鉴找漏洞入口 + 雷池前端防护』一条线帮您把官网护住，这三样再加日志审计，正好也是等保三级要求的核心控制项，能一并出具测评需要的报告。\""
+              - separator [ref=e446]
+              - paragraph [ref=e447]: 在深入之前，先确认一下这是哪家客户的情况：
+            - generic [ref=e333]:
+              - generic [ref=e334]:
+                - heading "需求理解" [level=4] [ref=e335]
+                - paragraph [ref=e337]: 客户官网被挂马（网页被植入恶意代码，常见为 webshell、篡改跳转、博彩/色情暗链或挖矿脚本），且需要通过等保三级测评。翻译为三层安全需求：①应急处置——定位并清理已植入的恶意文件/webshell（主机侧恶意代码防范）；②防护加固——在官网前端布防，阻止 SQL 注入、文件上传、XSS 等被利用的漏洞入口，避免再次被入侵（Web 边界防护/入侵防范）；③合规建设——等保三级要求的安全通信网络、入侵防范、恶意代码防范、集中日志审计（≥6月）、安全管理中心、漏洞管理等控制项需有对应产品支撑并出报告。
+              - generic [ref=e338]:
+                - heading "可行性判定" [level=4] [ref=e339]
+                - generic [ref=e340]:
+                  - generic [ref=e341]: 直接覆盖
+                  - generic [ref=e342]: 挂马清理（牧云恶意文件检测与处置）+ 漏洞入口定位（洞鉴 Web/主机漏洞扫描）+ 官网防护（雷池 WAF）形成"发现—清理—防护"闭环，且雷池/洞鉴/牧云/万象/谛听共同构成等保三级标准建设组合，长亭产品线可直接覆盖，无需定制或外部整合。
+              - generic [ref=e343]:
+                - heading "匹配产品（5）" [level=4] [ref=e344]
+                - generic [ref=e345]:
+                  - generic [ref=e346]:
+                    - generic [ref=e347]: 雷池
+                    - generic [ref=e348]: 95%
+                  - generic [ref=e351]: 官网挂马通常源于 Web 应用漏洞被利用（SQL注入/文件上传/XSS/组件漏洞）。雷池反向代理部署在官网前端，语义分析拦截注入与 XSS、虚拟补丁堵漏洞、防扫描爬虫，直接阻断再次入侵路径，同时是等保三级边界防护与入侵防范的核心控制项。
+                  - generic [ref=e352]: » 官网先接雷池 WAF 兜底，防住正在发生的扫描和注入；若页面已被篡改，配合牧云先清马。
+                - generic [ref=e353]:
+                  - generic [ref=e354]:
+                    - generic [ref=e355]: 牧云-主机安全
+                    - generic [ref=e356]: 90%
+                  - generic [ref=e359]: 挂马的本质是服务器上被写入了恶意文件/webshell。牧云 Agent 采集，具备恶意文件检测、异常行为检测与主机处置（文件处置/进程审计），可定位并清理已植入的挂马文件，覆盖等保三级恶意代码防范要求。
+                  - generic [ref=e360]: » 服务器装牧云 Agent，先做全盘恶意文件扫描清马，再持续监控异常进程/命令，防 webshell 复活。
+                - generic [ref=e361]:
+                  - generic [ref=e362]:
+                    - generic [ref=e363]: 洞鉴
+                    - generic [ref=e364]: 90%
+                  - generic [ref=e367]: 需要找出挂马被利用的漏洞入口。洞鉴覆盖 Web+主机漏洞扫描（SQL注入/XSS/越权/弱口令/CVE），可定位官网被攻破的漏洞点，同时输出等保三级测评所需的漏洞扫描报告。
+                  - generic [ref=e368]: » 对官网域名和内网主机跑一轮洞鉴扫描，定位漏洞入口并出报告，作为等保漏洞管理项证据。
+                - generic [ref=e369]:
+                  - generic [ref=e370]:
+                    - generic [ref=e371]: 万象
+                    - generic [ref=e372]: 80%
+                  - generic [ref=e375]: 等保三级要求集中日志审计留存≥6月与安全管理中心（集中管控/态势感知）。万象 SOC 汇聚多源日志做关联分析、威胁研判与工单流转，明确支撑等保三级安全管理中心与日志审计项。
+                  - generic [ref=e376]: » 如需补齐等保日志审计与安全管理中心项，推荐万象统一收口雷池/牧云/洞鉴日志，满足6个月留存。
+                - generic [ref=e377]:
+                  - generic [ref=e378]:
+                    - generic [ref=e379]: 谛听
+                    - generic [ref=e380]: 70%
+                  - generic [ref=e383]: 等保三级入侵防范要求 IDS/NDR 类检测能力。谛听旁路镜像分析流量，发现入侵、横向移动与数据外传，可作等保入侵防范的补充控制项。
+                  - generic [ref=e384]: » 若客户等保整改方案明确要求 NDR 入侵防范，可加谛听旁路部署；否则雷池+牧云已覆盖大部分入侵防范项。
+              - generic [ref=e385]:
+                - heading "待追问" [level=4] [ref=e386]
+                - list [ref=e387]:
+                  - listitem [ref=e388]: 挂马的具体表现与发现方式：页面被篡改/跳转博彩色情/植入暗链/挖矿脚本/被第三方安全平台告警？决定应急清理与防护的优先级
+                  - listitem [ref=e389]: 官网部署环境：云服务器/本地IDC/容器，Web 服务类型（Nginx/Apache/IIS/中间件）？是否有服务器 root 权限可装 Agent
+                  - listitem [ref=e390]: 现状已有安全设备：是否已有 WAF、主机安全、日志审计/堡垒机，等保是新建建设还是存量补齐
+                  - listitem [ref=e391]: 等保三级测评时间节点与责任方：测评机构是否已定，需要厂商出具哪些报告/资质
+                  - listitem [ref=e392]: 资产规模与预算区间：涉及多少台服务器、几个域名，预算与采购周期
+            - generic [ref=e448]:
+              - generic [ref=e449]: ❓ 这条「官网挂马 + 等保三级」需求是哪家客户？
+              - generic [ref=e450]:
+                - button "某跨境电商平台" [ref=e451] [cursor=pointer]
+                - button "新客户✎" [ref=e452] [cursor=pointer]
+              - generic [ref=e453]:
+                - textbox "或直接输入回复…" [ref=e454]
+                - button "发送" [disabled] [ref=e455]
+      - navigation "章节目录":
+        - generic [ref=e145]:
+          - button "定位到：官网被挂马，要过等保三级" [ref=e146] [cursor=pointer]
+          - button "定位到：需求拆解" [ref=e456] [cursor=pointer]
+          - button "定位到：推荐打法（闭环：发现→清理→防护）" [ref=e458] [cursor=pointer]
+          - button "定位到：建议话术（可直接发给客户）" [ref=e460] [cursor=pointer]
+      - generic [ref=e149]:
+        - generic [ref=e150]:
+          - textbox "输入消息，回车发送（Shift+回车换行）…" [ref=e151]
+          - button "发送" [disabled] [ref=e462]:
+            - img [ref=e153]
+        - generic [ref=e155]: 会话 64f8565fec3c · 回车发送

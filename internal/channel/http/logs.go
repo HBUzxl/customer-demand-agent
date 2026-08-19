@@ -75,7 +75,8 @@ func (r *LogRing) Subscribe() (<-chan string, func()) {
 	}
 }
 
-// handleConsoleLogs: GET /api/console/logs —— 日志 tail（SSE：先 replay 最近 100 行再续传）。
+// handleConsoleLogs: GET /api/platform/logs —— 原始日志 tail（SSE：先 replay 最近 100 行再续传）。
+// 平台管理路由（platform_admin 专用）：日志含系统级敏感信息，不对租户开放（§7.5）。
 func (s *Server) handleConsoleLogs(w http.ResponseWriter, r *http.Request) {
 	if s.logRing == nil {
 		writeError(w, http.StatusServiceUnavailable, "日志流未启用")
