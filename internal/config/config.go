@@ -1,6 +1,6 @@
 // Package config loads runtime configuration from a JSON config file — NOT from
-// environment variables. config.json is the single source of truth for server
-// settings, model registry, router, and (crucially) API keys.
+// environment variables except explicit local runtime overrides (CDA_ADDR /
+// CDA_DATA_DIR). config.json remains the source of truth for model credentials.
 //
 // 启动时加载（不存在则写一份模板）；/api/config 的改动会回写文件。这样 API key
 // 与模型配置集中在一个文件里管理，不依赖环境变量。
@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"customer-demand-agent/internal/model"
@@ -25,13 +26,41 @@ type Config struct {
 	DataDir            string              `json:"data_dir"` // 数据根（P9：wiki/历史库的父目录；env CDA_DATA_DIR 优先）
 	WikiDir            string              `json:"wiki_dir"`
 	HistoryDB          string              `json:"history_db"`
-	DefaultUser        string              `json:"default_user"`         // 当前使用者（销售），影响分级输出
+	DefaultUser        string              `json:"default_user"`         // 当前使用者（销售），影响分级输出（多租户下仅 legacy 回退）
 	LLMTimeoutSec      int                 `json:"llm_timeout_sec"`      // 全局 LLM 调用超时（非模型属性）
 	AgentMaxIterations int                 `json:"agent_max_iterations"` // Agent 单轮最大工具循环数（console-config：可配置化，默认 15）
 	Models             []model.ModelConfig `json:"models"`
 	Router             model.RouterConfig  `json:"router"`
 	Jiying             JiyingCfg           `json:"jiying"`       // 即应渠道（可选，enabled=true 才启动）
 	LeadManager        LeadManagerCfg      `json:"lead_manager"` // 商机平台（只读外部数据源，enabled+api_key 齐备才接入）
+	// 多租户（设计文档 multi-tenant-design.md）：
+	RegistrationEnabled *bool `json:"registration_enabled"` // 开放注册开关（nil=true，生产建议显式 false 或加邀请码）
+	SecureCookies       *bool `json:"secure_cookies"`       // Cookie 是否要求 Secure（nil=true；本地 http 测试可显式 false）
+}
+
+// IsRegistrationEnabled 是否允许开放注册（默认开启；生产建议显式关闭）。
+func (c *Config) IsRegistrationEnabled() bool {
+	return c.RegistrationEnabled == nil || *c.RegistrationEnabled
+}
+
+// IsSecureCookies 登录 Cookie 是否要求 Secure（默认 true；本地 http 联调用 false）。
+func (c *Config) IsSecureCookies() bool {
+	return c.SecureCookies == nil || *c.SecureCookies
+}
+
+// ControlDBPath 中央身份库路径（多租户控制面）。
+func (c *Config) ControlDBPath() string {
+	return filepath.Join(c.DataDir, "control", "identity.db")
+}
+
+// SystemWikiDirPath 平台只读系统知识目录（产品/基础威胁/合规/行业基线）。
+func (c *Config) SystemWikiDirPath() string {
+	return filepath.Join(c.DataDir, "system", "wiki")
+}
+
+// TenantsDirPath 每租户独立数据面根目录。
+func (c *Config) TenantsDirPath() string {
+	return filepath.Join(c.DataDir, "tenants")
 }
 
 // LeadManagerCfg 商机平台（Lead Manager / MQL）接入配置。
@@ -75,10 +104,12 @@ func template() *Config {
 			Addr:         ":8080",
 			FrontendDist: "",
 		},
-		WikiDir:       "./wiki",
-		HistoryDB:     "./data/history.db",
-		DefaultUser:   "张三",
-		LLMTimeoutSec: 120,
+		WikiDir:             "./wiki",
+		HistoryDB:           "./data/history.db",
+		DefaultUser:         "", // 仅 legacy/dingtalk 回退；Web 多租户按登录 user_id 自动解析
+		LLMTimeoutSec:       120,
+		RegistrationEnabled: boolPtr(true),
+		SecureCookies:       boolPtr(true),
 		Models: []model.ModelConfig{
 			{
 				Name:        "default",
@@ -138,27 +169,66 @@ func Load(path string) (*Store, error) {
 	return &Store{path: path, cfg: cfg}, nil
 }
 
-// Get 返回当前配置（只读视图，调用方不应修改）。
+// Get 返回当前配置的深拷贝快照，调用方修改不会污染 Store，也不会与 Update
+// 并发读写同一个 map/slice/pointer。
 func (s *Store) Get() *Config {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.cfg
+	return cloneConfig(s.cfg)
 }
 
-// Update 在锁内修改配置并回写文件。mutate 操作 cfg 后返回写盘错误。
+// Update 在副本上修改并先原子写盘；写盘成功后才替换内存快照。这样磁盘错误
+// 不会留下“接口报失败但内存配置已变化”的半提交状态。
 func (s *Store) Update(mutate func(cfg *Config)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	mutate(s.cfg)
-	return write(s.path, s.cfg)
+	next := cloneConfig(s.cfg)
+	mutate(next)
+	if err := write(s.path, next); err != nil {
+		return err
+	}
+	s.cfg = next
+	return nil
 }
 
 // Save 将给定配置整体替换并写回文件。
 func (s *Store) Save(cfg *Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.cfg = cfg
-	return write(s.path, cfg)
+	next := cloneConfig(cfg)
+	if err := write(s.path, next); err != nil {
+		return err
+	}
+	s.cfg = next
+	return nil
+}
+
+func cloneConfig(in *Config) *Config {
+	if in == nil {
+		return &Config{}
+	}
+	out := *in
+	out.Models = append([]model.ModelConfig(nil), in.Models...)
+	out.Router.Routes = make(map[model.TaskType]string, len(in.Router.Routes))
+	for k, v := range in.Router.Routes {
+		out.Router.Routes[k] = v
+	}
+	out.Router.Fallback.Chain = append([]string(nil), in.Router.Fallback.Chain...)
+	if in.RegistrationEnabled != nil {
+		v := *in.RegistrationEnabled
+		out.RegistrationEnabled = &v
+	}
+	if in.SecureCookies != nil {
+		v := *in.SecureCookies
+		out.SecureCookies = &v
+	}
+	for i := range out.Models {
+		if in.Models[i].Enabled != nil {
+			v := *in.Models[i].Enabled
+			out.Models[i].Enabled = &v
+		}
+	}
+	return &out
 }
 
 func read(path string) (*Config, error) {
@@ -199,7 +269,9 @@ func write(path string, cfg *Config) error {
 // ~/.local/share/customer-demand-agent）。wiki_dir/history_db 的相对
 // 路径解析为数据根相对；开发零配置回退 ./data（项目内，行为与旧版一致）。
 func applyDefaults(cfg *Config) {
-	if cfg.Server.Addr == "" {
+	if v := strings.TrimSpace(os.Getenv("CDA_ADDR")); v != "" {
+		cfg.Server.Addr = v
+	} else if cfg.Server.Addr == "" {
 		cfg.Server.Addr = ":8080"
 	}
 	if cfg.DataDir == "" {
@@ -219,9 +291,6 @@ func applyDefaults(cfg *Config) {
 	_ = os.MkdirAll(cfg.WikiDir, 0o755)
 	if cfg.AgentMaxIterations <= 0 {
 		cfg.AgentMaxIterations = 15
-	}
-	if cfg.DefaultUser == "" {
-		cfg.DefaultUser = "张三"
 	}
 	if cfg.LLMTimeoutSec <= 0 {
 		cfg.LLMTimeoutSec = 120
@@ -245,6 +314,9 @@ func applyDefaults(cfg *Config) {
 		cfg.LeadManager.Burst = 3
 	}
 }
+
+// boolPtr 返回 *bool 引用（config 模板默认值用）。
+func boolPtr(b bool) *bool { return &b }
 
 // xdgDataDir 数据根默认：XDG_DATA_HOME 或 ~/.local/share。
 // P9 迁移语义：老 ./data 不再决定数据根（由 main.seedWiki 自动搬入数据根）。

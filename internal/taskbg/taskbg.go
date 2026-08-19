@@ -12,6 +12,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"customer-demand-agent/internal/domain"
 )
 
 // TaskType 任务类型（注册新任务时扩展）。
@@ -23,15 +25,29 @@ const (
 	TaskTitle       TaskType = "title"       // 会话标题生成
 )
 
-// Task 是一次后台任务的执行记录（观测台消费）。
+// Task 是一次后台任务的执行记录（观测台消费）。多租户下带 TenantID：
+// 任务列表按租户隔离，exec 闭包按 TenantID 解析租户运行时操作其数据面。
 type Task struct {
-	ID        string     `json:"id"`
-	Type      TaskType   `json:"type"`
-	Detail    string     `json:"detail"` // 任务描述（如固化的条目名）
-	Status    string     `json:"status"` // running / done / failed
-	Result    string     `json:"result"` // 完成摘要（观测台展示）
-	CreatedAt time.Time  `json:"created_at"`
-	DoneAt    *time.Time `json:"done_at,omitempty"`
+	ID          string       `json:"id"`
+	TenantID    string       `json:"tenant_id"`
+	ActorUserID string       `json:"actor_user_id,omitempty"` // 提交人（审计/观测台展示）
+	Type        TaskType     `json:"type"`
+	Resource    TaskResource `json:"resource"` // 任务目标资源（结构化替代旧 Detail 字符串）
+	Status      string       `json:"status"`   // running / done / failed
+	Result      string       `json:"result"`   // 完成摘要（观测台展示）
+	CreatedAt   time.Time    `json:"created_at"`
+	DoneAt      *time.Time   `json:"done_at,omitempty"`
+}
+
+// TaskResource 是任务的目标资源（结构化引用）。
+// 按任务类型取值：
+//   - consolidate：Type=记忆类型（threat/...），TypeID=条目标题
+//   - title：Type="session"，TypeID=session_id，Title=会话首行（生成标题的输入）
+//   - lint：Type="all"（全库扫描）
+type TaskResource struct {
+	Type   string `json:"type"`
+	TypeID string `json:"type_id,omitempty"`
+	Title  string `json:"title,omitempty"`
 }
 
 // Runner 是后台任务执行器：串行执行（单 worker 消费队列——同一时刻至多
@@ -59,8 +75,13 @@ func (r *Runner) worker() {
 }
 
 // Submit 提交任务（入队，立即返回任务记录——状态 running 表示排队+执行中）。
-func (r *Runner) Submit(id string, typ TaskType, detail string) *Task {
-	t := &Task{ID: id, Type: typ, Detail: detail, Status: "running", CreatedAt: time.Now()}
+// scope 提供租户与执行人归属（nil 表示 legacy/无租户上下文）。
+func (r *Runner) Submit(scope *domain.TenantScope, id string, typ TaskType, res TaskResource) *Task {
+	tenantID, actor := "", ""
+	if scope != nil {
+		tenantID, actor = scope.TenantID, scope.UserID
+	}
+	t := &Task{ID: id, TenantID: tenantID, ActorUserID: actor, Type: typ, Resource: res, Status: "running", CreatedAt: time.Now()}
 	r.mu.Lock()
 	r.tasks = append(r.tasks, t)
 	if len(r.tasks) > r.history {
@@ -119,17 +140,35 @@ func (r *Runner) Result(t *Task) string {
 	return t.Result
 }
 
-// List 返回任务列表快照（倒序：最新在前）。返回 Task 拷贝——外部
-// 读字段不与 worker 写竞态。
-func (r *Runner) List(limit int) []Task {
+// List 返回任务列表快照（倒序：最新在前）。scope 非 nil 时只列该租户任务
+// （跨租户不可见）。返回 Task 拷贝——外部读字段不与 worker 写竞态。
+func (r *Runner) List(scope *domain.TenantScope, limit int) []Task {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if limit <= 0 || limit > len(r.tasks) {
-		limit = len(r.tasks)
+	// 过滤租户（从最新往旧收集）
+	var filtered []*Task
+	for i := len(r.tasks) - 1; i >= 0; i-- {
+		t := r.tasks[i]
+		if scope != nil && t.TenantID != scope.TenantID {
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+	if limit <= 0 || limit > len(filtered) {
+		limit = len(filtered)
 	}
 	out := make([]Task, limit)
 	for i := 0; i < limit; i++ {
-		out[i] = *r.tasks[len(r.tasks)-1-i]
+		out[i] = *filtered[i]
 	}
 	return out
+}
+
+// Snapshot 返回任务在锁下的值拷贝（POST 响应序列化用）。Submit 返回的是 worker
+// 实时更新的活对象，直接 JSON 序列化会与 worker 写竞态（race）；HTTP 层序列化
+// 前先取锁下快照，与 List 的拷贝语义一致。
+func (r *Runner) Snapshot(t *Task) Task {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return *t
 }

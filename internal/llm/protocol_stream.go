@@ -126,12 +126,18 @@ func (c *Client) parseStreamOpenAIResponse(r io.Reader, cb DeltaCallbacks) (*Cha
 			continue
 		}
 		switch ev.Type {
-		case "response.output_text.delta", "response.reasoning_summary_text.delta":
+		case "response.output_text.delta":
 			if ev.Delta != "" {
 				contentB.WriteString(ev.Delta) // 始终累积（不应依赖 callback 是否非空）
 				if cb.OnContent != nil {
 					cb.OnContent(ev.Delta)
 				}
+			}
+		case "response.reasoning_summary_text.delta":
+			// 推理摘要只进入 reasoning 通道，不能混入最终答复。Agent 会消费但不
+			// 转发该通道，避免把模型内部推理或未经核验的草稿展示给用户。
+			if ev.Delta != "" && cb.OnReasoning != nil {
+				cb.OnReasoning(ev.Delta)
 			}
 		case "response.output_item.added":
 			if ev.Item.Type == "function_call" {

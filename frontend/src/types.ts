@@ -20,6 +20,7 @@ export interface AnalysisResult {
 export interface MemoryEntry {
   type: string;
   title: string;
+  user_id?: string;
   aliases?: string[];
   tags?: string[];
   summary?: string;
@@ -122,6 +123,90 @@ export interface SessionDetail {
   }[];
 }
 
+// ── 身份 / 多租户（M4b）────────────────────────────
+export const ROLE_PLATFORM_ADMIN = "platform_admin";
+export const ROLE_OWNER = "owner";
+export const ROLE_ADMIN = "admin";
+export const ROLE_ANALYST = "analyst";
+export const ROLE_REVIEWER = "reviewer";
+
+// /api/auth/me、/api/auth/login、/api/auth/register 的最小响应视图
+// （不含密码 Hash / Token / 内部目录，§10.1）。
+export interface AuthUser {
+  user_id: string;
+  email: string;
+  display_name: string;
+  tenant_id: string;
+  tenant_name: string;
+  slug: string;
+  roles: string[];
+  workspaces: WorkspaceView[];
+  csrf: string; // CSRF raw（轮换下发，修改类请求须回传 X-CSRF-Token）
+}
+
+export interface WorkspaceView {
+  tenant_id: string;
+  tenant_name: string;
+  slug: string;
+  role: string;
+  status: string;
+}
+
+// ── 用户/成员管理（平台 + 租户，§4.2）────────────────
+export interface AdminMembership {
+  tenant_id: string;
+  tenant_name: string;
+  slug: string;
+  role: string;
+  status: string;
+}
+
+export interface AdminUser {
+  user_id: string;
+  email: string;
+  display_name: string;
+  status: string;
+  platform_admin: boolean;
+  last_login_at?: string;
+  created_at: string;
+  memberships: AdminMembership[];
+}
+
+export interface AdminTenant {
+  tenant_id: string;
+  name: string;
+  slug: string;
+  status: string;
+  member_count: number;
+  created_by?: string;
+  created_at: string;
+}
+
+export interface CurrentTenant {
+  tenant_id: string;
+  name: string;
+  slug: string;
+  status: string;
+  created_at: string;
+}
+
+export interface MemberView {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: string;
+  status: string;
+  last_login_at?: string;
+  created_at: string;
+}
+
+export const MEMBER_ROLES = [
+  { value: ROLE_OWNER, label: "所有者" },
+  { value: ROLE_ADMIN, label: "管理员" },
+  { value: ROLE_ANALYST, label: "分析人员" },
+  { value: ROLE_REVIEWER, label: "审核人员" },
+] as const;
+
 // Agent 流式事件（SSE）
 export interface AgentEvent {
   type:
@@ -139,10 +224,11 @@ export interface AgentEvent {
   tool?: string; // tool_call/tool_result
   params?: string; // tool_call 参数
   result?: string; // tool_result 结果
+  cached?: boolean; // tool_result 命中本轮只读缓存
   analysis?: AnalysisResult; // done（分析）
   content?: string; // done（追问）/ session id
   error?: string; // error
   question?: string; // ask_user 事件：问题
-  options?: { label: string; value?: string; description?: string }[]; // ask_user 选项
+  options?: { label: string; value?: string; description?: string; input?: string }[]; // ask_user 选项（input=选此项需补充信息的提示）
   run?: string;
 }

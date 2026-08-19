@@ -92,10 +92,13 @@ func findMissingEntries(in LintInput) []LintFinding {
 	return out
 }
 
-// BuildTitlePrompt 构造标题生成提示词（G4）。
-func BuildTitlePrompt(firstUserText string) string {
-	return "给下面这段客户对话起一个简短的会话标题（8-14 字，概括客户/场景/诉求，不带引号）：\n" +
-		firstUserText + "\n\n只输出标题本身。"
+// BuildTitlePrompt 构造标题生成提示词（G4）：输入为会话累计的用户提问原文
+// （可能多段，\n---\n 分隔），归纳为一个简短会话标题——而非取首行或最后一问。
+func BuildTitlePrompt(userText string) string {
+	return "以下是会话中用户（客户）陆续提出的问题/需求：\n" +
+		userText +
+		"\n\n请把这些提问归纳为一个简短的会话标题（8-14 个汉字，概括客户/场景/诉求，不带引号）。" +
+		"多个提问围绕同一主题时取该主题，只输出标题本身。"
 }
 
 // cjkBigrams 提取 CJK bigram 集合（重叠检测的确定性签名）。

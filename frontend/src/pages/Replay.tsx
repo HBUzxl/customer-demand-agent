@@ -7,6 +7,7 @@ import MarkdownView from "../components/MarkdownView";
 import ResultCard from "../components/ResultCard";
 import { JsonView } from "../components/ToolTrace";
 import type { ToolTrace } from "../components/ToolTrace";
+import Icon from "../components/Icon";
 
 const ANALYSIS_TOOL = "analysis_submit";
 
@@ -150,7 +151,7 @@ function CopyBtn({ text }: { text: string }) {
         });
       }}
     >
-      {done ? "✓" : "⧉"}
+      {done ? <Icon name="check" size={15} /> : <Icon name="copy" size={15} />}
     </button>
   );
 }
@@ -246,7 +247,23 @@ function TraceRow({ row, seq }: { row: Row; seq: number }) {
         </td>
         <td className="rp-sum">{summaryOf(row)}</td>
         <td className="faint" style={{ fontSize: 11 }}>
-          {row.kind === "tool" ? (row.tc.result ? "完成" : "…") : open ? "收起 ▴" : "展开 ▸"}
+          {row.kind === "tool" ? (
+            row.tc.result ? (
+              "完成"
+            ) : (
+              "…"
+            )
+          ) : open ? (
+            <>
+              <Icon name="chevron-up" size={11} style={{ marginRight: 2 }} />
+              收起
+            </>
+          ) : (
+            <>
+              <Icon name="chevron-right" size={11} style={{ marginRight: 2 }} />
+              展开
+            </>
+          )}
         </td>
       </tr>
       {open && (

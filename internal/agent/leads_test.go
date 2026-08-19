@@ -122,7 +122,7 @@ func TestAgentLeadsSearchHighValue(t *testing.T) {
 		{content: "当前 MQL 线索 2 条：某电商集团（雷池）、某银行（万象）。注：「高价值」按 MQL 阶段筛选，平台无排序能力，以上为默认顺序。"},
 	}, platform.URL)
 
-	content, _, trace, err := ag.Message(context.Background(), "sess-leads", "当前有哪些高价值的线索？", nil)
+	content, _, trace, err := ag.Message(context.Background(), nil, "sess-leads", "", "当前有哪些高价值的线索？", nil)
 	if err != nil {
 		t.Fatalf("Message: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestAgentLeadsDisabledToolsHidden(t *testing.T) {
 		{content: "商机平台未接入，请在设置里配置。"},
 	}, "") // platformURL 为空 → SetLeads 不调用
 
-	content, _, trace, err := ag.Message(context.Background(), "sess-noleads", "当前有哪些高价值的线索？", nil)
+	content, _, trace, err := ag.Message(context.Background(), nil, "sess-noleads", "", "当前有哪些高价值的线索？", nil)
 	if err != nil {
 		t.Fatalf("Message: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestAgentLeadsToolsRegistered(t *testing.T) {
 	ag, bodies := newLeadsAgent(t, []step{
 		{content: "好的。"},
 	}, platform.URL)
-	if _, _, _, err := ag.Message(context.Background(), "sess-reg", "你好", nil); err != nil {
+	if _, _, _, err := ag.Message(context.Background(), nil, "sess-reg", "", "你好", nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(*bodies) == 0 {

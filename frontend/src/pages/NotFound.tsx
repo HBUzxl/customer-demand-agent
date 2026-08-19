@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import Icon from "../components/Icon";
 
 export default function NotFound() {
   return (
@@ -15,7 +16,7 @@ export default function NotFound() {
           这条路径不在路由表里。
         </div>
         <Link to="/analyze" className="btn">
-          ▸ 回到需求分析终端
+          <Icon name="chevron-right" size={14} /> 回到需求分析终端
         </Link>
       </div>
     </div>

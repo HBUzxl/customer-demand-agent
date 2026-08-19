@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"customer-demand-agent/internal/domain"
 	"customer-demand-agent/internal/memory/longterm"
 )
 
@@ -17,7 +18,7 @@ func TestRunnerLifecycle(t *testing.T) {
 		gotID = task.ID
 		return nil
 	})
-	tk := r.Submit("t-1", TaskConsolidate, "threat/挂马")
+	tk := r.Submit(nil, "t-1", TaskConsolidate, TaskResource{Type: "threat", TypeID: "挂马"})
 	if r.Status(tk) != "running" {
 		t.Fatalf("应 running，got %s", r.Status(tk))
 	}
@@ -32,7 +33,7 @@ func TestRunnerLifecycle(t *testing.T) {
 		t.Fatal("执行函数应收到任务")
 	}
 	// 列表倒序
-	list := r.List(10)
+	list := r.List(nil, 10)
 	if len(list) != 1 || list[0].ID != "t-1" {
 		t.Fatalf("列表应含任务: %+v", list)
 	}
@@ -42,7 +43,7 @@ func TestRunnerFailure(t *testing.T) {
 	r := NewRunner(func(ctx context.Context, task *Task) error {
 		return errors.New("LLM 超时")
 	})
-	tk := r.Submit("t-2", TaskLint, "全库")
+	tk := r.Submit(nil, "t-2", TaskLint, TaskResource{Type: "all"})
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) && r.Status(tk) == "running" {
 		time.Sleep(10 * time.Millisecond)
@@ -125,7 +126,7 @@ func TestRunnerPanicMarkedFailed(t *testing.T) {
 	r := NewRunner(func(ctx context.Context, task *Task) error {
 		panic("boom")
 	})
-	tk := r.Submit("t-3", TaskTitle, "x/y")
+	tk := r.Submit(nil, "t-3", TaskTitle, TaskResource{Type: "session", TypeID: "sess-x", Title: "x"})
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) && r.Status(tk) == "running" {
 		time.Sleep(10 * time.Millisecond)
@@ -155,7 +156,7 @@ func TestRunnerSerialExecution(t *testing.T) {
 		return nil
 	})
 	for _, id := range []string{"a", "b", "c"} {
-		r.Submit(id, TaskLint, id)
+		r.Submit(nil, id, TaskLint, TaskResource{Type: "all"})
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -177,6 +178,41 @@ func TestRunnerSerialExecution(t *testing.T) {
 	}
 	if order[0] != "a" || order[1] != "b" || order[2] != "c" {
 		t.Fatalf("应按提交顺序执行: %v", order)
+	}
+}
+
+// TestRunnerTenantIsolation 多租户：Submit 带 scope 记录 TenantID，List 按租户过滤。
+func TestRunnerTenantIsolation(t *testing.T) {
+	r := NewRunner(func(ctx context.Context, task *Task) error { return nil })
+	scA := &domain.TenantScope{TenantID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", UserID: "u-a"}
+	scB := &domain.TenantScope{TenantID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", UserID: "u-b"}
+	r.Submit(scA, "t-a1", TaskLint, TaskResource{Type: "all"})
+	r.Submit(scB, "t-b1", TaskLint, TaskResource{Type: "all"})
+	r.Submit(scA, "t-a2", TaskLint, TaskResource{Type: "all"})
+
+	// A 只见自己的两条
+	la := r.List(scA, 10)
+	if len(la) != 2 {
+		t.Fatalf("租户 A 应见 2 条，got %d: %+v", len(la), la)
+	}
+	for _, tk := range la {
+		if tk.TenantID != scA.TenantID {
+			t.Fatalf("列表含跨租户任务: %+v", tk)
+		}
+	}
+	// B 只见自己的一条
+	lb := r.List(scB, 10)
+	if len(lb) != 1 || lb[0].ID != "t-b1" {
+		t.Fatalf("租户 B 应见 1 条: %+v", lb)
+	}
+	// 无 scope（legacy）见全部
+	lall := r.List(nil, 10)
+	if len(lall) != 3 {
+		t.Fatalf("legacy 应见全部 3 条，got %d", len(lall))
+	}
+	// 归属字段透出
+	if la[0].ActorUserID != "u-a" {
+		t.Fatalf("应记录执行人: %+v", la[0])
 	}
 }
 

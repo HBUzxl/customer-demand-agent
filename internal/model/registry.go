@@ -27,6 +27,9 @@ func NewRegistry(timeout time.Duration) *Registry {
 // Register 注册或更新一个模型配置。
 // SetTimeout 更新全局超时（console-config 热生效：后续 ToLLMConfig 用新值）。
 func (r *Registry) SetTimeout(d time.Duration) {
+	if d <= 0 {
+		return
+	}
 	r.mu.Lock()
 	r.timeout = d
 	r.mu.Unlock()
@@ -38,17 +41,23 @@ func (r *Registry) Register(m ModelConfig) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.models[m.Name] = m
+	r.models[m.Name] = cloneModelConfig(m)
 	return nil
 }
 
 // Get 获取一个模型配置（转为 llm.Config，含全局超时）。
 func (r *Registry) Get(name string) (llm.Config, error) {
-	m, err := r.GetModel(name)
-	if err != nil {
-		return llm.Config{}, err
+	r.mu.RLock()
+	m, ok := r.models[name]
+	timeout := r.timeout
+	r.mu.RUnlock()
+	if !ok {
+		return llm.Config{}, fmt.Errorf("模型 %q 未注册", name)
 	}
-	return m.ToLLMConfig(r.timeout), nil
+	if !m.IsEnabled() {
+		return llm.Config{}, fmt.Errorf("模型 %q 已停用", name)
+	}
+	return m.ToLLMConfig(timeout), nil
 }
 
 // GetModel 返回原始 ModelConfig（含 APIKey，供测试连接等使用）。
@@ -59,7 +68,7 @@ func (r *Registry) GetModel(name string) (ModelConfig, error) {
 	if !ok {
 		return ModelConfig{}, fmt.Errorf("模型 %q 未注册", name)
 	}
-	return m, nil
+	return cloneModelConfig(m), nil
 }
 
 // All 返回全部模型配置（按名排序，密钥脱敏）。
@@ -68,6 +77,7 @@ func (r *Registry) All() []ModelConfig {
 	defer r.mu.RUnlock()
 	out := make([]ModelConfig, 0, len(r.models))
 	for _, m := range r.models {
+		m = cloneModelConfig(m)
 		if m.APIKey != "" {
 			m.APIKey = maskKey(m.APIKey)
 		}
@@ -75,6 +85,14 @@ func (r *Registry) All() []ModelConfig {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+func cloneModelConfig(m ModelConfig) ModelConfig {
+	if m.Enabled != nil {
+		v := *m.Enabled
+		m.Enabled = &v
+	}
+	return m
 }
 
 // Delete 删除一个模型。

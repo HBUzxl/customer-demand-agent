@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { memoryDelete, memoryList, memorySearch } from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
 import ConfirmDialog from "../components/ConfirmDialog";
-import type { MemoryEntry } from "../types";
+import { ROLE_ADMIN, ROLE_OWNER, type MemoryEntry } from "../types";
 
 const TYPES = [
   { id: "", label: "全部" },
@@ -19,6 +20,8 @@ const LINES = ["流量安全", "端点安全", "安全平台", "安全开发", "
 
 export default function MemoryList() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canManageMemory = !!user?.roles.some((r) => r === ROLE_OWNER || r === ROLE_ADMIN);
   const [type, setType] = useState("product");
   const [items, setItems] = useState<MemoryEntry[]>([]);
   const [query, setQuery] = useState("");
@@ -38,7 +41,9 @@ export default function MemoryList() {
     });
   }
   function toggleAllFlat() {
-    setSelected(allFlatSelected ? new Set() : new Set(flat.map((e) => `${e.type}/${e.title}`)));
+    setSelected(
+      allFlatSelected ? new Set() : new Set(deletableFlat.map((e) => `${e.type}/${e.title}`)),
+    );
   }
   async function doBatchDelete() {
     setBatchBusy(true);
@@ -62,26 +67,29 @@ export default function MemoryList() {
       setBatchErr("");
     }
     setBatchBusy(false);
-    load();
+    void load(query.trim(), type);
   }
 
-  async function load() {
+  const load = useCallback(async (activeQuery: string, activeType: string) => {
     setLoading(true);
     setError("");
     try {
-      const r = query.trim()
-        ? await memorySearch(query, type, 30)
-        : await memoryList(type, 0, 2000);
+      const r = activeQuery
+        ? await memorySearch(activeQuery, activeType, 30)
+        : await memoryList(activeType, 0, 2000);
       setItems(r.items || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
   useEffect(() => {
-    load();
-  }, [type]);
+    setSelected(new Set());
+    void load(query.trim(), type);
+    // 搜索由 Enter 显式触发；切换类型时复用输入框当前值，不在每次键入时请求。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, type]);
 
   const searching = query.trim().length > 0;
   // 产品类型：主产品（无 product 字段）；统计 verified 文档数
@@ -94,9 +102,13 @@ export default function MemoryList() {
 
   // 搜索时（含产品子文档）或非产品类型：平铺列表
   const flat = searching ? items : type !== "product" ? items : [];
+  // 产品是平台只读基线；使用者由身份成员自动维护，均不允许批量删除。
+  const deletableFlat = canManageMemory
+    ? flat.filter((e) => e.type !== "product" && e.type !== "user")
+    : [];
   // 全选仅在「本页全部选中」时打勾（与 History 行为一致，不做半选态）
   const allFlatSelected =
-    flat.length > 0 && flat.every((e) => selected.has(`${e.type}/${e.title}`));
+    deletableFlat.length > 0 && deletableFlat.every((e) => selected.has(`${e.type}/${e.title}`));
 
   // 产品按官方产品线分组（主页 tags 首位；未知分类按字典序追加在后）
   const groups = useMemo(() => {
@@ -126,9 +138,13 @@ export default function MemoryList() {
               {products.length} 个产品 · {totalDocs} 篇文档
             </span>
           )}
-          <button className="btn sm" onClick={() => navigate("/memory/new")}>
-            + 新建
-          </button>
+          {canManageMemory ? (
+            <button className="btn sm" onClick={() => navigate("/memory/new")}>
+              + 新建
+            </button>
+          ) : (
+            <span className="badge">{type === "user" ? "本人画像可编辑" : "只读"}</span>
+          )}
         </div>
       </div>
 
@@ -149,7 +165,7 @@ export default function MemoryList() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索全部内容（含子文档正文）…"
-          onKeyDown={(e) => e.key === "Enter" && load()}
+          onKeyDown={(e) => e.key === "Enter" && void load(query.trim(), type)}
         />
       </div>
 
@@ -157,16 +173,20 @@ export default function MemoryList() {
       {searching && !loading && (
         <div className="search-meta">
           全库搜索「{query.trim()}」 · {items.length} 条结果（含产品子文档）
-          {items.length === 0 && (
-            <button
-              className="btn ghost sm"
-              onClick={() =>
-                navigate(`/memory/new?type=${type}&title=${encodeURIComponent(query.trim())}`)
-              }
-            >
-              新建「{query.trim()}」
-            </button>
-          )}
+          {items.length === 0 &&
+            canManageMemory &&
+            type !== "" &&
+            type !== "product" &&
+            type !== "user" && (
+              <button
+                className="btn ghost sm"
+                onClick={() =>
+                  navigate(`/memory/new?type=${type}&title=${encodeURIComponent(query.trim())}`)
+                }
+              >
+                新建「{query.trim()}」
+              </button>
+            )}
         </div>
       )}
 
@@ -222,15 +242,17 @@ export default function MemoryList() {
       {!loading && flat.length > 0 && (
         <>
           <div className="list-toolbar">
-            <label className="sel-all">
-              <input
-                type="checkbox"
-                className="checkbox"
-                checked={allFlatSelected}
-                onChange={toggleAllFlat}
-              />
-              全选本页
-            </label>
+            {deletableFlat.length > 0 && (
+              <label className="sel-all">
+                <input
+                  type="checkbox"
+                  className="checkbox"
+                  checked={allFlatSelected}
+                  onChange={toggleAllFlat}
+                />
+                全选可管理项
+              </label>
+            )}
             <span className={`sel-count${selected.size > 0 ? "" : " dim"}`}>
               {selected.size > 0 ? `已选 ${selected.size} 项` : `共 ${flat.length} 条`}
             </span>
@@ -254,14 +276,16 @@ export default function MemoryList() {
                 onClick={() => navigate(`/memory/${e.type}/${encodeURIComponent(e.title)}`)}
               >
                 <div className="dc-main">
-                  <input
-                    type="checkbox"
-                    className="checkbox dc-check"
-                    checked={selected.has(`${e.type}/${e.title}`)}
-                    onClick={(ev) => ev.stopPropagation()}
-                    onChange={() => toggle(`${e.type}/${e.title}`)}
-                    aria-label={`选择 ${e.title}`}
-                  />
+                  {canManageMemory && e.type !== "product" && e.type !== "user" && (
+                    <input
+                      type="checkbox"
+                      className="checkbox dc-check"
+                      checked={selected.has(`${e.type}/${e.title}`)}
+                      onClick={(ev) => ev.stopPropagation()}
+                      onChange={() => toggle(`${e.type}/${e.title}`)}
+                      aria-label={`选择 ${e.title}`}
+                    />
+                  )}
                   <span className="dc-title" title={e.title}>
                     {e.title}
                   </span>

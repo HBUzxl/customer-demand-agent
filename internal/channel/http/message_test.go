@@ -25,7 +25,7 @@ func postMessage(t *testing.T, tsURL, tenant, body string) (int, string, string)
 	if tenant != "" {
 		req.Header.Set("X-Tenant-ID", tenant)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -50,17 +50,65 @@ func TestMessageEndpoint202(t *testing.T) {
 	}
 }
 
-// TestMessageBusy409 同会话并发：第二个消息 409。
-func TestMessageBusy409(t *testing.T) {
+func TestMessageCustomerBindingIsImmutable(t *testing.T) {
 	ts, _ := setupServer(t)
+	code, sid, _ := postMessage(t, ts.URL, "", `{"text":"首次需求","customer":"甲客户"}`)
+	if code != http.StatusAccepted || sid == "" {
+		t.Fatalf("首次消息应创建并绑定客户，code=%d sid=%q", code, sid)
+	}
+
+	// 即使首轮 Run 还在执行，归属校验也发生在并发 Run 校验之前；不同客户
+	// 必须稳定返回冲突，且不能修改已持久化的客户字段。
+	code, _, _ = postMessage(t, ts.URL, "", fmt.Sprintf(`{"text":"错误重绑","session_id":%q,"customer":"乙客户"}`, sid))
+	if code != http.StatusConflict {
+		t.Fatalf("已有会话跨客户重绑应 409，got %d", code)
+	}
+	resp, err := testClient.Get(ts.URL + "/api/sessions/" + sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var det struct {
+		Session struct {
+			Customer string `json:"customer"`
+		} `json:"session"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&det); err != nil {
+		t.Fatal(err)
+	}
+	if det.Session.Customer != "甲客户" {
+		t.Fatalf("重绑被拒后客户归属必须保持不变，got %q", det.Session.Customer)
+	}
+}
+
+// TestMessageBusy409 同会话并发：第二个消息 409（用延迟模型保证 Run 保持忙态）。
+func TestMessageBusy409(t *testing.T) {
+	ts := setupServerSlowModel(t, 2*time.Second)
 	code1, _, _ := postMessage(t, ts.URL, "", `{"text":"你好","session_id":"busy-s"}`)
 	if code1 != http.StatusAccepted {
 		t.Fatalf("第一个消息应 202，got %d", code1)
 	}
-	// Run 仍活跃（LLM 不可达会跑到超时）→ 409
+	// Run 仍活跃（模型延迟未返回）→ 409
 	code2, _, _ := postMessage(t, ts.URL, "", `{"text":"再来","session_id":"busy-s"}`)
 	if code2 != http.StatusConflict {
 		t.Fatalf("并发应 409，got %d", code2)
+	}
+}
+
+// TestDeleteActiveRun409 删除会话前必须先显式取消 Run，避免后台 goroutine
+// 继续向已软删除会话写消息/工具轨迹。
+func TestDeleteActiveRun409(t *testing.T) {
+	ts := setupServerSlowModel(t, 2*time.Second)
+	code, sid, _ := postMessage(t, ts.URL, "", `{"text":"正在分析","session_id":"delete-running-s"}`)
+	if code != http.StatusAccepted {
+		t.Fatalf("创建 Run 应 202，got %d", code)
+	}
+	code, body := do(t, ts, "DELETE", "/api/sessions/"+sid, nil)
+	if code != http.StatusConflict {
+		t.Fatalf("运行中删除应 409，got %d: %v", code, body)
+	}
+	if code, _ := do(t, ts, "GET", "/api/sessions/"+sid, nil); code != http.StatusOK {
+		t.Fatalf("删除被拒后会话应仍存在，got %d", code)
 	}
 }
 
@@ -76,7 +124,7 @@ func TestRunSurvivesDisconnect(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	// 现在订阅（since=0 replay）：应能看到 Run 已产生的事件
 	req, _ := http.NewRequest("GET", ts.URL+"/api/sessions/"+sid+"/stream?since=0", nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
@@ -103,7 +151,7 @@ func TestRunCancelExplicit(t *testing.T) {
 	}
 	// cancel（LLM 不可达 → Run 在等超时，cancel 立即生效）
 	creq, _ := http.NewRequest("POST", ts.URL+"/api/sessions/"+sid+"/runs/"+rid+"/cancel", nil)
-	cresp, err := http.DefaultClient.Do(creq)
+	cresp, err := testClient.Do(creq)
 	if err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
@@ -138,7 +186,7 @@ func TestMessagesTruncate(t *testing.T) {
 	// 等 [失败] 落库（LLM 不可达，5s timeout 内会落）或直接操作底层 store
 	time.Sleep(6 * time.Second) // 与模型 timeout_sec=5 对齐
 	// 查当前消息数
-	dresp, _ := http.Get(ts.URL + "/api/sessions/trunc-s")
+	dresp, _ := testClient.Get(ts.URL + "/api/sessions/trunc-s")
 	var det struct {
 		Messages []struct {
 			ID  int `json:"id"`
@@ -152,7 +200,7 @@ func TestMessagesTruncate(t *testing.T) {
 	}
 	// 截断 user 消息（seq=1）及其之后
 	treq, _ := http.NewRequest("DELETE", ts.URL+"/api/sessions/trunc-s/messages/after?seq=1", nil)
-	tresp, err := http.DefaultClient.Do(treq)
+	tresp, err := testClient.Do(treq)
 	if err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
@@ -170,7 +218,7 @@ func TestMessagesTruncate(t *testing.T) {
 	}
 	// 复制语义：从 seq=1 分叉时无共享前缀（BranchedMessages=0 合法）
 	// 分支续写：POST /api/message 带 branch（前端编辑重发链路=分叉→带 branch 重发）
-	bresp, err := http.Post(ts.URL+"/api/message", "application/json",
+	bresp, err := testClient.Post(ts.URL+"/api/message", "application/json",
 		strings.NewReader(fmt.Sprintf(`{"text":"改写后的消息","session_id":"trunc-s","branch":%q}`, tout.BranchID)))
 	if err != nil {
 		t.Fatalf("分支续写: %v", err)
@@ -178,7 +226,7 @@ func TestMessagesTruncate(t *testing.T) {
 	bresp.Body.Close()
 	time.Sleep(300 * time.Millisecond) // user 消息异步落库
 	// 软分叉验证：main 原消息保留，新分支已出现
-	dresp2, _ := http.Get(ts.URL + "/api/sessions/trunc-s")
+	dresp2, _ := testClient.Get(ts.URL + "/api/sessions/trunc-s")
 	var det2 struct {
 		Messages []struct {
 			ID   int    `json:"id"`
@@ -215,7 +263,7 @@ func TestAnalyzeShimDeprecated(t *testing.T) {
 	ts, _ := setupServer(t)
 	req, _ := http.NewRequest("POST", ts.URL+"/api/analyze", nopCloser{bytes.NewReader([]byte(`{"text":"hi"}`))})
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -239,7 +287,7 @@ func TestChatShimStillWorks(t *testing.T) {
 	req, _ := http.NewRequest("POST", ts.URL+"/api/chat", nopCloser{bytes.NewReader([]byte(`{"session_id":"shim-s","question":"部署方式？"}`))})
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Tenant-ID", "tenantA")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -263,7 +311,7 @@ func TestRunEndpointsNoTenantHeader(t *testing.T) {
 	}
 	// 无租户头查 running → 200（此前 404）
 	req, _ := http.NewRequest("GET", ts.URL+"/api/sessions/"+sid+"/running", nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +322,7 @@ func TestRunEndpointsNoTenantHeader(t *testing.T) {
 	// 任意 X-Tenant-ID 头 → 忽略不拒
 	req2, _ := http.NewRequest("GET", ts.URL+"/api/sessions/"+sid+"/running", nil)
 	req2.Header.Set("X-Tenant-ID", "anything")
-	resp2, err := http.DefaultClient.Do(req2)
+	resp2, err := testClient.Do(req2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +336,7 @@ func TestRunEndpointsNoTenantHeader(t *testing.T) {
 // TestMessageBusy409NoOrphanUserMessage 并发 409 不留孤儿 user 消息：
 // 被拒的第二个请求不应写历史。
 func TestMessageBusy409NoOrphanUserMessage(t *testing.T) {
-	ts, _ := setupServer(t)
+	ts := setupServerSlowModel(t, 2*time.Second)
 	code1, _, _ := postMessage(t, ts.URL, "", `{"text":"第一条","session_id":"orphan-s"}`)
 	if code1 != http.StatusAccepted {
 		t.Fatalf("第一条应 202，got %d", code1)
@@ -302,7 +350,7 @@ func TestMessageBusy409NoOrphanUserMessage(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	var userCount int
 	for time.Now().Before(deadline) {
-		dresp, _ := http.Get(ts.URL + "/api/sessions/orphan-s")
+		dresp, _ := testClient.Get(ts.URL + "/api/sessions/orphan-s")
 		var det struct {
 			Messages []struct {
 				Role string `json:"role"`
@@ -363,7 +411,7 @@ func sseRead(t *testing.T, tsURL, sid string, since int, d time.Duration) string
 	if since > 0 {
 		req.URL.RawQuery = "since=" + strconv.Itoa(since)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatalf("sse: %v", err)
 	}
@@ -404,7 +452,7 @@ func TestSecondRunEventsFilteredByRunID(t *testing.T) {
 	}
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
-		r, _ := http.Get(ts.URL + "/api/sessions/" + sid + "/running")
+		r, _ := testClient.Get(ts.URL + "/api/sessions/" + sid + "/running")
 		var out struct {
 			Running bool `json:"running"`
 		}
@@ -502,7 +550,7 @@ func TestCancel404VsServerError(t *testing.T) {
 	ts, _ := setupServer(t)
 	// 会话不存在 → 404
 	req, _ := http.NewRequest("POST", ts.URL+"/api/sessions/none-s/runs/run-x/cancel", nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,7 +565,7 @@ func TestCancel404VsServerError(t *testing.T) {
 	}
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
-		r, _ := http.Get(ts.URL + "/api/sessions/" + sid + "/running")
+		r, _ := testClient.Get(ts.URL + "/api/sessions/" + sid + "/running")
 		var out struct {
 			Running bool `json:"running"`
 		}
@@ -529,7 +577,7 @@ func TestCancel404VsServerError(t *testing.T) {
 		time.Sleep(300 * time.Millisecond)
 	}
 	req2, _ := http.NewRequest("POST", ts.URL+"/api/sessions/"+sid+"/runs/run-bogus/cancel", nil)
-	resp2, err := http.DefaultClient.Do(req2)
+	resp2, err := testClient.Do(req2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -552,7 +600,7 @@ func TestReviewPendingOverlap(t *testing.T) {
 	if err := wiki.UpsertEntry(&longterm.Entry{Type: domain.MemoryIndustry, Title: "待审重叠条目", Content: "金融行业客户普遍关注大模型数据出境与生成内容合规问题，银行与券商均有类似诉求", Status: longterm.StatusPendingReview}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := http.Get(ts.URL + "/api/review/pending")
+	res, err := testClient.Get(ts.URL + "/api/review/pending")
 	if err != nil {
 		t.Fatal(err)
 	}

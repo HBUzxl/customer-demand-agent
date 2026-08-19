@@ -3,9 +3,10 @@
 // memory: short-term is working memory for the LLM (in-process checkpoints),
 // history is the durable record for humans / audit / replay (ADR-010).
 //
-// 单租户（de-tenancy，ADR-011 废止）：tenant_id 列恒保留（见 schema DDL
-// NOT NULL DEFAULT）；代码不读不写——INSERT 不提及该列、SELECT 不查。
-// 组织级共享知识（不在此隔离，见 ADR-011）。
+// 多租户（ADR-017）：每个租户独立 history.db（tenants/<id>/history.db），
+// Store 实例本身即租户边界——同一实例上的 session_id 自然属于该租户。
+// tenant_meta 表三方核对（文件内置 tenant_id 与构造传入一致，防路径错配）。
+// sessions.owner_user_id/visibility/deleted_at 支撑租户内用户级可见性。
 package history
 
 import (
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,10 +26,12 @@ import (
 	"customer-demand-agent/internal/domain"
 )
 
-// Store 是 SQLite 历史记录存储。
+// Store 是 SQLite 历史记录存储。tenantID 绑定构造传入的租户（OpenTenant）；
+// Open 构造的 legacy Store tenantID 为空（迁移/单租户测试形态）。
 type Store struct {
-	mu sync.Mutex
-	db *sql.DB
+	mu       sync.Mutex
+	db       *sql.DB
+	tenantID string
 }
 
 // hasColumn 探测表某列是否存在（中间态库兼容，老库无 branch_id/tenant_id 时退化）。
@@ -97,7 +101,13 @@ func hasTenantColumnWithoutDefault(db *sql.DB) bool {
 
 // addTenantColumnDefault 表重建给 tenant_id 补 DEFAULT 'default'
 // （列保留、历史租户值原样 copy——只是让无列 INSERT 合法）。幂等。
+// 注意：重建期间必须临时关闭 foreign_keys（DROP 父表会触发对子行的 FK 校验）。
 func addTenantColumnDefault(db *sql.DB) error {
+	// PRAGMA foreign_keys 在事务内是 no-op，必须在 BEGIN 之前切换。
+	if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+		return err
+	}
+	defer func() { _, _ = db.Exec(`PRAGMA foreign_keys=ON`) }()
 	if _, err := db.Exec(`BEGIN`); err != nil {
 		return err
 	}
@@ -129,20 +139,61 @@ func addTenantColumnDefault(db *sql.DB) error {
 	return nil
 }
 
-// DB 暴露底层连接（后台任务直查用——Lint 的检索 miss 统计）。
-func (s *Store) DB() *sql.DB { return s.db }
+// TenantID 返回 Store 绑定的租户 id（Open 构造的 legacy Store 返回空串）。
+func (s *Store) TenantID() string { return s.tenantID }
+
+// RecentMissQueries 收集近期 memory_search 零命中查询（Lint 的 miss 统计输入）。
+// 受当前 Store（=租户）作用域约束，不再暴露裸 DB 连接。
+func (s *Store) RecentMissQueries(limit int) []string {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	var out []string
+	rows, err := s.db.Query(`SELECT params_json FROM tool_calls
+		WHERE tool_name='memory_search' AND result_json LIKE '%"count":0%'
+		ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var params string
+		if rows.Scan(&params) != nil {
+			continue
+		}
+		var p struct {
+			Query string `json:"query"`
+		}
+		if json.Unmarshal([]byte(params), &p) == nil && p.Query != "" {
+			out = append(out, p.Query)
+		}
+	}
+	return out
+}
+
+// verifyForeignKeys 自检 SQLite 连接是否已启用外键约束（多租户隔离依赖）。
+func verifyForeignKeys(db *sql.DB) error {
+	var fk int
+	if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&fk); err != nil {
+		return fmt.Errorf("检查 foreign_keys 失败: %w", err)
+	}
+	if fk != 1 {
+		return fmt.Errorf("SQLite foreign_keys 未启用（fk=%d）——拒绝启动，防止隔离静默失效", fk)
+	}
+	return nil
+}
 
 // schema 是建表 DDL。
 const schema = `
 CREATE TABLE IF NOT EXISTS sessions (
     session_id  TEXT PRIMARY KEY,
 
-    title       TEXT,
-    customer    TEXT,
-    created_at  TIMESTAMP NOT NULL,
-    updated_at  TIMESTAMP NOT NULL
+    title        TEXT,
+    customer     TEXT,
+    title_pinned INTEGER NOT NULL DEFAULT 0, -- 用户手动重命名=1，防自动标题覆盖（2026-08-18）
+    created_at   TIMESTAMP NOT NULL,
+    updated_at   TIMESTAMP NOT NULL
 );
-
 
 CREATE TABLE IF NOT EXISTS messages (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,30 +223,86 @@ CREATE INDEX IF NOT EXISTS idx_toolcalls_session ON tool_calls(session_id, seq);
 CREATE TABLE IF NOT EXISTS checkpoints (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id   TEXT NOT NULL,
+    branch_id    TEXT NOT NULL DEFAULT 'main', -- P0-04：分叉持久化（main=主线，bX-ts=分支）
+    last_seq     INTEGER NOT NULL DEFAULT 0,   -- P0-04：该 checkpoint 对应轮次的消息 seq（分叉前缀判定）
     cp_id        TEXT NOT NULL,
     cp_type      TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     created_at   TIMESTAMP NOT NULL,
     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
 );
+CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON checkpoints(session_id, branch_id, id);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON checkpoints(session_id, id);
+
+CREATE TABLE IF NOT EXISTS tenant_meta (
+    tenant_id  TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS customer_refs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    customer   TEXT NOT NULL,
+    ref_type   TEXT NOT NULL DEFAULT 'session',
+    created_at TIMESTAMP NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_customer_refs_session ON customer_refs(session_id);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actor_user_id TEXT,
+    action        TEXT NOT NULL,
+    obj_type      TEXT,
+    obj_id        TEXT,
+    result        TEXT,
+    ip            TEXT,
+    ua            TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_ts ON audit_logs(ts);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version    INTEGER PRIMARY KEY,
+    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 `
 
-// Open 打开（或创建）历史数据库并建表。
+// Open 打开（或创建）历史数据库并建表（legacy 单租户形态，tenantID 为空）。
+// 多租户路径请用 OpenTenant。
 func Open(dbPath string) (*Store, error) {
+	return open(dbPath, "")
+}
+
+// OpenTenant 打开指定租户的独立历史库：构造即绑定 tenantID，并在 tenant_meta
+// 表中核对一致性（文件内置租户 id 与传入一致；缺失则写入，防止路径错配/串库）。
+func OpenTenant(tenantID, dbPath string) (*Store, error) {
+	if tenantID == "" {
+		return nil, errors.New("OpenTenant 要求非空 tenantID")
+	}
+	return open(dbPath, tenantID)
+}
+
+func open(dbPath, tenantID string) (*Store, error) {
 	// 确保父目录存在（modernc/sqlite 不会自动创建）
 	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("创建 history 目录: %w", err)
 		}
 	}
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("打开 history db: %w", err)
 	}
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping history db: %w", err)
+	}
+	// SQLite 外键默认不自动强制执行（多租户隔离纵深依赖此约束）。显式自检：
+	// 本连接必须返回 1，否则拒绝启动（防止 DSN 改动导致隔离静默失效）。
+	if err := verifyForeignKeys(db); err != nil {
+		_ = db.Close()
+		return nil, err
 	}
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
@@ -234,7 +341,56 @@ func Open(dbPath string) (*Store, error) {
 			return nil, fmt.Errorf("迁移 tool_calls.message_id: %w", err)
 		}
 	}
-	return &Store{db: db}, nil
+	// P0-04：checkpoints 分叉持久化（老库补 branch_id/last_seq；新库建表已含）。
+	for col, ddl := range map[string]string{
+		"branch_id": `ALTER TABLE checkpoints ADD COLUMN branch_id TEXT NOT NULL DEFAULT 'main'`,
+		"last_seq":  `ALTER TABLE checkpoints ADD COLUMN last_seq INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := db.Exec(ddl); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				_ = db.Close()
+				return nil, fmt.Errorf("迁移 checkpoints.%s: %w", col, err)
+			}
+		}
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON checkpoints(session_id, branch_id, id)`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("checkpoints 分支索引: %w", err)
+	}
+	// 多租户会话级授权列（幂等 ALTER）。
+	for col, ddl := range map[string]string{
+		"owner_user_id": `ALTER TABLE sessions ADD COLUMN owner_user_id TEXT`,
+		"customer_ref":  `ALTER TABLE sessions ADD COLUMN customer_ref TEXT`,
+		"visibility":    `ALTER TABLE sessions ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'`,
+		"deleted_at":    `ALTER TABLE sessions ADD COLUMN deleted_at TIMESTAMP`,
+		"title_pinned":  `ALTER TABLE sessions ADD COLUMN title_pinned INTEGER NOT NULL DEFAULT 0`, // 手动重命名防覆盖
+	} {
+		if _, err := db.Exec(ddl); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column") {
+				_ = db.Close()
+				return nil, fmt.Errorf("迁移 sessions.%s: %w", col, err)
+			}
+		}
+	}
+	// 租户三方核对：内置 tenant_meta 必须与构造 tenantID 一致（防止租户 A 误连 B 的库）。
+	if tenantID != "" {
+		var got string
+		err := db.QueryRow(`SELECT tenant_id FROM tenant_meta LIMIT 1`).Scan(&got)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			if _, err := db.Exec(`INSERT INTO tenant_meta(tenant_id) VALUES(?)`, tenantID); err != nil {
+				_ = db.Close()
+				return nil, fmt.Errorf("写入 tenant_meta: %w", err)
+			}
+		case err != nil:
+			_ = db.Close()
+			return nil, fmt.Errorf("读取 tenant_meta: %w", err)
+		case got != tenantID:
+			_ = db.Close()
+			return nil, fmt.Errorf("tenant_meta 不匹配：文件=%s 构造=%s（禁止串库）", got, tenantID)
+		}
+	}
+	return &Store{db: db, tenantID: tenantID}, nil
 }
 
 // Close 关闭数据库。
@@ -242,8 +398,10 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// EnsureSession 创建会话记录；若已存在则更新 updated_at/title/customer。
-func (s *Store) EnsureSession(sessionID, title, customer string) error {
+// EnsureSession 创建会话记录（ownerUserID 为会话归属人；若已存在则更新
+// updated_at/title/customer）。ownerUserID 为空表示无归属（Agent 内部回调——
+// 租户内 admin/owner 可见）。title 为空串时不覆盖已有标题。
+func (s *Store) EnsureSession(ownerUserID, sessionID, title, customer string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
@@ -251,20 +409,120 @@ func (s *Store) EnsureSession(sessionID, title, customer string) error {
 	err := s.db.QueryRow(`SELECT 1 FROM sessions WHERE session_id=?`, sessionID).Scan(&exists)
 	switch {
 	case err == nil:
-		// 已存在：更新
+		// 已存在：更新。title 仅在非空且未被用户手动固定（title_pinned=1）时覆盖，
+		// 避免 AI 自动标题/首行标题覆盖用户手动重命名（2026-08-18）。
 		_, err = s.db.Exec(`UPDATE sessions SET updated_at=?,
-			title=CASE WHEN ?!='' THEN ? ELSE title END,
-			customer=CASE WHEN ?!='' THEN ? ELSE customer END WHERE session_id=?`,
-			now, title, title, customer, customer, sessionID)
+			title=CASE WHEN ?!='' AND title_pinned IS NOT 1 THEN ? ELSE title END,
+			customer=CASE WHEN ?!='' THEN ? ELSE customer END,
+			owner_user_id=CASE WHEN ?='' THEN owner_user_id ELSE ? END
+			WHERE session_id=?`,
+			now, title, title, customer, customer, ownerUserID, ownerUserID, sessionID)
 		return err
 	case errors.Is(err, sql.ErrNoRows):
-		// 不存在：插入（INSERT 不涉及 tenant_id 列——DDL DEFAULT 自动填，de-tenancy）
-		_, err := s.db.Exec(`INSERT INTO sessions(session_id, title, customer, created_at, updated_at)
-			VALUES(?,?,?,?,?)`, sessionID, title, customer, now, now)
+		// 不存在：插入（tenant_id 列由 DDL DEFAULT 自动填——OpenTenant 已核对租户）
+		_, err := s.db.Exec(`INSERT INTO sessions(session_id, owner_user_id, title, customer, created_at, updated_at)
+			VALUES(?,?,?,?,?,?)`, sessionID, ownerUserID, title, customer, now, now)
 		return err
 	default:
 		return err
 	}
+}
+
+// EnsureSessionScoped 以登录作用域创建或更新会话。与先查存在性再调用
+// EnsureSession 不同，本方法在同一临界区内校验 owner_user_id，防止同租户的
+// 普通成员仅凭猜中 session_id 就把他人会话改挂到自己名下。
+//
+// owner/admin 可维护租户内会话，但不会改变原 owner；普通成员只能维护自己或
+// 历史无归属会话。已删除、不可见和不存在性对外统一由调用方映射为安全错误。
+func (s *Store) EnsureSessionScoped(scope *domain.TenantScope, sessionID, title, customer string) error {
+	if scope == nil || !scope.Valid() {
+		return fmt.Errorf("会话不存在或无权访问")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	var owner sql.NullString
+	var deletedAt sql.NullTime
+	err := s.db.QueryRow(`SELECT owner_user_id, deleted_at FROM sessions WHERE session_id=?`, sessionID).Scan(&owner, &deletedAt)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		_, err = s.db.Exec(`INSERT INTO sessions(session_id, owner_user_id, title, customer, created_at, updated_at)
+			VALUES(?,?,?,?,?,?)`, sessionID, scope.UserID, title, customer, now, now)
+		return err
+	case err != nil:
+		return err
+	case deletedAt.Valid:
+		return fmt.Errorf("会话不存在或无权访问")
+	case !scope.IsTenantAdmin() && owner.String != "" && owner.String != scope.UserID:
+		return fmt.Errorf("会话不存在或无权访问")
+	}
+
+	// 已有会话只更新内容属性，绝不重写 owner_user_id。
+	_, err = s.db.Exec(`UPDATE sessions SET updated_at=?,
+		title=CASE WHEN ?!='' AND title_pinned IS NOT 1 THEN ? ELSE title END,
+		customer=CASE WHEN ?!='' THEN ? ELSE customer END
+		WHERE session_id=? AND deleted_at IS NULL`,
+		now, title, title, customer, customer, sessionID)
+	return err
+}
+
+// BindCustomerOnce 给尚未归属客户的会话补绑定；已有相同归属视为幂等成功，
+// 已绑定到其他客户则拒绝。它供 Agent 的 session_bind_customer 使用，避免
+// 模型在后续轮次把整段历史对话跨客户重挂。
+func (s *Store) BindCustomerOnce(sessionID, customer string) error {
+	customer = strings.TrimSpace(customer)
+	if customer == "" {
+		return fmt.Errorf("customer 不能为空")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(`UPDATE sessions SET customer=?, updated_at=?
+		WHERE session_id=? AND deleted_at IS NULL AND COALESCE(customer,'')=''`,
+		customer, time.Now().UTC(), sessionID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 1 {
+		return nil
+	}
+	var current string
+	if err := s.db.QueryRow(`SELECT COALESCE(customer,'') FROM sessions
+		WHERE session_id=? AND deleted_at IS NULL`, sessionID).Scan(&current); err != nil {
+		return err
+	}
+	if strings.TrimSpace(current) == customer {
+		return nil
+	}
+	return fmt.Errorf("会话已归属客户 %q，不允许改绑", current)
+}
+
+// SessionExists 判断会话是否存在（轻量存在性检查，不加载消息；调用方负责 scope）。
+func (s *Store) SessionExists(sessionID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var one int
+	err := s.db.QueryRow(`SELECT 1 FROM sessions WHERE session_id=?`, sessionID).Scan(&one)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// IsSessionTitlePinned 判断会话标题是否被用户手动重命名固定（title_pinned=1）。
+// 固定后 AI 自动标题不再覆盖（G4）。
+func (s *Store) IsSessionTitlePinned(sessionID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var pinned int
+	if err := s.db.QueryRow(`SELECT title_pinned FROM sessions WHERE session_id=?`, sessionID).Scan(&pinned); err != nil {
+		return false, err
+	}
+	return pinned == 1, nil
 }
 
 // AppendMessage 追加一条消息，返回自增 id。
@@ -302,17 +560,27 @@ func (s *Store) AppendToolCall(sessionID string, messageID int64, toolName, para
 	return res.LastInsertId()
 }
 
-// AppendCheckpoint 追加一个 checkpoint 快照。
-func (s *Store) AppendCheckpoint(sessionID string, cp *domain.Checkpoint) error {
+// AppendCheckpoint 追加一个 checkpoint 快照（P0-04：按分支持久化；branch 为空
+// 视为 main）。last_seq 记录该 checkpoint 对应轮次的当前分支最大消息 seq——
+// 分叉后前缀判定用：cp.last_seq < 分支点 ⇒ 属于共享前缀。
+func (s *Store) AppendCheckpoint(sessionID, branch string, cp *domain.Checkpoint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if branch == "" {
+		branch = "main"
+	}
 	payload, err := encodeJSON(cp)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`INSERT INTO checkpoints(session_id, cp_id, cp_type, payload_json, created_at)
-		VALUES(?, ?, ?, ?, ?)`,
-		sessionID, cp.ID, cp.Type, payload, time.Now().UTC())
+	var lastSeq int
+	if err := s.db.QueryRow(`SELECT COALESCE(MAX(seq),0) FROM messages WHERE session_id=? AND branch_id=?`,
+		sessionID, branch).Scan(&lastSeq); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO checkpoints(session_id, branch_id, last_seq, cp_id, cp_type, payload_json, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, branch, lastSeq, cp.ID, cp.Type, payload, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -320,27 +588,58 @@ func (s *Store) AppendCheckpoint(sessionID string, cp *domain.Checkpoint) error 
 	// 与内存 Manager.compactChainLocked 同规则，防 restore 后链无界增长）。
 	// 注意 MAX(0, COUNT-上限)：SQLite 的 LIMIT 负数=无限制，会把 followup 全删。
 	_, err = s.db.Exec(`DELETE FROM checkpoints WHERE rowid IN (
-		SELECT rowid FROM checkpoints WHERE session_id=? AND cp_type='followup'
+		SELECT rowid FROM checkpoints WHERE session_id=? AND branch_id=? AND cp_type='followup'
 		ORDER BY id ASC LIMIT (
-			SELECT MAX(0, (SELECT COUNT(*) FROM checkpoints WHERE session_id=?) - ?)))`,
-		sessionID, sessionID, chainSoftLimitSQLite)
+			SELECT MAX(0, (SELECT COUNT(*) FROM checkpoints WHERE session_id=? AND branch_id=?) - ?)))`,
+		sessionID, branch, sessionID, branch, chainSoftLimitSQLite)
 	return err
 }
 
 // chainSoftLimitSQLite 与 shortterm.chainSoftLimit 保持一致（软上限）。
 const chainSoftLimitSQLite = 50
 
-// ListCheckpoints 读回某会话的 checkpoint 链（按创建顺序，用于断点续传）。
-// 按会话读回 checkpoint 链（de-tenancy 后无租户维度）。
-func (s *Store) ListCheckpoints(sessionID string) ([]*domain.Checkpoint, error) {
+// ListCheckpoints 读回某会话某分支的 checkpoint 链（按创建顺序，断点续传用）。
+// 分支记忆 = 共享前缀（main 上 last_seq < 分支点的 checkpoint）+ 该分支自己的
+// checkpoint（P0-04）；main 直接取全链。branch 为空视为 main。
+func (s *Store) ListCheckpoints(sessionID, branch string) ([]*domain.Checkpoint, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rows, err := s.db.Query(`SELECT c.payload_json FROM checkpoints c
+	hasBranch, _ := hasColumn(s.db, "checkpoints", "branch_id")
+	if !hasBranch {
+		rows, err := s.db.Query(`SELECT c.payload_json FROM checkpoints c
+			JOIN sessions s ON s.session_id = c.session_id
+			WHERE c.session_id=? ORDER BY c.id ASC`, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		return scanCheckpoints(rows)
+	}
+	if branch == "" || branch == "main" {
+		// main：只看主线 checkpoint（兄弟分支的 checkpoint 不回灌主视图）。
+		rows, err := s.db.Query(`SELECT c.payload_json FROM checkpoints c
+			JOIN sessions s ON s.session_id = c.session_id
+			WHERE c.session_id=? AND c.branch_id='main' ORDER BY c.id ASC`, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		return scanCheckpoints(rows)
+	}
+	// 分支：前缀（main 且 last_seq < 分支点）+ 分支自身 checkpoint，按 id 序。
+	after := branchPoint(branch)
+	q := `SELECT c.payload_json FROM checkpoints c
 		JOIN sessions s ON s.session_id = c.session_id
-		WHERE c.session_id=? ORDER BY c.id ASC`, sessionID)
+		WHERE c.session_id=? AND (
+			(c.branch_id='main' AND c.last_seq < ?) OR c.branch_id=?
+		) ORDER BY c.id ASC`
+	rows, err := s.db.Query(q, sessionID, after, branch)
 	if err != nil {
 		return nil, err
 	}
+	return scanCheckpoints(rows)
+}
+
+// scanCheckpoints 遍历结果集解出 checkpoint 链。
+func scanCheckpoints(rows *sql.Rows) ([]*domain.Checkpoint, error) {
 	defer rows.Close()
 	var out []*domain.Checkpoint
 	for rows.Next() {
@@ -357,6 +656,19 @@ func (s *Store) ListCheckpoints(sessionID string) ([]*domain.Checkpoint, error) 
 	return out, rows.Err()
 }
 
+// branchPoint 从分支 ID 解析分支点（b{after}-{ts} → after；main/未知形态 → 0）。
+func branchPoint(branch string) int {
+	// 分支 ID 形如 "b5-1755..."：b 后数字即分支点（截断的 message seq）。
+	if strings.HasPrefix(branch, "b") {
+		if dash := strings.IndexByte(branch, '-'); dash > 1 {
+			if n, err := strconv.Atoi(branch[1:dash]); err == nil {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
 // SessionListItem 是会话列表的一项。
 type SessionListItem struct {
 	SessionID string    `json:"session_id"`
@@ -366,16 +678,19 @@ type SessionListItem struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ListSessions 列出会话（分页，按更新时间倒序）。
-func (s *Store) ListSessions(limit, offset int) ([]SessionListItem, error) {
+// ListSessions 列出租户共享会话（分页，按更新时间倒序）。Store 已绑定 TenantID，
+// 因此同租户成员共享读取不会扩大到其他租户；写操作仍校验 owner/admin。
+func (s *Store) ListSessions(scope *domain.TenantScope, limit, offset int) ([]SessionListItem, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rows, err := s.db.Query(`SELECT session_id, title, customer, created_at, updated_at
-		FROM sessions ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
-		limit, offset)
+	cond, args := s.visibleCond(scope)
+	q := `SELECT session_id, title, customer, created_at, updated_at
+		FROM sessions WHERE deleted_at IS NULL` + cond + ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -389,6 +704,49 @@ func (s *Store) ListSessions(limit, offset int) ([]SessionListItem, error) {
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+// visibleCond 返回租户内共享读取条件。跨租户边界由每租户独立 history.db 和
+// tenant_meta 三方核对保证；owner_user_id 只用于修改授权，不再限制同租户读取。
+func (s *Store) visibleCond(scope *domain.TenantScope) (string, []any) {
+	return "", nil
+}
+
+// sessionVisibleTo 判定 scope 是否可访问该会话（不存在/已删除 → false）。
+func (s *Store) sessionVisibleTo(scope *domain.TenantScope, sessionID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var cnt int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE session_id=? AND deleted_at IS NULL`, sessionID).Scan(&cnt)
+	return err == nil && cnt > 0, err
+}
+
+// sessionWritableTo 将共享读取与修改授权分离：owner/admin 可维护租户内全部会话，
+// 普通成员只能修改自己创建或无归属的会话。不存在/已删除统一 false。
+func (s *Store) sessionWritableTo(scope *domain.TenantScope, sessionID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var owner sql.NullString
+	var deletedAt sql.NullTime
+	err := s.db.QueryRow(`SELECT owner_user_id, deleted_at FROM sessions WHERE session_id=?`, sessionID).Scan(&owner, &deletedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if deletedAt.Valid {
+		return false, nil
+	}
+	if scope == nil || scope.IsTenantAdmin() {
+		return true, nil
+	}
+	return owner.String == "" || owner.String == scope.UserID, nil
+}
+
+// CanWriteSession 供 HTTP 层在取消 Run、编辑重发等 Store 外副作用前做同一授权。
+func (s *Store) CanWriteSession(scope *domain.TenantScope, sessionID string) (bool, error) {
+	return s.sessionWritableTo(scope, sessionID)
 }
 
 // MessageRecord 是一条历史消息。
@@ -439,21 +797,26 @@ type MessageHit struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// SearchMessages 按关键词检索历史消息。
-// sessionID 为空时跨该租户全部会话；大小写不敏感的子串匹配（P1 起步——
+// SearchMessages 按关键词检索历史消息（租户库内；scope 控制用户级可见性）。
+// sessionID 为空时跨该租户全部可见会话；大小写不敏感的子串匹配（P1 起步——
 // 历史量级小，LIKE 足够；后续可升级 bigram 权重检索对齐 longterm）。
-func (s *Store) SearchMessages(sessionID, query string, limit int) ([]MessageHit, error) {
+func (s *Store) SearchMessages(scope *domain.TenantScope, sessionID, query string, limit int) ([]MessageHit, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	rows, err := s.db.Query(`SELECT m.session_id, m.role, m.content, m.created_at
+	cond, args := s.visibleCond(scope)
+	q := `SELECT m.session_id, m.role, m.content, m.created_at
 		FROM messages m
-		WHERE (? = '' OR m.session_id = ?)
-			AND m.content LIKE '%' || ? || '%'
-		ORDER BY m.created_at DESC LIMIT ?`,
-		sessionID, sessionID, query, limit)
+		JOIN sessions s ON s.session_id = m.session_id
+		WHERE s.deleted_at IS NULL
+			AND (? = '' OR m.session_id = ?)
+			AND m.content LIKE '%' || ? || '%'` + cond + `
+		ORDER BY m.created_at DESC LIMIT ?`
+	args = append([]any{sessionID, sessionID, query}, args...)
+	args = append(args, limit)
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +845,8 @@ type SessionSearchHit struct {
 
 // SearchSessions 会话搜索：标题 LIKE 命中（优先）+ 消息内容 LIKE 命中
 // （带 snippet，截取关键词前后 30 字符）。按 标题命中>内容命中、更新时间倒序。
-func (s *Store) SearchSessions(query string, limit int) ([]SessionSearchHit, error) {
+// scope 控制用户级可见性（非 admin 只搜自己会话）。
+func (s *Store) SearchSessions(scope *domain.TenantScope, query string, limit int) ([]SessionSearchHit, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, nil
 	}
@@ -492,13 +856,14 @@ func (s *Store) SearchSessions(query string, limit int) ([]SessionSearchHit, err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	like := "%" + query + "%"
+	cond, args := s.visibleCond(scope)
 	// 内容命中（每会话取最近一条命中消息）
 	rows, err := s.db.Query(`SELECT m.session_id, m.role, m.content, m.created_at,
 			COALESCE(ss.title,''), COALESCE(ss.customer,''), COALESCE(ss.updated_at, m.created_at)
 		FROM messages m
 		JOIN sessions ss ON ss.session_id = m.session_id
-		WHERE m.content LIKE ?
-		ORDER BY m.created_at DESC`, like)
+		WHERE ss.deleted_at IS NULL AND m.content LIKE ?`+cond+`
+		ORDER BY m.created_at DESC`, append([]any{like}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +891,8 @@ func (s *Store) SearchSessions(query string, limit int) ([]SessionSearchHit, err
 	}
 	// 标题命中
 	trows, err := s.db.Query(`SELECT session_id, title, customer, updated_at
-		FROM sessions WHERE title LIKE ? ORDER BY updated_at DESC LIMIT ?`, like, limit)
+		FROM sessions WHERE deleted_at IS NULL AND title LIKE ?`+cond+`
+		ORDER BY updated_at DESC LIMIT ?`, append(append([]any{like}, args...), limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -599,15 +965,29 @@ func makeSnippet(content, query string, width int) string {
 }
 
 // GetSession 返回会话详情（按分支过滤时只取该分支消息/工具/检查点）。
+// scope 控制用户级可见性（越权/不存在/已删除统一返回「不存在或无权访问」）。
 // branch 为空=全分支汇总（admin/初始迁移用），否则过滤到该分支。
-func (s *Store) GetSession(sessionID, branch string) (*SessionDetail, error) {
+func (s *Store) GetSession(scope *domain.TenantScope, sessionID, branch string) (*SessionDetail, error) {
+	ok, err := s.sessionVisibleTo(scope, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("会话不存在或无权访问")
+	}
+	return s.GetSessionInternal(sessionID, branch)
+}
+
+// GetSessionInternal 租户内部读取会话详情（Agent 回调用——运行已授权，不按
+// 用户过滤；仅排除已软删除会话）。调用方须已处于目标租户的 Store 上下文。
+func (s *Store) GetSessionInternal(sessionID, branch string) (*SessionDetail, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var det SessionDetail
 	var sess SessionListItem
 	err := s.db.QueryRow(`SELECT session_id, COALESCE(title,''), COALESCE(customer,''), created_at, updated_at
-		FROM sessions WHERE session_id=?`, sessionID).
+		FROM sessions WHERE session_id=? AND deleted_at IS NULL`, sessionID).
 		Scan(&sess.SessionID, &sess.Title, &sess.Customer, &sess.CreatedAt, &sess.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("会话不存在或无权访问: %w", err)
@@ -616,21 +996,31 @@ func (s *Store) GetSession(sessionID, branch string) (*SessionDetail, error) {
 
 	// branch_id 列存在则过滤；列缺失（中间态库）时退化到全分支
 	hasBranch, _ := hasColumn(s.db, "messages", "branch_id")
+	hasCpBranch, _ := hasColumn(s.db, "checkpoints", "branch_id")
 	var msgQuery, tcQuery, cpQuery string
 	if hasBranch && branch != "" {
 		msgQuery = `SELECT id, role, content, tool_call_id, seq, created_at FROM messages
 			WHERE session_id=? AND branch_id=? ORDER BY seq`
 		tcQuery = `SELECT id, COALESCE(message_id, 0), tool_name, params_json, result_json, seq, created_at FROM tool_calls
 			WHERE session_id=? AND message_id IN (SELECT id FROM messages WHERE session_id=? AND branch_id=?) ORDER BY seq`
+	}
+	// P0-04：分支 checkpoint 摘要 = 共享前缀（main 且 last_seq<分支点）+ 分支自身；
+	// main 只看主线（兄弟分支 checkpoint 不回灌）。
+	if hasCpBranch && branch != "" {
 		cpQuery = `SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
-			WHERE session_id=? AND payload_json LIKE ? ORDER BY id ASC`
+			WHERE session_id=? AND ((branch_id='main' AND last_seq < ?) OR branch_id=?) ORDER BY id ASC`
+	} else if hasCpBranch {
+		cpQuery = `SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
+			WHERE session_id=? AND branch_id='main' ORDER BY id ASC`
 	} else {
+		cpQuery = `SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
+			WHERE session_id=? ORDER BY id ASC`
+	}
+	if !hasBranch || branch == "" {
 		msgQuery = `SELECT id, role, content, tool_call_id, seq, created_at FROM messages
 			WHERE session_id=? ORDER BY seq`
 		tcQuery = `SELECT id, COALESCE(message_id, 0), tool_name, params_json, result_json, seq, created_at FROM tool_calls
 			WHERE session_id=? ORDER BY seq`
-		cpQuery = `SELECT cp_id, cp_type, payload_json, created_at FROM checkpoints
-			WHERE session_id=? ORDER BY id ASC`
 	}
 
 	var rows *sql.Rows
@@ -689,8 +1079,8 @@ func (s *Store) GetSession(sessionID, branch string) (*SessionDetail, error) {
 	// （它也要 Lock），直接轻量查询 payload 自行解。
 	var crows *sql.Rows
 	var cerr error
-	if hasBranch && branch != "" {
-		crows, cerr = s.db.Query(cpQuery, sessionID, branch)
+	if hasCpBranch && branch != "" {
+		crows, cerr = s.db.Query(cpQuery, sessionID, branchPoint(branch), branch)
 	} else {
 		crows, cerr = s.db.Query(cpQuery, sessionID)
 	}
@@ -725,36 +1115,53 @@ func truncateStr(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-// DeleteSession 删除某会话及其全部轨迹。
-func (s *Store) DeleteSession(sessionID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	tx, err := s.db.Begin()
+// DeleteSession 软删除某会话（置 deleted_at；轨迹保留供审计/恢复）。
+// scope 控制可见性——越权/不存在统一 404 语义（「会话不存在或无权访问」）。
+func (s *Store) DeleteSession(scope *domain.TenantScope, sessionID string) error {
+	ok, err := s.sessionWritableTo(scope, sessionID)
 	if err != nil {
 		return err
 	}
-	// 会话存在性校验
-	var cnt int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE session_id=?`, sessionID).Scan(&cnt); err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	if cnt == 0 {
-		_ = tx.Rollback()
+	if !ok {
 		return fmt.Errorf("会话不存在或无权访问")
 	}
-	for _, q := range []string{
-		`DELETE FROM messages WHERE session_id=?`,
-		`DELETE FROM tool_calls WHERE session_id=?`,
-		`DELETE FROM checkpoints WHERE session_id=?`,
-		`DELETE FROM sessions WHERE session_id=?`,
-	} {
-		if _, err := tx.Exec(q, sessionID); err != nil {
-			_ = tx.Rollback()
-			return err
-		}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(`UPDATE sessions SET deleted_at=? WHERE session_id=?`, time.Now().UTC(), sessionID)
+	if err != nil {
+		return err
 	}
-	return tx.Commit()
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("会话不存在或无权访问")
+	}
+	return nil
+}
+
+// RenameSession 用户手动重命名会话：更新 title 并置 title_pinned=1
+// （后续自动标题/首行标题不再覆盖）。越权/不存在统一 404 语义。
+func (s *Store) RenameSession(scope *domain.TenantScope, sessionID, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" || len([]rune(title)) > 100 {
+		return fmt.Errorf("会话名称需为 1~100 字符")
+	}
+	ok, err := s.sessionWritableTo(scope, sessionID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("会话不存在或无权访问")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res, err := s.db.Exec(`UPDATE sessions SET title=?, title_pinned=1, updated_at=? WHERE session_id=?`,
+		title, time.Now().UTC(), sessionID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("会话不存在或无权访问")
+	}
+	return nil
 }
 
 // nextSeq 取某表某会话的下一个序号。

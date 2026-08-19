@@ -92,6 +92,141 @@ func parseSubmission(raw json.RawMessage) (*AnalysisSubmission, error) {
 	return &s, nil
 }
 
+// validateSubmission 是 analysis_submit 的证据门禁（P0-02）。返回拒绝原因（空=通过）：
+//  1. 每个 matched product 必须真实存在于产品库（不许编造产品名）；
+//  2. confidence 必须在 [0,1]（越界即拒绝）；
+//  3. 必须有匹配理由（能力依据，不许空推荐）；
+//  4. 当轮必须 memory_get 过该产品主页（读详情核验能力后才许推荐，防凭目录臆断）。
+//
+// 拒绝时结果回填给模型修正（received:false），模型补证据后重新调用。
+func (a *Agent) validateSubmission(s *AnalysisSubmission, st *turnState) string {
+	// P0-02b 一致性门禁：用户把未证实的交付/商业/集成条件作为核心诉求时，
+	// 模型不能一边在 feasibility_detail/missing_info 写“需确认”，一边把整体
+	// 判为 direct。此类用例必须降为 custom/partner，形成可执行的确认闭环。
+	if s.Feasibility == domain.FeasibilityDirect && st != nil && criticalDirectConflict(st.userText, s) {
+		return "analysis_submit 可行性一致性门禁拒绝：核心诉求仍含未证实/待确认条件，feasibility 不能为 direct；请改为 custom 或 partner，并明确已证实能力与待确认边界"
+	}
+	if len(s.MatchedProducts) == 0 {
+		return "" // 无产品匹配：reject / 纯信息缺失场景不触发产品门禁
+	}
+	var errs []string
+	for _, mp := range s.MatchedProducts {
+		name := strings.TrimSpace(mp.Name)
+		if name == "" {
+			errs = append(errs, "matched_products 存在空产品名")
+			continue
+		}
+		if a.productExists != nil && !a.productExists(name) {
+			errs = append(errs, fmt.Sprintf("产品 %q 不存在于产品库——先 memory_search 确认产品再推荐，不得编造", name))
+			continue
+		}
+		if mp.Confidence < 0 || mp.Confidence > 1 {
+			errs = append(errs, fmt.Sprintf("产品 %q 的 confidence 必须在 0..1，got %v", name, mp.Confidence))
+		}
+		if strings.TrimSpace(mp.Reason) == "" {
+			errs = append(errs, fmt.Sprintf("产品 %q 缺少匹配理由（能力依据）", name))
+		}
+		if st == nil || !st.readProduct(name) {
+			errs = append(errs, fmt.Sprintf("产品 %q 本轮未读取详情——推荐前先用 memory_get 或 memory_get_many 核验该产品主页能力与边界", name))
+		}
+	}
+	if len(errs) > 0 {
+		return "analysis_submit 证据门禁拒绝：" + strings.Join(errs, "；")
+	}
+	return ""
+}
+
+func criticalDirectConflict(userText string, s *AnalysisSubmission) bool {
+	q := strings.ToLower(userText)
+	critical := []string{"saas", "免费试用", "微信群", "不限ip", "不限制ip", "全套", "一站式", "多租户", "友商", "相比"}
+	hasCritical := false
+	for _, term := range critical {
+		if strings.Contains(q, term) {
+			hasCritical = true
+			break
+		}
+	}
+	if !hasCritical {
+		return false
+	}
+	detail := strings.ToLower(s.FeasibilityDetail + " " + strings.Join(s.MissingInfo, " "))
+	for _, term := range []string{"未证实", "需确认", "待确认", "尚未", "不明确", "缺口", "未覆盖", "产品线确认", "外部整合"} {
+		if strings.Contains(detail, term) {
+			return true
+		}
+	}
+	return false
+}
+
+// readProduct 判断某产品名本轮是否已 memory_get 读详情。容忍轻微名称差异：
+// 归一化（小写/去空白）后相同，或两者互相包含（如「雷池 WAF」vs
+// 「雷池（SafeLine）WAF」）都算已读——避免证据门禁因产品名拼写偏差，
+// 把模型卡在「读详情→重提被拒→再读→再被拒」的死循环里（2026-08-19）。
+func (st *turnState) readProduct(name string) bool {
+	name = normProductName(name)
+	for t := range st.readProducts {
+		t = normProductName(t)
+		if t == name {
+			return true
+		}
+		if t != "" && name != "" && (strings.Contains(t, name) || strings.Contains(name, t)) {
+			return true
+		}
+	}
+	return false
+}
+
+// normProductName 产品名归一化：小写、剥离括号内容（如「雷池（SafeLine）WAF」
+// →「雷池WAF」）、移除全部空白——「雷池 WAF」「雷池WAF」「雷池（SafeLine）WAF」
+// 归一化后均视为「雷池waf」，避免产品名拼写偏差把模型卡在门禁死循环里。
+func normProductName(s string) string {
+	s = strings.ToLower(stripParens(s))
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\n', '\r', '　':
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// stripParens 剥离全角/半角括号及其内容（rune 安全）。无配对闭合时截断到开括号前。
+func stripParens(s string) string {
+	runes := []rune(s)
+	for {
+		oi, hi := -1, -1
+		for i, r := range runes {
+			if r == '（' && oi < 0 {
+				oi = i
+			}
+			if r == '(' && hi < 0 {
+				hi = i
+			}
+			if oi >= 0 && hi >= 0 {
+				break
+			}
+		}
+		start := oi
+		if hi >= 0 && (oi < 0 || hi < oi) {
+			start = hi
+		}
+		if start < 0 {
+			return string(runes)
+		}
+		close := -1
+		for i := start + 1; i < len(runes); i++ {
+			if runes[i] == '）' || runes[i] == ')' {
+				close = i
+				break
+			}
+		}
+		if close < 0 {
+			return string(runes[:start])
+		}
+		runes = append(runes[:start], runes[close+1:]...)
+	}
+}
+
 // missingAnswerDef 返回 missing_answer 的 function-calling 定义（追问闭环）。
 func missingAnswerDef() domain.Tool {
 	return domain.Tool{
@@ -184,11 +319,13 @@ func (a *Agent) execHistorySearch(argsRaw string, st *turnState) string {
 	if a.histSearch == nil {
 		return `{"error":"历史检索未配置"}`
 	}
-	scope := st.session
+	searchID := st.session
 	if args.AllSessions {
-		scope = ""
+		searchID = ""
 	}
-	hits, err := a.histSearch(scope, args.Query, args.Limit)
+	// P0-03：携带登录作用域执行检索——后端按 scope 强制用户级可见性
+	// （非 admin 只搜自己 owner 的会话），history_search 不再能跨用户翻历史。
+	hits, err := a.histSearch(st.scope, searchID, args.Query, args.Limit)
 	if err != nil {
 		return fmt.Sprintf(`{"error":"%s"}`, jsonEscape(err.Error()))
 	}
@@ -222,6 +359,7 @@ func askUserDef() domain.Tool {
 								"label":       map[string]any{"type": "string", "description": "按钮文案"},
 								"value":       map[string]any{"type": "string", "description": "回传值（空则用 label）"},
 								"description": map[string]any{"type": "string", "description": "补充说明（可选）"},
+								"input":       map[string]any{"type": "string", "description": "选此项后需要用户补充的信息提示（如新建客户的名称）——前端会先弹输入框让用户填写，再以「选项文案：用户输入」回传（可选，不填则点击即回传）"},
 							},
 							"required": []string{"label"},
 						},

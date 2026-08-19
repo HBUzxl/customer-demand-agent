@@ -174,6 +174,26 @@ func TestParseStreamOpenAIResponseToolArgsKey(t *testing.T) {
 	}
 }
 
+func TestParseStreamOpenAIResponseKeepsReasoningOutOfContent(t *testing.T) {
+	chunks := []string{
+		`data: {"type":"response.reasoning_summary_text.delta","delta":"内部推理"}`,
+		`data: {"type":"response.output_text.delta","delta":"最终结论"}`,
+		`data: {"type":"response.completed"}`,
+	}
+	c := &Client{}
+	var reasoning, content string
+	resp, err := c.parseStreamOpenAIResponse(sseReader(chunks...), DeltaCallbacks{
+		OnReasoning: func(s string) { reasoning += s },
+		OnContent:   func(s string) { content += s },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reasoning != "内部推理" || content != "最终结论" || resp.Message.Content != "最终结论" {
+		t.Fatalf("reasoning/content 通道应隔离: reasoning=%q content=%q resp=%q", reasoning, content, resp.Message.Content)
+	}
+}
+
 // TestParseStreamAnthropic 覆盖 anthropic 流式：text_delta + tool_use 累积。
 func TestParseStreamAnthropic(t *testing.T) {
 	chunks := []string{

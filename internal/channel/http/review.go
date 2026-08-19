@@ -1,17 +1,22 @@
 package http
 
 import (
-	"customer-demand-agent/internal/memory/longterm"
 	"net/http"
 
 	"customer-demand-agent/internal/domain"
+	"customer-demand-agent/internal/memory/longterm"
 )
 
 // handleReviewPending: GET /api/review/pending —— 待审列表（含重叠提示：
 // 与同类型已验证条目正文 bigram Jaccard>0.6 → overlap_titles，辅助人审
 // 判断是否重复/矛盾，wiki-hygiene F3）。
 func (s *Server) handleReviewPending(w http.ResponseWriter, r *http.Request) {
-	items := s.review.Pending()
+	rt, err := s.rt(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
+	items := rt.Review.Pending()
 	type withOverlap struct {
 		Type          string   `json:"type"`
 		Title         string   `json:"title"`
@@ -24,7 +29,7 @@ func (s *Server) handleReviewPending(w http.ResponseWriter, r *http.Request) {
 	out := make([]withOverlap, 0, len(items))
 	for _, it := range items {
 		wo := withOverlap{Type: it.Type, Title: it.Title, Summary: it.Summary, Tags: it.Tags, Content: it.Content, Status: it.Status}
-		for _, ex := range s.storeWiki.ListEntry(it.Type, 0, 200) {
+		for _, ex := range rt.Wiki.ListEntry(it.Type, 0, 200) {
 			if ex.Title == it.Title || ex.Status == longterm.StatusArchived {
 				continue
 			}
@@ -72,9 +77,14 @@ func isCJKRune(r rune) bool {
 
 // handleReviewApprove: POST /api/review/{type}/{title}/approve
 func (s *Server) handleReviewApprove(w http.ResponseWriter, r *http.Request) {
+	rt, err := s.rt(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
 	typ := r.PathValue("type")
 	title := r.PathValue("title")
-	if err := s.review.Approve(typ, title); err != nil {
+	if err := rt.Review.Approve(typ, title); err != nil {
 		writeError(w, http.StatusNotFound, "%v", err)
 		return
 	}
@@ -83,9 +93,14 @@ func (s *Server) handleReviewApprove(w http.ResponseWriter, r *http.Request) {
 
 // handleReviewReject: POST /api/review/{type}/{title}/reject
 func (s *Server) handleReviewReject(w http.ResponseWriter, r *http.Request) {
+	rt, err := s.rt(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "%v", err)
+		return
+	}
 	typ := r.PathValue("type")
 	title := r.PathValue("title")
-	if err := s.review.Reject(typ, title); err != nil {
+	if err := rt.Review.Reject(typ, title); err != nil {
 		writeError(w, http.StatusNotFound, "%v", err)
 		return
 	}

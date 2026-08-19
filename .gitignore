@@ -6,12 +6,13 @@
 /agent
 /cda-agent
 *.exe
-
+.playwright-mcp/
 # Local data
 /data/
 *.db
 *.db-journal
 *.sqlite
+
 
 # Env / secrets / 配置（含 api_key，勿提交）
 .env

@@ -5,10 +5,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { leadsDashboard, leadsStats } from "../api/client";
+import { useAuth } from "../auth/AuthProvider";
 import type { LeadsDashboard, LeadsStats } from "../api/client";
 
 const PAGE_SIZE = 20;
-const HANDOFF_KEY = "cda.handoff"; // 与 Conversation.tsx 约定的一次性交接键
 
 // ── 线索字段容错提取（平台响应字段名未定死，按候选名匹配）────
 
@@ -88,7 +88,11 @@ function fmtTime(v: string): string {
 
 // 一键 AI 分析：组装带线索上下文的交接 prompt → 跳转对话页自动发送。
 // customer 同时作为会话客户身份（身份行注入 + session_bind_customer 闭环）。
-function analyzeWithAI(item: Record<string, unknown>, navigate: (to: string) => void) {
+function analyzeWithAI(
+  item: Record<string, unknown>,
+  navigate: (to: string) => void,
+  handoffKey: string,
+) {
   const id = firstStr(item, ID_KEYS);
   const title = firstStr(item, TITLE_KEYS) || (id ? `线索 ${id}` : "未命名线索");
   const stage = firstStr(item, STAGE_KEYS);
@@ -129,7 +133,7 @@ function analyzeWithAI(item: Record<string, unknown>, navigate: (to: string) => 
     `（with_activities=true），再结合产品知识库（memory_search）匹配适合的长亭产品，` +
     `输出：需求理解、推荐产品与置信度、可行性判断、跟进话术建议、待向客户确认的信息。\n\n` +
     `面板线索摘要：\n${lines}`;
-  sessionStorage.setItem(HANDOFF_KEY, JSON.stringify({ text, customer: title }));
+  sessionStorage.setItem(handoffKey, JSON.stringify({ text, customer: title }));
   navigate("/analyze");
 }
 
@@ -156,6 +160,7 @@ function statNumbers(data: unknown): { label: string; value: string }[] {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { lsKey } = useAuth();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<LeadsDashboard | null>(null);
   const [stats, setStats] = useState<LeadsStats | null>(null);
@@ -343,7 +348,7 @@ export default function Dashboard() {
                     </div>
                     <button
                       className="btn primary ai-btn"
-                      onClick={() => analyzeWithAI(it, navigate)}
+                      onClick={() => analyzeWithAI(it, navigate, lsKey("handoff"))}
                       title="带着这条线索的上下文进入对话，由 AI 一条龙分析"
                     >
                       ✨ AI 分析

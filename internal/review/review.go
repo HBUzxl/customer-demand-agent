@@ -13,21 +13,24 @@ import (
 
 // ReviewItem is one entry awaiting human approval.
 type ReviewItem struct {
-	Type    string   `json:"type"`
-	Title   string   `json:"title"`
-	Summary string   `json:"summary"`
-	Tags    []string `json:"tags"`
-	Content string   `json:"content"`
-	Status  string   `json:"status"`
+	Type     string   `json:"type"`
+	Title    string   `json:"title"`
+	Summary  string   `json:"summary"`
+	Tags     []string `json:"tags"`
+	Content  string   `json:"content"`
+	Status   string   `json:"status"`
+	Revision bool     `json:"revision,omitempty"` // P0-07：true=已验证条目的修订（批准=替换原版本）
 }
 
 // Service wraps the Wiki store's review operations.
+// store 是 longterm.Store 接口（Composite）——待审/审批只落租户覆盖层，
+// 系统只读基线（product）不参与审核队列。
 type Service struct {
-	store *longterm.WikiStore
+	store longterm.Store
 }
 
 // New creates a review service.
-func New(store *longterm.WikiStore) *Service {
+func New(store longterm.Store) *Service {
 	return &Service{store: store}
 }
 
@@ -39,6 +42,7 @@ func (s *Service) Pending() []ReviewItem {
 		out = append(out, ReviewItem{
 			Type: string(e.Type), Title: e.Title, Summary: e.Summary,
 			Tags: e.Tags, Content: e.Content, Status: string(e.Status),
+			Revision: e.RevisionOf != "",
 		})
 	}
 	return out

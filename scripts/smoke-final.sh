@@ -54,9 +54,9 @@ $CURL -s -o /dev/null -X DELETE "$BASE/api/memory/industry/$(python3 -c "import 
 # ── 观测台 ──
 TASKS=$($CURL -s "$BASE/api/tasks")
 echo "$TASKS" | grep -q '"type"' && ok "观测台：任务列表有记录" || fail "观测台任务列表空"
-AUDIT=$($CURL -s "$BASE/api/console/llm-audit")
+AUDIT=$($CURL -s "$BASE/api/platform/llm-audit")
 echo "$AUDIT" | grep -q '"model"' && ok "观测台：LLM 审计非空" || fail "LLM 审计空"
-LOGS=$($CURL -s -N --max-time 2 "$BASE/api/console/logs" 2>/dev/null | head -c 200 || true)
+LOGS=$($CURL -s -N --max-time 2 "$BASE/api/platform/logs" 2>/dev/null | head -c 200 || true)
 echo "$LOGS" | grep -q 'data:' && ok "观测台：日志 tail 出流" || fail "日志 tail"
 
 # ── C3：外置 prompt 生效 ──
