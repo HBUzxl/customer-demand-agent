@@ -314,7 +314,7 @@ func (a *Agent) Message(ctx context.Context, scope *domain.TenantScope, sessionI
 //     连续提交 ≥3 次始终未成功，判定为死循环 → 注入纠正指令给一次收敛机会；
 //     纠正后仍循环 → 优雅降级报错（不再裸报「超过最大迭代次数」）。
 func (a *Agent) runStreaming(ctx context.Context, msgList []domain.Message, trace *Trace, emit func(Event), st *turnState) (string, error) {
-	toolDefs := append(a.tools.DefinitionsFor(st.scope), memoryGetManyDef(), analysisSubmitDef(), missingAnswerDef(), historySearchDef(), askUserDef())
+	toolDefs := append(a.tools.DefinitionsFor(st.scope), memoryGetManyDef(), analysisSubmitDef(), missingAnswerDef(), historySearchDef(), askUserDef(), bindCustomerDef())
 	if a.leads != nil {
 		toolDefs = append(toolDefs, a.leads.Definitions()...) // 启用才注册（nil=模型无感知）
 	}
