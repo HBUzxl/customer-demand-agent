@@ -6,7 +6,7 @@
 /agent
 /cda-agent
 *.exe
-
+.playwright-mcp/
 # Local data
 /data/
 *.db
