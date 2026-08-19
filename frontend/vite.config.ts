@@ -9,7 +9,9 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "http://localhost:8080",
-        changeOrigin: true,
+        // 关闭 changeOrigin：保留浏览器原始 Host（devbox 域名），
+        // 否则后端 CSRF 同源校验（Origin vs r.Host）因 Host 被改写为 localhost:8080 而 403「跨站请求被拒绝」。
+        changeOrigin: false,
       },
     },
   },
